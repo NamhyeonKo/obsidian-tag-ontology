@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: obsidian
+    attributes:
+      label: Obsidian version
+      description: Settings → About. The plugin relies on core Graph view internals, so the exact version matters.
+      placeholder: "1.14.4 (installer 1.13.4)"
+    validations:
+      required: true
+  - type: input
+    id: plugin
+    attributes:
+      label: Tag Ontology version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15 / Windows 11 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: dictionary
+    attributes:
+      label: Dictionary excerpt
+      description: The smallest part of your Tag-Dictionary.json that shows the problem, if relevant.
+      render: json
+  - type: textarea
+    id: plugins
+    attributes:
+      label: Other graph-related plugins
+      description: Plugins that change the Graph view can conflict with this one.

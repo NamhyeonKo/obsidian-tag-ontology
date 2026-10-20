@@ -1,5 +1,9 @@
 # Tag Ontology
 
+[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
+[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [English](README.md) | **한국어**
 
 Tag Ontology는 Obsidian 기본 **그래프 뷰**를 태그 계층 지도로 바꿔 줍니다. 태그의 정의, 별칭, 상위 태그, 연관 태그를 JSON 사전에 적어 두면, 내장 그래프 렌더러로 그 계층을 그리고 각 태그를 사용하는 노트를 연결합니다.
@@ -111,14 +115,18 @@ UI는 영어로 표시됩니다.
 
 ### 명령
 
-- **Open graph**: 기본 그래프 뷰에서 온톨로지를 엽니다. 이미 열린 그래프 탭이 있으면 그 탭을 씁니다.
-- **Reload dictionary**: 사전과 노트 색인을 다시 불러옵니다.
-- **Open compatibility viewer**: 호환용으로 남겨 둔 Cytoscape 기반 독립 뷰어입니다. 큰 vault에서는 느립니다.
+| 명령 | 설명 |
+| --- | --- |
+| Tag Ontology: Open graph | 기본 그래프 뷰에서 온톨로지를 엽니다. 이미 열린 그래프 탭이 있으면 그 탭을 씁니다. |
+| Tag Ontology: Reload dictionary | 사전과 노트 색인을 다시 불러옵니다. |
+| Tag Ontology: Open compatibility viewer | 호환용으로 남겨 둔 Cytoscape 기반 독립 뷰어입니다. 큰 vault에서는 느립니다. |
 
 ### 설정
 
-- **Dictionary path** (태그 사전 경로): vault 기준 상대 경로의 `.json` 파일입니다. `.obsidian/`과 `.git/` 안의 경로는 쓸 수 없습니다.
-- **Layout** (그래프 배치): Force, Tree, Radial 중 하나를 고릅니다.
+| 설정 | 설명 |
+| --- | --- |
+| Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. `.obsidian/`과 `.git/` 안의 경로는 쓸 수 없습니다. |
+| Layout | 그래프 배치. Force, Tree, Radial 중 하나를 고릅니다. |
 
 ## 개인정보
 
@@ -138,7 +146,7 @@ UI는 영어로 표시됩니다.
 
 - 온톨로지 표시 중에도 기본 그래프 설정(색상 그룹, 화살표, 태그·첨부파일·고아 노트 표시 토글) 지원
 
-이슈와 PR을 환영합니다.
+버그 제보와 기능 제안은 [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues)에 남겨 주세요. 버그라면 Obsidian 버전과 OS를 함께 적어 주세요.
 
 ## 개발
 
@@ -154,6 +162,23 @@ npm run deploy -- "/path/to/vault"   # main.js, manifest.json, styles.css를 vau
 `deploy`는 대상 vault에 `.obsidian/` 폴더가 있어야 하며, 기존 `data.json`은 보존합니다. 복사한 뒤 Obsidian에서 플러그인을 다시 불러오세요.
 
 `npm run test:vault`는 메인테이너의 개인 vault(`OBSIDIAN_VAULT_PATH`)를 대상으로 하는 연동 테스트입니다. 다른 기여자는 실행하지 않아도 됩니다.
+
+### 프로젝트 구조
+
+```text
+src/
+├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
+├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
+├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, layouts)
+├── native-data.ts  # Converts the visible ontology into the core graph's data format
+├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── view.ts         # Compatibility viewer (standalone Cytoscape view)
+├── renderer.ts     # Cytoscape setup for the compatibility viewer
+└── settings.ts     # Settings shape and path validation
+tests/              # node:test unit tests (tests/integration is maintainer-only)
+examples/           # Sample vault with a Tag-Dictionary.json
+scripts/deploy.mjs  # Copies the build into a local vault
+```
 
 ### 릴리스
 

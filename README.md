@@ -1,5 +1,9 @@
 # Tag Ontology
 
+[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
+[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **English** | [한국어](README.ko.md)
 
 Tag Ontology turns Obsidian's core **Graph view** into a map of your tag hierarchy. You describe your tags in a JSON dictionary (definition, aliases, parents, related tags). The plugin draws that hierarchy with the built-in graph renderer and attaches your notes to the tags they use.
@@ -108,14 +112,18 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 ### Commands
 
-- **Open graph**: open the ontology in the core Graph view. Reuses an open graph tab.
-- **Reload dictionary**: reload the dictionary and the note index.
-- **Open compatibility viewer**: a standalone Cytoscape-based viewer kept for compatibility. It is slower on large vaults.
+| Command | Description |
+| --- | --- |
+| Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open graph tab. |
+| Tag Ontology: Reload dictionary | Reload the dictionary and the note index. |
+| Tag Ontology: Open compatibility viewer | A standalone Cytoscape-based viewer kept for compatibility. Slower on large vaults. |
 
 ### Settings
 
-- **Dictionary path**: a vault-relative path to a `.json` file. Paths inside `.obsidian/` or `.git/` are rejected.
-- **Layout**: Force, Tree or Radial.
+| Setting | Description |
+| --- | --- |
+| Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. Paths inside `.obsidian/` or `.git/` are rejected. |
+| Layout | Force, Tree or Radial. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
@@ -137,7 +145,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - Restore core graph settings while the ontology is shown: color groups, arrows, and tag/attachment/orphan toggles.
 
-Issues and pull requests are welcome.
+Bug reports and feature requests are welcome in [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues). Please include your Obsidian version and OS for bugs.
 
 ## Development
 
@@ -153,6 +161,23 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 `deploy` requires an existing `.obsidian/` folder in the target vault and preserves an existing `data.json`. Reload the plugin in Obsidian afterwards.
 
 `npm run test:vault` is the maintainer's integration test against a private vault (`OBSIDIAN_VAULT_PATH`). Other contributors don't need to run it.
+
+### Project structure
+
+```text
+src/
+├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
+├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
+├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, layouts)
+├── native-data.ts  # Converts the visible ontology into the core graph's data format
+├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── view.ts         # Compatibility viewer (standalone Cytoscape view)
+├── renderer.ts     # Cytoscape setup for the compatibility viewer
+└── settings.ts     # Settings shape and path validation
+tests/              # node:test unit tests (tests/integration is maintainer-only)
+examples/           # Sample vault with a Tag-Dictionary.json
+scripts/deploy.mjs  # Copies the build into a local vault
+```
 
 ### Releasing
 
