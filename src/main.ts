@@ -1,20 +1,20 @@
 import { Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App } from 'obsidian';
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
-import { sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
+import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { OntologyView, VIEW_TYPE } from './view.ts';
 import { NativeGraphs } from './native.ts';
 
 export type { Settings } from './settings.ts';
 
 export default class TagOntologyPlugin extends Plugin {
-  settings: Settings = sanitizeSettings(null);
+  settings: Settings = { ...DEFAULT_SETTINGS };
   model?: Ontology;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
   private refreshTimer?: number;
 
   async onload(): Promise<void> {
-    this.settings = sanitizeSettings(await this.loadData());
+    this.settings = sanitizeSettings(await this.loadData(), this.app.vault.configDir);
     this.registerView(VIEW_TYPE, (leaf) => new OntologyView(leaf, this));
     this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
@@ -40,7 +40,7 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async loadModel(): Promise<Ontology> {
-    if (!isValidDictionaryPath(this.settings.dictionaryPath)) throw new Error('The dictionary path is not allowed.');
+    if (!isValidDictionaryPath(this.settings.dictionaryPath, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
     if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
@@ -66,7 +66,7 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
-    this.settings = sanitizeSettings(this.settings);
+    this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveData(this.settings);
     await this.refreshViews();
   }
@@ -116,7 +116,7 @@ class OntologySettingsTab extends PluginSettingTab {
     containerEl.empty();
     new Setting(containerEl).setName('Dictionary path').setDesc('Vault-relative path to the tag dictionary JSON file.').addText((text) => {
       text.setValue(this.owner.settings.dictionaryPath).onChange(async (path) => {
-        if (!isValidDictionaryPath(path)) { new Notice('Enter a .json path inside the vault, outside the config folder.'); return; }
+        if (!isValidDictionaryPath(path, this.app.vault.configDir)) { new Notice('Enter a .json path inside the vault, outside the config folder.'); return; }
         this.owner.settings.dictionaryPath = path;
         await this.owner.saveSettings();
       });
@@ -124,7 +124,7 @@ class OntologySettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Layout').addDropdown((dropdown) => {
       dropdown.addOptions({ force: 'Force', tree: 'Tree', radial: 'Radial' })
         .setValue(this.owner.settings.layout).onChange(async (layout) => {
-          this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout });
+          this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout }, this.app.vault.configDir);
           await this.owner.saveSettings();
         });
     });
