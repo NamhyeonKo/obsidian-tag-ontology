@@ -93,9 +93,9 @@ npm run build
    ```
 
 4. GitHub Actions lints, tests, builds, attests `main.js`, `manifest.json` and `styles.css`, and creates a **draft** release.
-5. Write release notes on the draft. An empty description gets a review Recommendation. Notes can be edited after publishing without a new version.
+5. Write release notes on the draft **before publishing**. An empty description gets a review Recommendation, and editing the notes later does not trigger a new review of the same version.
 6. In the [community dashboard](https://community.obsidian.md), put the tag in **Review branch** and run a preview scan. Publish the draft only when it reports no errors.
-7. Click **Check for new releases** in the dashboard and check the review. After editing only the notes of a published release, use **… → Request review**.
+7. Click **Check for new releases** in the dashboard and check the review. A published version is reviewed once; fixes need a new version.
 
 ### Community review
 
@@ -108,7 +108,3 @@ Known review findings:
 | Finding | Where | Status |
 | --- | --- | --- |
 | Vault Enumeration (Recommendation) | `getMarkdownFiles()` in `src/main.ts` | Intended. Counting notes per tag needs the full note list |
-| `getSettingDefinitions()` not implemented (Warning) | Settings tab in `src/main.ts` | Settings search on 1.13+. Needs a compatibility check with older versions first |
-| `:has()` (CSS Warning) | Core graph settings rules in `styles.css` | Needs a replacement selector and an in-app test |
-
-Known CSS issue: in the compatibility viewer, `.tag-ontology-view { overflow: hidden }` loses to Obsidian's more specific `.workspace-leaf-content .view-content { overflow: auto }`. Move it to the `[data-type="tag-ontology"]` selector like `padding: 0`.
