@@ -30,7 +30,7 @@ interface Session {
   kinds: Map<string, GraphEdge['kind']>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   selected?: string; texture?: Texture; layout?: string;
-  showNotes: boolean; showRelated: boolean;
+  showNotes: boolean; showRelated: boolean; layoutSelect?: HTMLSelectElement;
   fitFrame?: number; stopFit: () => void;
 }
 
@@ -100,7 +100,7 @@ export class NativeGraphs {
       this.toggle(tools, 'Notes', on => { session.showNotes = on; this.render(session, 'filter'); });
       this.toggle(tools, 'Related', on => { session.showRelated = on; this.render(session, 'filter'); });
       this.button(tools, 'Dictionary check', () => this.inventory(session));
-      const select = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
+      const select = session.layoutSelect = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
       for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
       select.value = this.owner.settings.layout;
       select.addEventListener('change', () => {
@@ -149,6 +149,7 @@ export class NativeGraphs {
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== this.owner.settings.layout;
     session.layout = this.owner.settings.layout;
+    if (layoutChanged && session.layoutSelect) session.layoutSelect.value = session.layout;
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') {
       session.stopFit();

@@ -118,6 +118,7 @@ test('tree layout keeps the user zoom across native updates and refits only when
     settings: { layout: 'tree' }, app: { workspace: { getLeavesOfType: () => [leaf] } },
   };
   const controller = new NativeGraphs(owner); controller.attach();
+  const layoutSelect = view.contentEl.all().find(el => el.value === 'tree')!;
   const fitted = renderer.scale;
   renderer.targetScale = renderer.scale = 5;
   renderer.setData({ nodes: {} });
@@ -126,6 +127,7 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(renderer.scale, 5, 'a metadata refresh must not reset the zoom');
   owner.settings.layout = 'radial'; controller.refresh();
   assert.equal(renderer.scale, fitted, 'switching layout refits the new positions');
+  assert.equal(layoutSelect.value, 'radial', 'the toolbar shows a layout changed in settings');
   controller.destroy();
 });
 
