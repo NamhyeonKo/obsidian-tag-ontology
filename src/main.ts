@@ -1,4 +1,4 @@
-import { Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App } from 'obsidian';
+import { Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type SettingDefinitionItem } from 'obsidian';
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { OntologyView, VIEW_TYPE } from './view.ts';
@@ -108,21 +108,41 @@ export default class TagOntologyPlugin extends Plugin {
   }
 }
 
+const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
+const LAYOUTS = { force: 'Force', tree: 'Tree', radial: 'Radial' };
+
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
 
+  // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      { name: 'Dictionary path', desc: 'Vault-relative path to the tag dictionary JSON file.', control: {
+        type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
+        validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
+      } },
+      { name: 'Layout', control: { type: 'dropdown', key: 'layout', options: LAYOUTS, defaultValue: DEFAULT_SETTINGS.layout } },
+    ];
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
+    await this.owner.saveSettings();
+  }
+
+  // Fallback for Obsidian older than 1.13, which never calls getSettingDefinitions().
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
     new Setting(containerEl).setName('Dictionary path').setDesc('Vault-relative path to the tag dictionary JSON file.').addText((text) => {
       text.setValue(this.owner.settings.dictionaryPath).onChange(async (path) => {
-        if (!isValidDictionaryPath(path, this.app.vault.configDir)) { new Notice('Enter a .json path inside the vault, outside the config folder.'); return; }
+        if (!isValidDictionaryPath(path, this.app.vault.configDir)) { new Notice(PATH_HINT); return; }
         this.owner.settings.dictionaryPath = path;
         await this.owner.saveSettings();
       });
     });
     new Setting(containerEl).setName('Layout').addDropdown((dropdown) => {
-      dropdown.addOptions({ force: 'Force', tree: 'Tree', radial: 'Radial' })
+      dropdown.addOptions(LAYOUTS)
         .setValue(this.owner.settings.layout).onChange(async (layout) => {
           this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout }, this.app.vault.configDir);
           await this.owner.saveSettings();
