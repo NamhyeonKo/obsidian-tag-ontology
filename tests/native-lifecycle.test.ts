@@ -158,5 +158,7 @@ test('notes and related toggles hide those elements without touching tag structu
   assert.equal(renderer.links.length, 0, 'hiding related removes the dashed link');
   click('Notes'); click('Related');
   assert.equal(renderer.nodes.length, 3); assert.equal(renderer.links.length, 2);
+  click('b');
+  assert.ok(contentEl.all().some(el => el.text === 'Collapse children and notes'), 'panel navigation expands the target tag like a node click');
   controller.destroy();
 });

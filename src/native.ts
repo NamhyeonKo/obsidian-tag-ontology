@@ -211,6 +211,7 @@ export class NativeGraphs {
   }
 
   private reveal(session: Session, tag: string) {
+    session.expanded.add(tag);
     const pending = [tag], seen = new Set<string>();
     while (pending.length) {
       const current = pending.pop()!;
