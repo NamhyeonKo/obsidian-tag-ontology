@@ -1,7 +1,7 @@
 {
   "id": "tag-ontology",
   "name": "Tag Ontology",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.7.2",
   "description": "Explore a tag hierarchy defined in a JSON dictionary inside the core graph view, with note counts and a dictionary check.",
   "author": "NamhyeonKo",
