@@ -29,7 +29,7 @@ interface Session {
   tools: HTMLElement; panel: HTMLElement; status: HTMLElement;
   kinds: Map<string, GraphEdge['kind']>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
-  selected?: string; texture?: Texture;
+  selected?: string; texture?: Texture; layout?: string;
   fitFrame?: number; stopFit: () => void;
 }
 
@@ -135,7 +135,10 @@ export class NativeGraphs {
       });
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
     }
-    if (operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
+    // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
+    const layoutChanged = session.layout !== this.owner.settings.layout;
+    session.layout = this.owner.settings.layout;
+    if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') {
       session.stopFit();
       const started = performance.now();
@@ -193,7 +196,7 @@ export class NativeGraphs {
         node.y = item ? p.y + .01 : p.y + Math.sin(i * 2.39996) * 50;
         node.fx = node.x; node.fy = node.y;
       }
-      this.fit(session); r.changed();
+      r.changed();
   }
 
   private reveal(session: Session, tag: string) {

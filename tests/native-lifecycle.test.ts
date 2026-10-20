@@ -20,27 +20,35 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
+type Controller = { attach(): void; refresh(): void; destroy(): void };
 
-test('native session restores callbacks and lazy textures without breaking a later wrapper', async () => {
-  let frame = 0;
-  const frames = new Map<number, () => void>();
+async function loadNative(globals: object, hierarchyPositions: (...args: unknown[]) => Map<string, { x: number; y: number }>) {
   const context = createContext({
-    performance, document: { visibilityState: 'visible', createElement: () => ({ getContext: () => ({ fillRect() {} }) }) },
-    requestAnimationFrame: (fn: () => void) => { frames.set(++frame, fn); return frame; },
-    cancelAnimationFrame: (id: number) => frames.delete(id),
+    performance, devicePixelRatio: 1,
+    document: { visibilityState: 'visible', createElement: () => ({ getContext: () => ({ fillRect() {} }) }) },
+    ...globals,
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports = specifier === 'obsidian' ? { Notice: class {}, TFile: File }
-      : specifier === './layout.ts' ? { hierarchyPositions: () => { throw new Error('Force must use the native worker'); } }
+      : specifier === './layout.ts' ? { hierarchyPositions }
       : { nativeData, edgeKey };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
   });
   await module.evaluate();
-  const NativeGraphs = (module.namespace as { NativeGraphs: new(owner: object) => { attach(): void; refresh(): void; destroy(): void } }).NativeGraphs;
+  return (module.namespace as { NativeGraphs: new(owner: object) => Controller }).NativeGraphs;
+}
+
+test('native session restores callbacks and lazy textures without breaking a later wrapper', async () => {
+  let frame = 0;
+  const frames = new Map<number, () => void>();
+  const NativeGraphs = await loadNative({
+    requestAnimationFrame: (fn: () => void) => { frames.set(++frame, fn); return frame; },
+    cancelAnimationFrame: (id: number) => frames.delete(id),
+  }, () => { throw new Error('Force must use the native worker'); });
   let destroyed = 0, fileClicks = 0, forwards = 0;
   const nativeTexture = { constructor: { from: () => ({ destroy: () => destroyed++ }) } };
   const line = { texture: nativeTexture as object };
@@ -90,4 +98,31 @@ test('native session restores callbacks and lazy textures without breaking a lat
   renderer.setData({ nodes: { 'Real.md': {} } });
   assert.deepEqual(renderer.nodes.map(n => n.id), ['Real.md']);
   assert.notEqual(ours, originalSet);
+});
+
+test('tree layout keeps the user zoom across native updates and refits only when the layout changes', async () => {
+  const NativeGraphs = await loadNative({ requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
+    (graph: unknown) => new Map((graph as { nodes: { id: string }[] }).nodes.map((n, i) => [n.id, { x: i * 400, y: 0 }])));
+  const renderer = {
+    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [],
+    fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    changed() {}, resetPan() {}, onNodeClick() {}, setPan() {},
+    setScale(scale: number) { this.scale = scale; },
+    setData(data: { nodes: object }) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null })); },
+  };
+  const view = { renderer, contentEl: new Element(), update() {} }, leaf = { view };
+  const owner = {
+    model: new Ontology({ a: { description: '', broader: [] }, b: { description: '', broader: [] } }, []),
+    settings: { layout: 'tree' }, app: { workspace: { getLeavesOfType: () => [leaf] } },
+  };
+  const controller = new NativeGraphs(owner); controller.attach();
+  const fitted = renderer.scale;
+  renderer.targetScale = renderer.scale = 5;
+  renderer.setData({ nodes: {} });
+  assert.equal(renderer.scale, 5, 'a native graph update must not reset the zoom');
+  controller.refresh();
+  assert.equal(renderer.scale, 5, 'a metadata refresh must not reset the zoom');
+  owner.settings.layout = 'radial'; controller.refresh();
+  assert.equal(renderer.scale, fitted, 'switching layout refits the new positions');
+  controller.destroy();
 });
