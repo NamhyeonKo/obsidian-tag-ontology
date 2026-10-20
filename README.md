@@ -10,6 +10,8 @@ Tag Ontology turns Obsidian's core **Graph view** into a map of your tag hierarc
 
 It is **read-only**. It never edits your notes or your dictionary.
 
+![Tag Ontology demo](assets/demo.gif)
+
 ## Features
 
 - **Tag hierarchy in the core graph.** Uses Obsidian's own Graph view renderer and physics, so it looks and pans like the graph you already know.
@@ -20,6 +22,10 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Search** by tag name or alias.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Open notes** by clicking note nodes or note lists.
+
+| Tag panel | Dictionary check |
+| --- | --- |
+| ![Tag panel with parents, children and note counts](assets/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/dictionary-check.png) |
 
 ## How it works
 
