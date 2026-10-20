@@ -37,7 +37,7 @@ Tag usage comes from Obsidian's metadata cache, which includes frontmatter `tags
 
 ### From Community plugins
 
-*Pending review.* Once listed, open **Settings → Community plugins → Browse** and search for "Tag Ontology".
+Open **Settings → Community plugins → Browse**, search for "Tag Ontology", then install and enable it. You can also install it from its [directory page](https://community.obsidian.md/plugins/tag-ontology).
 
 ### With BRAT (beta)
 
@@ -47,7 +47,7 @@ Tag usage comes from Obsidian's metadata cache, which includes frontmatter `tags
 ### Manually
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases).
-2. Copy them into `<your vault>/.obsidian/plugins/tag-ontology/`.
+2. Copy them into `.obsidian/plugins/tag-ontology/` inside your vault. If you changed the config folder in Obsidian, use that folder instead of `.obsidian`.
 3. Reload Obsidian, then enable **Tag Ontology** in **Settings → Community plugins**.
 
 The core **Graph view** plugin must be enabled.
@@ -129,7 +129,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 | Setting | Description |
 | --- | --- |
-| Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. Paths inside `.obsidian/` or `.git/` are rejected. |
+| Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. Paths inside the vault's config folder (usually `.obsidian/`) or `.git/` are rejected. |
 | Layout | Force, Tree or Radial. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
@@ -138,7 +138,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`.obsidian/plugins/tag-ontology/data.json`, which holds `dictionaryPath` and `layout`).
+- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds `dictionaryPath` and `layout`.
 
 ## Compatibility and known limitations
 
@@ -189,9 +189,11 @@ scripts/deploy.mjs  # Copies the build into a local vault
 
 ### Releasing
 
-1. Bump `version` in `manifest.json` and `package.json`, and add the new version to `versions.json` (mapped to `minAppVersion`).
-2. Commit, then push a tag that matches the version exactly, with no `v` prefix: `git tag 0.1.1 && git push origin 0.1.1`.
-3. GitHub Actions builds and creates a **draft** release with `main.js`, `manifest.json` and `styles.css`. Review it and publish.
+1. Bump `version` in `manifest.json` and `package.json` (and `package-lock.json`, e.g. with `npm version <x.y.z> --no-git-tag-version`), and add the new version to `versions.json` (mapped to `minAppVersion`).
+2. Merge to `main`, then push a tag that matches the version exactly, with no `v` prefix: `git tag <x.y.z> && git push origin <x.y.z>`.
+3. GitHub Actions lints, tests, builds, attests `main.js`, `manifest.json` and `styles.css`, and creates a **draft** release with them.
+4. In the [Obsidian Community dashboard](https://community.obsidian.md), select **Review branch** and run a preview scan on the tag. Fix any errors before going further.
+5. Add release notes and publish the draft. The directory reviews every published release automatically; a release that fails is removed from search within 24 hours.
 
 ## Acknowledgements
 

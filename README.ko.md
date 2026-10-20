@@ -37,7 +37,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**를 태그 계층 지도로 바
 
 ### 커뮤니티 플러그인
 
-*심사 대기 중입니다.* 등록되면 **설정 → 커뮤니티 플러그인 → 탐색**에서 "Tag Ontology"를 검색해 설치합니다.
+**설정 → 커뮤니티 플러그인 → 탐색**에서 "Tag Ontology"를 검색해 설치하고 켭니다. [디렉터리 페이지](https://community.obsidian.md/plugins/tag-ontology)에서도 설치할 수 있습니다.
 
 ### BRAT (베타)
 
@@ -47,7 +47,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**를 태그 계층 지도로 바
 ### 수동 설치
 
 1. [최신 릴리스](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases)에서 `main.js`, `manifest.json`, `styles.css`를 내려받습니다.
-2. 세 파일을 `<vault>/.obsidian/plugins/tag-ontology/`에 복사합니다.
+2. 세 파일을 vault 안의 `.obsidian/plugins/tag-ontology/`에 복사합니다. Obsidian에서 설정 폴더 이름을 바꿨다면 `.obsidian` 대신 그 폴더를 씁니다.
 3. Obsidian을 다시 불러온 뒤 **설정 → 커뮤니티 플러그인**에서 **Tag Ontology**를 켭니다.
 
 기본 **그래프 뷰** 코어 플러그인이 켜져 있어야 합니다.
@@ -132,14 +132,14 @@ UI는 영어로 표시됩니다.
 
 | 설정 | 설명 |
 | --- | --- |
-| Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. `.obsidian/`과 `.git/` 안의 경로는 쓸 수 없습니다. |
+| Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. vault 설정 폴더(보통 `.obsidian/`)와 `.git/` 안의 경로는 쓸 수 없습니다. |
 | Layout | 그래프 배치. Force, Tree, Radial 중 하나를 고릅니다. |
 
 ## 개인정보
 
 - 네트워크 요청, 사용 통계 수집, 계정이 없습니다.
 - 노트의 메타데이터와 사전 파일만 읽습니다.
-- 자체 설정 파일(`.obsidian/plugins/tag-ontology/data.json`, `dictionaryPath`와 `layout`만 저장)에만 씁니다.
+- 자체 설정 파일(설정 폴더 안의 `plugins/tag-ontology/data.json`, 보통 `.obsidian/` 아래, `dictionaryPath`와 `layout`만 저장)에만 씁니다.
 
 ## 호환성과 알려진 한계
 
@@ -190,9 +190,11 @@ scripts/deploy.mjs  # Copies the build into a local vault
 
 ### 릴리스
 
-1. `manifest.json`과 `package.json`의 `version`을 올리고, `versions.json`에 새 버전과 `minAppVersion`을 추가합니다.
-2. 커밋한 뒤 버전과 정확히 같은 태그를 `v` 접두사 없이 push합니다: `git tag 0.1.1 && git push origin 0.1.1`.
-3. GitHub Actions가 빌드해서 `main.js`, `manifest.json`, `styles.css`가 첨부된 **draft** 릴리스를 만듭니다. 확인한 뒤 게시합니다.
+1. `manifest.json`과 `package.json`(그리고 `package-lock.json`, 예: `npm version <x.y.z> --no-git-tag-version`)의 `version`을 올리고, `versions.json`에 새 버전과 `minAppVersion`을 추가합니다.
+2. `main`에 병합한 뒤 버전과 정확히 같은 태그를 `v` 접두사 없이 push합니다: `git tag <x.y.z> && git push origin <x.y.z>`.
+3. GitHub Actions가 린트·테스트·빌드 후 `main.js`, `manifest.json`, `styles.css`에 attestation을 붙이고, 이 파일들이 첨부된 **draft** 릴리스를 만듭니다.
+4. [Obsidian Community 대시보드](https://community.obsidian.md)에서 **Review branch**로 태그에 preview scan을 돌립니다. error가 있으면 먼저 고칩니다.
+5. 릴리스 노트를 적고 draft를 게시합니다. 디렉터리는 게시된 릴리스를 모두 자동 심사하며, 실패한 릴리스는 24시간 안에 검색에서 빠집니다.
 
 ## 감사의 말
 
