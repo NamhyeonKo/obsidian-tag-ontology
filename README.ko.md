@@ -188,13 +188,9 @@ examples/           # Sample vault with a Tag-Dictionary.json
 scripts/deploy.mjs  # Copies the build into a local vault
 ```
 
-### 릴리스
+### 기여와 릴리스
 
-1. `manifest.json`과 `package.json`(그리고 `package-lock.json`, 예: `npm version <x.y.z> --no-git-tag-version`)의 `version`을 올리고, `versions.json`에 새 버전과 `minAppVersion`을 추가합니다.
-2. `main`에 병합한 뒤 버전과 정확히 같은 태그를 `v` 접두사 없이 push합니다: `git tag <x.y.z> && git push origin <x.y.z>`.
-3. GitHub Actions가 린트·테스트·빌드 후 `main.js`, `manifest.json`, `styles.css`에 attestation을 붙이고, 이 파일들이 첨부된 **draft** 릴리스를 만듭니다.
-4. [Obsidian Community 대시보드](https://community.obsidian.md)에서 **Review branch**로 태그에 preview scan을 돌립니다. error가 있으면 먼저 고칩니다.
-5. 릴리스 노트를 적고 draft를 게시합니다. 디렉터리는 게시된 릴리스를 모두 자동 심사하며, 실패한 릴리스는 24시간 안에 검색에서 빠집니다.
+커밋 규칙(Conventional Commits), 커밋 전 검사, Obsidian에서 테스트하는 방법, 메인테이너용 릴리스 절차는 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다(영어).
 
 ## 감사의 말
 

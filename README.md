@@ -187,13 +187,9 @@ examples/           # Sample vault with a Tag-Dictionary.json
 scripts/deploy.mjs  # Copies the build into a local vault
 ```
 
-### Releasing
+### Contributing and releasing
 
-1. Bump `version` in `manifest.json` and `package.json` (and `package-lock.json`, e.g. with `npm version <x.y.z> --no-git-tag-version`), and add the new version to `versions.json` (mapped to `minAppVersion`).
-2. Merge to `main`, then push a tag that matches the version exactly, with no `v` prefix: `git tag <x.y.z> && git push origin <x.y.z>`.
-3. GitHub Actions lints, tests, builds, attests `main.js`, `manifest.json` and `styles.css`, and creates a **draft** release with them.
-4. In the [Obsidian Community dashboard](https://community.obsidian.md), select **Review branch** and run a preview scan on the tag. Fix any errors before going further.
-5. Add release notes and publish the draft. The directory reviews every published release automatically; a release that fails is removed from search within 24 hours.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional Commits), pre-commit checks, testing in Obsidian, and the maintainer release checklist.
 
 ## Acknowledgements
 
