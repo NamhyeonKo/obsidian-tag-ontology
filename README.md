@@ -13,7 +13,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 ## Features
 
 - **Tag hierarchy in the core graph.** Uses Obsidian's own Graph view renderer and physics, so it looks and pans like the graph you already know.
-- **Progressive disclosure.** Starts with root tags only. Expand a tag to reveal its child tags and the notes tagged with it.
+- **Progressive disclosure.** Starts with root tags only. Click a tag to reveal its child tags and the notes tagged with it.
 - **Note counts with roll-up.** For each tag you see notes tagged *directly* and notes tagged with the tag *or any descendant*. Notes are de-duplicated across multiple tags and multiple parents.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, Tree and Radial.
@@ -108,7 +108,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 - **Fit**: fit the graph to the view.
 - **Dictionary check**: list unregistered and unused tags.
 - **Layout**: Force, Tree or Radial.
-- Click a tag to open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. **Expand children and notes** expands or collapses that tag.
+- Click a tag to expand it and open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. Clicking an expanded tag only reopens the panel. Use **Collapse children and notes** in the panel to collapse it.
 
 ### Commands
 

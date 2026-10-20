@@ -79,7 +79,10 @@ test('native session restores callbacks and lazy textures without breaking a lat
   owner.model = new Ontology({ a: { description: '', broader: [] }, b: { description: '', broader: ['a'] } }, []);
   controller.refresh();
   (renderer.onNodeClick as Function)({}, '#a', 'tag');
-  contentEl.all().find(el => el.text === 'Expand children and notes')!.events.get('click')!();
+  assert.ok(renderer.nodes.some(n => n.id === '#b'), 'clicking a tag expands its children');
+  (renderer.onNodeClick as Function)({}, '#a', 'tag');
+  assert.ok(renderer.nodes.some(n => n.id === '#b'), 'clicking an expanded tag keeps it expanded');
+  assert.ok(contentEl.all().some(el => el.text === 'Collapse children and notes'));
   expectedArrow = true; link.render();
   assert.equal(line.texture, nativeTexture, 'changing related to broader restores a solid line');
   const ours = renderer.setData;

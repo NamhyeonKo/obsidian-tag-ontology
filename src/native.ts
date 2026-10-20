@@ -75,7 +75,12 @@ export class NativeGraphs {
       r.setData = session.wrapped;
       session.ownClick = r.onNodeClick = (event, id, type) => {
         if (!session.active) session.click.call(r, event, id, type);
-        else if (type === 'tag' && this.owner.model?.entries.has(id.slice(1))) this.inspect(session, id.slice(1));
+        else if (type === 'tag' && this.owner.model?.entries.has(id.slice(1))) {
+          const tag = id.slice(1);
+          // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
+          if (!session.expanded.has(tag)) { session.expanded.add(tag); this.render(session, 'expand:' + tag); }
+          this.inspect(session, tag);
+        }
         else if (type !== 'tag') this.openNote(id);
       };
       const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
