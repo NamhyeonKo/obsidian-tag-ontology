@@ -15,7 +15,7 @@ class Element {
   }
   addEventListener(event: string, fn: () => void) { this.events.set(event, fn); }
   removeEventListener(event: string) { this.events.delete(event); }
-  setAttribute() {} addClass() {} removeClass() {}
+  setAttribute() {} addClass() {} removeClass() {} toggleClass() {}
   empty() { this.children = []; } remove() { this.removed = true; }
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
@@ -126,5 +126,37 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(renderer.scale, 5, 'a metadata refresh must not reset the zoom');
   owner.settings.layout = 'radial'; controller.refresh();
   assert.equal(renderer.scale, fitted, 'switching layout refits the new positions');
+  controller.destroy();
+});
+
+test('notes and related toggles hide those elements without touching tag structure', async () => {
+  const NativeGraphs = await loadNative({ requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
+    () => { throw new Error('Force must use the native worker'); });
+  const renderer = {
+    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as object[],
+    fShowArrow: true, worker: { postMessage() {} }, width: 800, height: 600, targetScale: 1, scale: 1,
+    changed() {}, resetPan() {}, onNodeClick() {}, setPan() {}, setScale() {},
+    setData(data: { nodes: Record<string, { links: Record<string, true> }> }) {
+      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null }));
+      this.links = Object.entries(data.nodes).flatMap(([source, n]) => Object.keys(n.links).map(target => ({ source, target })));
+    },
+  };
+  const contentEl = new Element();
+  const leaf = { view: { renderer, contentEl, update() {} } };
+  const owner = {
+    model: new Ontology({ a: { description: '', broader: [], related: ['b'] }, b: { description: '', broader: [] } }, [{ path: 'N.md', tags: ['a'] }]),
+    settings: { layout: 'force' }, app: { workspace: { getLeavesOfType: () => [leaf] } },
+  };
+  const controller = new NativeGraphs(owner); controller.attach();
+  (renderer.onNodeClick as Function)({}, '#a', 'tag');
+  assert.deepEqual(renderer.nodes.map(n => n.id).sort(), ['#a', '#b', 'N.md']);
+  assert.equal(renderer.links.length, 2);
+  const click = (text: string) => contentEl.all().find(el => el.text === text)!.events.get('click')!();
+  click('Notes');
+  assert.deepEqual(renderer.nodes.map(n => n.id).sort(), ['#a', '#b'], 'hiding notes keeps every tag');
+  click('Related');
+  assert.equal(renderer.links.length, 0, 'hiding related removes the dashed link');
+  click('Notes'); click('Related');
+  assert.equal(renderer.nodes.length, 3); assert.equal(renderer.links.length, 2);
   controller.destroy();
 });

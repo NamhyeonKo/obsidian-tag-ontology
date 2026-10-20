@@ -106,6 +106,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 - **Search tags or aliases**: type an exact tag name or alias and press Enter. The graph expands down to that tag and selects it.
 - **Collapse all** / **Expand all**: show root tags only, or every tag and note.
 - **Fit**: fit the graph to the view.
+- **Notes** / **Related**: show or hide note nodes and dashed related links. Tags always stay visible because they form the hierarchy.
 - **Dictionary check**: list unregistered and unused tags.
 - **Layout**: Force, Tree or Radial.
 - Click a tag to expand it and open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. Clicking an expanded tag only reopens the panel. Use **Collapse children and notes** in the panel to collapse it.

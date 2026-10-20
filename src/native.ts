@@ -30,6 +30,7 @@ interface Session {
   kinds: Map<string, GraphEdge['kind']>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   selected?: string; texture?: Texture; layout?: string;
+  showNotes: boolean; showRelated: boolean;
   fitFrame?: number; stopFit: () => void;
 }
 
@@ -60,6 +61,7 @@ export class NativeGraphs {
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
         click: r.onNodeClick, expanded: new Set(), tools, panel, status, kinds: new Map(), links: new Map(), stopFit: () => {},
+        showNotes: true, showRelated: true,
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -95,6 +97,8 @@ export class NativeGraphs {
       this.button(tools, 'Collapse all', () => { session.expanded.clear(); panel.hidden = true; this.render(session, 'roots'); });
       this.button(tools, 'Expand all', () => { session.expanded = new Set(this.owner.model!.entries.keys()); this.render(session, 'expand-all'); });
       this.button(tools, 'Fit', () => this.fit(session));
+      this.toggle(tools, 'Notes', on => { session.showNotes = on; this.render(session, 'filter'); });
+      this.toggle(tools, 'Related', on => { session.showRelated = on; this.render(session, 'filter'); });
       this.button(tools, 'Dictionary check', () => this.inventory(session));
       const select = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
       for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
@@ -126,7 +130,9 @@ export class NativeGraphs {
     const model = this.owner.model;
     if (!model || !session.active) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
-    const start = performance.now(), graph = model.visible(session.expanded);
+    const start = performance.now();
+    let graph = model.visible(session.expanded, session.showRelated);
+    if (!session.showNotes) graph = { nodes: graph.nodes.filter(n => n.kind !== 'note'), edges: graph.edges.filter(e => e.kind !== 'note') };
     const { data, kinds } = nativeData(graph), r = session.renderer;
     session.kinds = kinds;
     const result = session.original.call(r, data);
@@ -264,6 +270,13 @@ export class NativeGraphs {
   }
   private button(parent: HTMLElement, text: string, action: () => void) {
     parent.createEl('button', { text }).addEventListener('click', action);
+  }
+  private toggle(parent: HTMLElement, text: string, onChange: (on: boolean) => void) {
+    let on = true;
+    const button = parent.createEl('button', { text, cls: 'tag-ontology-toggle is-active', attr: { 'aria-pressed': 'true' } });
+    button.addEventListener('click', () => {
+      on = !on; button.toggleClass('is-active', on); button.setAttribute('aria-pressed', String(on)); onChange(on);
+    });
   }
 
   private openNote(path: string) {

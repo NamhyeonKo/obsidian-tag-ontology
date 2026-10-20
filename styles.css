@@ -33,3 +33,4 @@
 .tag-ontology-native .graph-controls .mod-color-groups { display: none; }
 .tag-ontology-native .graph-controls .mod-display .setting-item:has(input[type="checkbox"]),
 .tag-ontology-native .graph-controls .mod-display .setting-item:has(button) { display: none; }
+.tag-ontology-native .tag-ontology-toggle:not(.is-active) { color: var(--text-faint); text-decoration: line-through; }
