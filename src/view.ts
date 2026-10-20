@@ -30,7 +30,7 @@ export class OntologyView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, private plugin: TagOntologyPlugin) { super(leaf); }
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { return '태그 온톨로지'; }
+  getDisplayText() { return 'Tag ontology'; }
   getIcon() { return 'git-fork'; }
 
   async onOpen() {
@@ -39,10 +39,10 @@ export class OntologyView extends ItemView {
     root.empty();
     root.addClass('tag-ontology-view');
     this.canvas = root.createDiv('tag-ontology-canvas');
-    this.canvas.setAttribute('aria-label', '태그 온톨로지 그래프. 검색 또는 태그 클릭으로 탐색합니다.');
+    this.canvas.setAttribute('aria-label', 'Tag ontology graph. Search or click a tag to explore.');
     const tools = root.createDiv('tag-ontology-tools');
-    this.search = tools.createEl('input', { type: 'search', placeholder: '태그·별칭 찾기' });
-    this.search.setAttribute('aria-label', '태그·별칭 찾기');
+    this.search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases' });
+    this.search.setAttribute('aria-label', 'Search tags or aliases');
     this.search.setAttribute('list', 'tag-ontology-search');
     this.search.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || !this.model) return;
@@ -53,21 +53,21 @@ export class OntologyView extends ItemView {
         ?? entries.find(([tag, entry]) => tag.includes(q) || entry.aliases.some(a => a.toLowerCase().includes(q)));
       if (match) void this.selectTag(match[0]);
       else if (this.model.unregistered.has(this.search.value.trim())) this.inspectUnregistered(this.search.value.trim());
-      else new Notice('일치하는 태그가 없습니다.');
+      else new Notice('No matching tag.');
     });
-    this.inventory = tools.createEl('button', { text: '사전 대조' });
+    this.inventory = tools.createEl('button', { text: 'Dictionary check' });
     this.inventory.addEventListener('click', () => this.inspectInventory());
     const actions = root.createDiv('tag-ontology-actions');
-    this.iconButton(actions, 'scan', '그래프 맞춤', () => this.fit());
-    this.iconButton(actions, 'fold-vertical', '루트만 보기', () => { void this.collapseAll(); });
-    this.iconButton(actions, 'settings', '그래프 설정', () => {
+    this.iconButton(actions, 'scan', 'Fit graph', () => this.fit());
+    this.iconButton(actions, 'fold-vertical', 'Collapse all', () => { void this.collapseAll(); });
+    this.iconButton(actions, 'settings', 'Graph options', () => {
       this.options.hidden = !this.options.hidden;
     });
     this.options = root.createDiv('tag-ontology-options');
     this.options.hidden = true;
-    const layoutLabel = this.options.createEl('label', { text: '레이아웃' });
+    const layoutLabel = this.options.createEl('label', { text: 'Layout' });
     const select = layoutLabel.createEl('select');
-    select.setAttribute('aria-label', '레이아웃');
+    select.setAttribute('aria-label', 'Layout');
     for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) {
       select.createEl('option', { value, text });
     }
@@ -76,18 +76,18 @@ export class OntologyView extends ItemView {
       this.plugin.settings.layout = select.value as 'force' | 'tree' | 'radial';
       void this.plugin.saveSettings();
     });
-    const relatedLabel = this.options.createEl('label', { text: '연관 관계' });
+    const relatedLabel = this.options.createEl('label', { text: 'Related links' });
     const related = relatedLabel.createEl('input', { type: 'checkbox' });
     related.checked = true;
     related.addEventListener('change', () => { this.showRelated = related.checked; void this.render('related'); });
-    this.options.createEl('button', { text: '모두 펼치기' }).addEventListener('click', () => { void this.expandAll(); });
-    this.options.createEl('button', { text: '새로고침' }).addEventListener('click', () => { void this.refresh(); });
-    this.options.createEl('p', { text: '실선 화살표: 상위 → 하위\n점선: 연관\n태그를 두 번 클릭하면 펼침/접힘' });
+    this.options.createEl('button', { text: 'Expand all' }).addEventListener('click', () => { void this.expandAll(); });
+    this.options.createEl('button', { text: 'Reload' }).addEventListener('click', () => { void this.refresh(); });
+    this.options.createEl('p', { text: 'Solid arrow: parent → child\nDashed line: related\nDouble-click a tag to expand or collapse' });
     this.panel = root.createDiv('tag-ontology-panel');
     this.panel.hidden = true;
     this.status = root.createDiv('tag-ontology-status');
     this.status.setAttribute('role', 'status');
-    this.status.textContent = '사전을 불러오는 중…';
+    this.status.textContent = 'Loading dictionary…';
     // Attach the tab before waiting for the canvas's first painted frame.
     void this.refresh();
   }
@@ -127,13 +127,13 @@ export class OntologyView extends ItemView {
       this.contentEl.querySelector('datalist')?.remove();
       const choices = this.contentEl.createEl('datalist', { attr: { id: 'tag-ontology-search' } });
       for (const tag of [...model.entries.keys(), ...model.unregistered.keys()]) choices.createEl('option', { value: tag });
-      this.inventory.textContent = `사전 대조 · 미등록 ${model.unregistered.size}`;
+      this.inventory.textContent = `Dictionary check · ${model.unregistered.size} unregistered`;
       await this.render(this.metrics.length ? 'refresh' : 'initial');
       if (this.selected && model.entries.has(this.selected)) this.inspect(this.selected);
       if (this.metrics.length === 1) this.metrics[0]!.ms = performance.now() - started;
     } catch (error) {
       if (this.closed || generation !== this.generation) return;
-      this.status.textContent = `그래프를 열지 못했습니다: ${error instanceof Error ? error.message : String(error)}`;
+      this.status.textContent = `Could not open the graph: ${error instanceof Error ? error.message : String(error)}`;
       new Notice(this.status.textContent, 10000);
     }
   }
@@ -211,7 +211,7 @@ export class OntologyView extends ItemView {
       this.fit();
     });
     this.layout.run();
-    this.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} 태그 · ${graph.nodes.filter(n => n.kind === 'note').length} 노트 · 루트 ${model.roots.length}`;
+    this.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} tags · ${graph.nodes.filter(n => n.kind === 'note').length} notes · ${model.roots.length} roots`;
     await painted();
     metric.ms = performance.now() - started;
   }
@@ -253,21 +253,21 @@ export class OntologyView extends ItemView {
     this.panel.hidden = false;
     const heading = this.panel.createDiv('tag-ontology-panel-heading');
     heading.createEl('strong', { text: tag });
-    this.iconButton(heading, 'x', '태그 정보 닫기', () => { this.panel.hidden = true; });
+    this.iconButton(heading, 'x', 'Close tag details', () => { this.panel.hidden = true; });
     this.panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) this.panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
-    this.panel.createEl('button', { text: this.expanded.has(tag) ? '하위 태그·직접 노트 접기' : '하위 태그·직접 노트 펼치기' })
+    this.panel.createEl('button', { text: this.expanded.has(tag) ? 'Collapse children and notes' : 'Expand children and notes' })
       .addEventListener('click', () => { void this.toggleTag(tag); });
     const relations = this.panel.createDiv('tag-ontology-relations');
-    for (const [label, tags] of [['상위', entry.broader ?? []], ['하위', model.children.get(tag) ?? []], ['연관', entry.related ?? []]] as const) {
+    for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
       const group = relations.createEl('details');
       group.createEl('summary', { text: `${label} ${tags.length}` });
       for (const other of tags) group.createEl('button', { text: other }).addEventListener('click', () => { void this.selectTag(other); });
     }
     const counts = model.counts(tag);
-    this.panel.createEl('h4', { text: `직접 ${counts.direct}개 / 하위 포함 ${counts.rollup}개` });
-    for (const [rollup, title] of [[false, `직접 달린 노트 (${counts.direct})`], [true, `하위 포함 노트 (${counts.rollup})`]] as const) {
+    this.panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
+    for (const [rollup, title] of [[false, `Tagged notes (${counts.direct})`], [true, `Including descendants (${counts.rollup})`]] as const) {
       const details = this.panel.createEl('details');
       details.open = !rollup;
       details.createEl('summary', { text: title });
@@ -277,7 +277,7 @@ export class OntologyView extends ItemView {
         const link = item.createEl('a', { text: path.split('/').at(-1)!.slice(0, -3), href: '#', attr: { title: path } });
         link.addEventListener('click', e => { e.preventDefault(); void this.openNote(path, e.metaKey || e.ctrlKey); });
       }
-      if (!list.children.length) list.createEl('li', { text: '없음', cls: 'tag-ontology-muted' });
+      if (!list.children.length) list.createEl('li', { text: 'None', cls: 'tag-ontology-muted' });
     }
   }
 
@@ -285,16 +285,16 @@ export class OntologyView extends ItemView {
     const model = this.model;
     if (!model) return;
     this.panel.empty(); this.panel.hidden = false;
-    this.panel.createEl('strong', { text: '태그 사전 대조' });
-    this.panel.createEl('p', { text: 'Vault의 실제 사용 태그와 사전을 비교합니다. 파일을 수정하지 않습니다.' });
-    this.panel.createEl('h4', { text: `사전 미등록 ${model.unregistered.size}개` });
+    this.panel.createEl('strong', { text: 'Dictionary check' });
+    this.panel.createEl('p', { text: 'Compares tags used in the vault with the dictionary. No files are changed.' });
+    this.panel.createEl('h4', { text: `Not in dictionary (${model.unregistered.size})` });
     for (const [tag, paths] of model.unregistered) {
-      this.panel.createEl('button', { text: `${tag} · ${paths.length}개 노트`, cls: 'tag-ontology-inventory-item' })
+      this.panel.createEl('button', { text: `${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}`, cls: 'tag-ontology-inventory-item' })
         .addEventListener('click', () => this.inspectUnregistered(tag));
     }
     const unused = this.panel.createEl('details');
-    unused.createEl('summary', { text: `직접 사용 없는 사전 개념 ${model.unused.length}개` });
-    unused.createEl('p', { text: '상위 분류나 나중에 쓸 개념일 수 있습니다. 삭제 대상이라는 뜻은 아닙니다.' });
+    unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    unused.createEl('p', { text: 'These may be grouping concepts or reserved for later. Unused does not mean they should be deleted.' });
     for (const tag of model.unused) {
       unused.createEl('button', { text: tag, cls: 'tag-ontology-inventory-item' }).addEventListener('click', () => { void this.selectTag(tag); });
     }
@@ -305,22 +305,22 @@ export class OntologyView extends ItemView {
     if (!model) return;
     this.panel.empty(); this.panel.hidden = false;
     this.panel.createEl('strong', { text: tag });
-    this.panel.createEl('p', { text: '사전 미등록 태그입니다. 상위·연관 관계를 추정하거나 자동 등록하지 않습니다.' });
+    this.panel.createEl('p', { text: 'This tag is not in the dictionary. Parents and related tags are not guessed, and nothing is registered automatically.' });
     const alias = [...model.entries].find(([, entry]) => entry.aliases.some(a => a.toLowerCase() === tag.toLowerCase()));
-    if (alias) this.panel.createEl('p', { text: `사전 별칭 일치: ${alias[0]}. 노트와 사전은 그대로 유지합니다.` });
+    if (alias) this.panel.createEl('p', { text: `Matches an alias of dictionary tag ${alias[0]}. Notes and the dictionary are left unchanged.` });
     const paths = model.unregistered.get(tag) ?? [];
-    this.panel.createEl('h4', { text: `사용 노트 ${paths.length}개` });
+    this.panel.createEl('h4', { text: `Notes using it (${paths.length})` });
     const list = this.panel.createEl('ul');
     for (const path of paths) {
       const link = list.createEl('li').createEl('a', { text: path.split('/').at(-1)!.slice(0, -3), href: '#', attr: { title: path } });
       link.addEventListener('click', e => { e.preventDefault(); void this.openNote(path, e.metaKey || e.ctrlKey); });
     }
-    this.panel.createEl('button', { text: '사전 대조 목록' }).addEventListener('click', () => this.inspectInventory());
+    this.panel.createEl('button', { text: 'Back to dictionary check' }).addEventListener('click', () => this.inspectInventory());
   }
 
   private async openNote(path: string, newTab = false) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice('노트가 이동되었거나 삭제되었습니다. 새로고침해 주세요.'); return; }
+    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Run "Reload dictionary" and try again.'); return; }
     const noteLeaf = !newTab ? this.app.workspace.getLeavesOfType('markdown').at(-1) : undefined;
     await (noteLeaf ?? this.app.workspace.getLeaf('tab')).openFile(file);
   }

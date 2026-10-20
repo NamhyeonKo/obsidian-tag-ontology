@@ -28,5 +28,5 @@ test('native graph rejects collisions rather than opening a tag as a file', () =
   assert.throws(() => nativeData({ nodes: [
     { id: 'tag:a.md', label: 'a.md', kind: 'tag', tag: 'a.md', size: 0 },
     { id: 'note:#a.md', label: 'a', kind: 'note', path: '#a.md', size: 1 },
-  ], edges: [] }), /충돌/);
+  ], edges: [] }), /collision/);
 });

@@ -48,7 +48,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 
 1. In Obsidian, choose **Open folder as vault** and select `examples/sample-vault`.
 2. Install the plugin into that vault using one of the methods above.
-3. Click the **graph** ribbon icon or run **Tag Ontology: 태그 온톨로지 열기** from the command palette.
+3. Click the **graph** ribbon icon or run **Tag Ontology: Open graph** from the command palette.
 
 You should see two roots, `computer-science` and `security`. `cryptography` and `ai-security` have two parents each. The dictionary check lists `#to-read` as unregistered.
 
@@ -97,28 +97,25 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 ## Usage
 
-> The in-app UI is currently in Korean. English labels are on the [roadmap](#roadmap). This table maps the current labels:
+### Toolbar and tag panel
 
-| Label | Meaning |
-| --- | --- |
-| 태그·별칭 찾기 | Search tags and aliases (press Enter) |
-| 루트만 | Show root tags only |
-| 모두 펼치기 | Expand all tags |
-| 맞춤 | Fit graph to view |
-| 사전 대조 | Dictionary check |
-| 하위 태그·직접 노트 펼치기 / 접기 | Expand / collapse this tag's children and notes |
-| 직접 N개 / 하위 포함 N개 | N notes tagged directly / N including descendants |
+- **Search tags or aliases**: type an exact tag name or alias and press Enter. The graph expands down to that tag and selects it.
+- **Collapse all** / **Expand all**: show root tags only, or every tag and note.
+- **Fit**: fit the graph to the view.
+- **Dictionary check**: list unregistered and unused tags.
+- **Layout**: Force, Tree or Radial.
+- Click a tag to open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. **Expand children and notes** expands or collapses that tag.
 
 ### Commands
 
-- `태그 온톨로지 열기`: open the ontology in the core Graph view (reuses an open graph tab).
-- `태그 온톨로지 새로고침`: reload the dictionary and note index.
-- `태그 온톨로지 상세 뷰어 (호환 모드)`: a standalone Cytoscape-based viewer kept for compatibility. It is slower on large vaults.
+- **Open graph**: open the ontology in the core Graph view. Reuses an open graph tab.
+- **Reload dictionary**: reload the dictionary and the note index.
+- **Open compatibility viewer**: a standalone Cytoscape-based viewer kept for compatibility. It is slower on large vaults.
 
 ### Settings
 
-- **Dictionary path** (`태그 사전 경로`): a vault-relative path to a `.json` file. Paths inside `.obsidian/` or `.git/` are rejected.
-- **Layout** (`그래프 배치`): Force, Tree or Radial.
+- **Dictionary path**: a vault-relative path to a `.json` file. Paths inside `.obsidian/` or `.git/` are rejected.
+- **Layout**: Force, Tree or Radial.
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
@@ -133,15 +130,12 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 - **Desktop only.** Tested on Obsidian 1.14.4 (macOS).
 - The plugin hooks into **undocumented internals** of the core Graph view (renderer, PIXI, layout worker). A future Obsidian update may break it. If the internals look unfamiliar, the plugin detaches and leaves the core graph alone.
 - The core graph's own filters, color groups and arrow settings are hidden while the ontology is shown.
-- In **Tree** and **Radial** layouts, zooming may not respond on large graphs.
 - Labels get dense when every tag is expanded, and switching Tree/Radial on a fully expanded graph takes a moment.
 - Untested together with other plugins that patch the Graph view.
 
 ## Roadmap
 
-- English UI labels, and clearer "Roots only" / "Expand all" controls.
 - Restore core graph settings while the ontology is shown: color groups, arrows, and tag/attachment/orphan toggles.
-- Fix zoom in Tree and Radial layouts.
 
 Issues and pull requests are welcome.
 

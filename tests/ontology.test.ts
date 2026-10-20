@@ -169,7 +169,7 @@ test('rejects malformed dictionary records with an explanatory error', () => {
     { a: { description: '', aliases: null } },
     { a: { description: '', broader: [42] } },
     { a: { description: '', related: null } }, { a: { description: '', facet: true } },
-  ]) assert.throws(() => new Ontology(malformed, []), /사전|태그|문자열|배열/);
+  ]) assert.throws(() => new Ontology(malformed, []), /dictionary|Tag|string|array/);
 });
 
 test('rejects unknown broader and related references', () => {
@@ -180,11 +180,11 @@ test('rejects unknown broader and related references', () => {
 
 test('rejects self references and broader cycles', () => {
   for (const field of ['broader', 'related']) {
-    assert.throws(() => new Ontology({ a: { description: '', [field]: ['a'] } }, []), /자기|순환/);
+    assert.throws(() => new Ontology({ a: { description: '', [field]: ['a'] } }, []), /itself|Cycle/);
   }
   assert.throws(() => new Ontology({
     a: { description: '', broader: ['b'] },
     b: { description: '', broader: ['c'] },
     c: { description: '', broader: ['a'] },
-  }, []), /순환/);
+  }, []), /Cycle/);
 });

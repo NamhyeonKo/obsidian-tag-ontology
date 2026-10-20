@@ -16,10 +16,10 @@ export default class TagOntologyPlugin extends Plugin {
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(await this.loadData());
     this.registerView(VIEW_TYPE, (leaf) => new OntologyView(leaf, this));
-    this.addRibbonIcon('graph', '태그 온톨로지 열기', () => { void this.openView(); });
-    this.addCommand({ id: 'open-tag-ontology', name: '태그 온톨로지 열기', callback: () => { void this.openView(); } });
-    this.addCommand({ id: 'open-tag-ontology-detail', name: '태그 온톨로지 상세 뷰어 (호환 모드)', callback: () => { void this.openDetailView(); } });
-    this.addCommand({ id: 'refresh-tag-ontology', name: '태그 온톨로지 새로고침', callback: () => {
+    this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
+    this.addCommand({ id: 'open-tag-ontology', name: 'Open graph', callback: () => { void this.openView(); } });
+    this.addCommand({ id: 'open-tag-ontology-detail', name: 'Open compatibility viewer', callback: () => { void this.openDetailView(); } });
+    this.addCommand({ id: 'refresh-tag-ontology', name: 'Reload dictionary', callback: () => {
       void this.refreshViews();
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
@@ -40,19 +40,19 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async loadModel(): Promise<Ontology> {
-    if (!isValidDictionaryPath(this.settings.dictionaryPath)) throw new Error('사전 경로가 허용되지 않습니다.');
+    if (!isValidDictionaryPath(this.settings.dictionaryPath)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
-    if (!(file instanceof TFile)) throw new Error(`태그 사전 파일을 찾을 수 없습니다: ${this.settings.dictionaryPath}`);
+    if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
     let raw: unknown;
     try { raw = JSON.parse(await this.app.vault.cachedRead(file)); }
-    catch (error) { throw new Error(`태그 사전을 읽을 수 없습니다: ${String(error)}`); }
+    catch (error) { throw new Error(`Could not read the tag dictionary: ${String(error)}`); }
     const dictionaryMs = performance.now() - start;
     const indexStart = performance.now();
     const files = this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path));
     const notes: Note[] = files.map((note) => {
       const cache = this.app.metadataCache.getFileCache(note);
-      if (!cache) throw new Error(`메타데이터 캐시가 아직 준비되지 않았습니다: ${note.path}`);
+      if (!cache) throw new Error(`The metadata cache is not ready yet: ${note.path}`);
       const tags = [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))];
       return { path: note.path, tags };
     });
@@ -79,7 +79,7 @@ export default class TagOntologyPlugin extends Plugin {
       if (!existing) await leaf.setViewState({ type: 'graph', active: true });
       this.native.attach();
       await this.app.workspace.revealLeaf(leaf);
-    } catch (error) { new Notice(`그래프를 열지 못했습니다: ${String(error)}`); }
+    } catch (error) { new Notice(`Could not open the graph: ${String(error)}`); }
   }
 
   async openDetailView(): Promise<void> {
@@ -114,15 +114,15 @@ class OntologySettingsTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    new Setting(containerEl).setName('태그 사전 경로').setDesc('Vault 내부 JSON 파일 경로').addText((text) => {
+    new Setting(containerEl).setName('Dictionary path').setDesc('Vault-relative path to the tag dictionary JSON file.').addText((text) => {
       text.setValue(this.owner.settings.dictionaryPath).onChange(async (path) => {
-        if (!isValidDictionaryPath(path)) { new Notice('설정 폴더를 제외한 Vault 내부 JSON 경로를 입력하세요.'); return; }
+        if (!isValidDictionaryPath(path)) { new Notice('Enter a .json path inside the vault, outside the config folder.'); return; }
         this.owner.settings.dictionaryPath = path;
         await this.owner.saveSettings();
       });
     });
-    new Setting(containerEl).setName('그래프 배치').addDropdown((dropdown) => {
-      dropdown.addOptions({ force: '힘 기반', tree: '트리', radial: '방사형' })
+    new Setting(containerEl).setName('Layout').addDropdown((dropdown) => {
+      dropdown.addOptions({ force: 'Force', tree: 'Tree', radial: 'Radial' })
         .setValue(this.owner.settings.layout).onChange(async (layout) => {
           this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout });
           await this.owner.saveSettings();

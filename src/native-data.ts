@@ -13,7 +13,7 @@ export function nativeData(graph: Graph) {
   const kinds = new Map<string, GraphEdge['kind']>();
   for (const node of graph.nodes) {
     const id = node.kind === 'tag' ? '#' + node.tag : node.path!;
-    if (Object.hasOwn(data.nodes, id)) throw new Error(`내장 그래프 ID 충돌: ${id}`);
+    if (Object.hasOwn(data.nodes, id)) throw new Error(`Graph ID collision: ${id}`);
     ids.set(node.id, id);
     data.nodes[id] = { type: node.kind === 'tag' ? 'tag' : '', links: {} };
   }

@@ -50,7 +50,7 @@ export class NativeGraphs {
       const view = leaf.view as unknown as NativeView, r = view.renderer;
       if (!r || typeof r.setData !== 'function' || typeof r.onNodeClick !== 'function'
         || !r.worker || !Array.isArray(r.nodes) || !Array.isArray(r.links)) {
-        new Notice('이 Obsidian 버전의 내장 그래프를 연결할 수 없습니다. 상세 뷰어 명령을 사용하세요.');
+        new Notice('Could not attach to the core graph in this Obsidian version. Use the "Open compatibility viewer" command instead.');
         this.failed.add(leaf);
         continue;
       }
@@ -68,7 +68,7 @@ export class NativeGraphs {
         try { return this.render(session, 'update'); }
         catch (error) {
           this.failed.add(leaf); this.detach(leaf, false);
-          new Notice(`온톨로지 연결을 해제했습니다: ${String(error)}`);
+          new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
           view.update();
         }
       };
@@ -78,20 +78,20 @@ export class NativeGraphs {
         else if (type === 'tag' && this.owner.model?.entries.has(id.slice(1))) this.inspect(session, id.slice(1));
         else if (type !== 'tag') this.openNote(id);
       };
-      const search = tools.createEl('input', { type: 'search', placeholder: '태그·별칭 찾기', attr: { 'aria-label': '태그·별칭 찾기' } });
+      const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
       search.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
         const q = search.value.trim().toLowerCase();
         if (!q) return;
         const match = [...this.owner.model!.entries].find(([tag, entry]) => tag === q || entry.aliases.some(a => a.toLowerCase() === q));
-        if (!match) { new Notice('일치하는 사전 태그가 없습니다.'); return; }
+        if (!match) { new Notice('No matching dictionary tag.'); return; }
         this.reveal(session, match[0]);
       });
-      this.button(tools, '루트만', () => { session.expanded.clear(); panel.hidden = true; this.render(session, 'roots'); });
-      this.button(tools, '모두 펼치기', () => { session.expanded = new Set(this.owner.model!.entries.keys()); this.render(session, 'expand-all'); });
-      this.button(tools, '맞춤', () => this.fit(session));
-      this.button(tools, '사전 대조', () => this.inventory(session));
-      const select = tools.createEl('select', { attr: { 'aria-label': '레이아웃' } });
+      this.button(tools, 'Collapse all', () => { session.expanded.clear(); panel.hidden = true; this.render(session, 'roots'); });
+      this.button(tools, 'Expand all', () => { session.expanded = new Set(this.owner.model!.entries.keys()); this.render(session, 'expand-all'); });
+      this.button(tools, 'Fit', () => this.fit(session));
+      this.button(tools, 'Dictionary check', () => this.inventory(session));
+      const select = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
       for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
       select.value = this.owner.settings.layout;
       select.addEventListener('change', () => {
@@ -103,7 +103,7 @@ export class NativeGraphs {
       try { this.render(session, 'initial'); }
       catch (error) {
         this.failed.add(leaf); this.detach(leaf, true);
-        new Notice(`온톨로지 연결을 해제했습니다: ${String(error)}`);
+        new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
       }
     }
   }
@@ -149,7 +149,7 @@ export class NativeGraphs {
       };
       session.fitFrame = requestAnimationFrame(fitRoots);
     }
-    session.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} 태그 · ${graph.nodes.filter(n => n.kind === 'note').length} 노트 · 루트 ${model.roots.length}`;
+    session.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} tags · ${graph.nodes.filter(n => n.kind === 'note').length} notes · ${model.roots.length} roots`;
     this.metrics.push({ operation, ms: performance.now() - start, nodes: graph.nodes.length, edges: graph.edges.length, visible: document.visibilityState === 'visible' });
     this.metrics = this.metrics.slice(-50);
     return result;
@@ -214,21 +214,21 @@ export class NativeGraphs {
     const model = this.owner.model!, entry = model.entries.get(tag)!;
     session.selected = tag;
     const panel = session.panel; panel.empty(); panel.hidden = false;
-    this.button(panel, '닫기', () => { panel.hidden = true; });
+    this.button(panel, 'Close', () => { panel.hidden = true; });
     panel.createEl('h3', { text: tag }); panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
     const counts = model.counts(tag);
-    panel.createEl('h4', { text: `직접 ${counts.direct}개 / 하위 포함 ${counts.rollup}개` });
-    this.button(panel, session.expanded.has(tag) ? '하위 태그·직접 노트 접기' : '하위 태그·직접 노트 펼치기', () => {
+    panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
+    this.button(panel, session.expanded.has(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
       session.expanded.has(tag) ? session.expanded.delete(tag) : session.expanded.add(tag);
       this.render(session, 'expand:' + tag); this.inspect(session, tag);
     });
-    for (const [label, tags] of [['상위', entry.broader ?? []], ['하위', model.children.get(tag) ?? []], ['연관', entry.related ?? []]] as const) {
+    for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
       const details = panel.createEl('details'); details.createEl('summary', { text: `${label} ${tags.length}` });
       for (const other of tags) this.button(details, other, () => this.reveal(session, other));
     }
-    for (const [rollup, label] of [[false, '직접 달린 노트'], [true, '하위 포함 노트']] as const) {
+    for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
       const details = panel.createEl('details'); details.open = !rollup;
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
       this.noteLinks(details, paths);
@@ -238,15 +238,15 @@ export class NativeGraphs {
   private inventory(session: Session) {
     session.selected = undefined;
     const model = this.owner.model!, panel = session.panel; panel.empty(); panel.hidden = false;
-    this.button(panel, '닫기', () => { panel.hidden = true; });
-    panel.createEl('h3', { text: `사전 미등록 ${model.unregistered.size}개` });
-    panel.createEl('p', { text: 'Vault 전체의 사용 태그를 대조합니다. 자동 등록·수정·삭제하지 않습니다.' });
+    this.button(panel, 'Close', () => { panel.hidden = true; });
+    panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
+    panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.createEl('summary', { text: `${tag} · ${paths.length}개 노트` });
+      const details = panel.createEl('details'); details.createEl('summary', { text: `${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
       this.noteLinks(details, paths);
     }
-    const unused = panel.createEl('details'); unused.createEl('summary', { text: `직접 사용 없는 사전 개념 ${model.unused.length}개` });
-    unused.createEl('p', { text: '분류용 개념일 수 있으며 삭제 대상이라는 뜻은 아닙니다.' });
+    const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
     for (const tag of model.unused) this.button(unused, tag, () => this.reveal(session, tag));
   }
 
@@ -263,8 +263,8 @@ export class NativeGraphs {
 
   private openNote(path: string) {
     const file = this.owner.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice('노트가 이동되었거나 삭제되었습니다. 새로고침해 주세요.'); return; }
-    void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`노트를 열지 못했습니다: ${String(error)}`));
+    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Run "Reload dictionary" and try again.'); return; }
+    void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));
   }
 
   private fit(session: Session) {

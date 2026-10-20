@@ -26,7 +26,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringList(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`${field}: 문자열 배열이 필요합니다.`);
+    throw new Error(`${field}: expected an array of strings.`);
   }
   return [...new Set(value)];
 }
@@ -40,11 +40,11 @@ export class Ontology {
   unused: string[] = [];
 
   constructor(raw: unknown, notes: Note[]) {
-    if (!isRecord(raw)) throw new Error('태그 사전은 객체여야 합니다.');
+    if (!isRecord(raw)) throw new Error('The tag dictionary must be a JSON object.');
     for (const tag of Object.keys(raw).sort()) {
       const value = raw[tag];
       if (!isRecord(value) || typeof value.description !== 'string') {
-        throw new Error(`태그 ${tag}: 객체와 문자열 description이 필요합니다.`);
+        throw new Error(`Tag ${tag}: expected an object with a string description.`);
       }
       const entry: Entry = {
         description: value.description,
@@ -54,7 +54,7 @@ export class Ontology {
         if (Object.hasOwn(value, key)) entry[key] = stringList(value[key], `${tag}.${key}`);
       }
       if (Object.hasOwn(value, 'facet')) {
-        if (typeof value.facet !== 'string') throw new Error(`${tag}.facet: 문자열이 필요합니다.`);
+        if (typeof value.facet !== 'string') throw new Error(`${tag}.facet: expected a string.`);
         entry.facet = value.facet;
       }
       this.entries.set(tag, entry);
@@ -63,8 +63,8 @@ export class Ontology {
     for (const [tag, entry] of this.entries) {
       for (const key of ['broader', 'related'] as const) {
         for (const target of entry[key] ?? []) {
-          if (!this.entries.has(target)) throw new Error(`${tag}.${key}: 없는 태그 ${target}`);
-          if (target === tag) throw new Error(`${tag}.${key}: 자기 참조는 허용하지 않습니다.`);
+          if (!this.entries.has(target)) throw new Error(`${tag}.${key}: unknown tag ${target}`);
+          if (target === tag) throw new Error(`${tag}.${key}: a tag cannot reference itself.`);
           if (key === 'broader') this.children.get(target)!.push(tag);
         }
       }
@@ -80,7 +80,7 @@ export class Ontology {
       }
     }
     if (queue.length !== this.entries.size) {
-      throw new Error(`broader 순환 관계: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
+      throw new Error(`Cycle in broader relations: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
     }
     const paths = new Map<string, Set<string>>();
     for (const note of notes) {

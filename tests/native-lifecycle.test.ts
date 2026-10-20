@@ -80,7 +80,7 @@ test('native session restores callbacks and lazy textures without breaking a lat
   owner.model = new Ontology({ a: { description: '', broader: [] }, b: { description: '', broader: ['a'] } }, []);
   controller.refresh();
   (renderer.onNodeClick as Function)({}, '#a', 'tag');
-  contentEl.all().find(el => el.text === '하위 태그·직접 노트 펼치기')!.events.get('click')!();
+  contentEl.all().find(el => el.text === 'Expand children and notes')!.events.get('click')!();
   expectedArrow = true; link.render();
   assert.equal(line.texture, nativeTexture, 'changing related to broader restores a solid line');
   const ours = renderer.setData;
