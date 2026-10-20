@@ -5,3 +5,4 @@ validation/
 data.json
 .DS_Store
 examples/sample-vault/.obsidian/
+assets/*.mov
