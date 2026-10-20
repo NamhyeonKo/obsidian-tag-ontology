@@ -1,0 +1,66 @@
+{
+  "computer-science": {
+    "aliases": ["CS"],
+    "description": "The study of computation, information and automation.",
+    "broader": []
+  },
+  "security": {
+    "aliases": ["infosec", "information security"],
+    "description": "Protecting systems and data from unauthorized access and damage.",
+    "broader": []
+  },
+  "programming": {
+    "aliases": [],
+    "description": "Writing instructions that computers can execute.",
+    "broader": ["computer-science"]
+  },
+  "python": {
+    "aliases": ["Python 3"],
+    "description": "A general-purpose, dynamically typed programming language.",
+    "broader": ["programming"],
+    "related": ["machine-learning"],
+    "facet": "language"
+  },
+  "machine-learning": {
+    "aliases": ["ML"],
+    "description": "Algorithms that improve at a task by learning from data.",
+    "broader": ["computer-science"]
+  },
+  "deep-learning": {
+    "aliases": ["DL"],
+    "description": "Machine learning with multi-layer neural networks.",
+    "broader": ["machine-learning"]
+  },
+  "overfitting": {
+    "aliases": [],
+    "description": "A model fits its training data too closely and generalizes poorly.",
+    "broader": ["machine-learning"]
+  },
+  "dropout": {
+    "aliases": [],
+    "description": "Randomly disabling units during training to reduce overfitting.",
+    "broader": ["deep-learning"],
+    "related": ["overfitting"],
+    "facet": "technique"
+  },
+  "cryptography": {
+    "aliases": ["crypto"],
+    "description": "Techniques for secure communication in the presence of adversaries.",
+    "broader": ["security", "computer-science"]
+  },
+  "aes": {
+    "aliases": ["Advanced Encryption Standard"],
+    "description": "A symmetric block cipher standardized by NIST.",
+    "broader": ["cryptography"]
+  },
+  "ai-security": {
+    "aliases": [],
+    "description": "Threats to and defenses for machine learning systems.",
+    "broader": ["security", "machine-learning"]
+  },
+  "prompt-injection": {
+    "aliases": [],
+    "description": "Crafted input that overrides an LLM's intended instructions.",
+    "broader": ["ai-security"]
+  }
+}

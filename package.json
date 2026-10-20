@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-tag-ontology",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules --test tests/*.test.ts",
+    "test:vault": "node --experimental-vm-modules --test tests/integration/*.test.ts",
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "cytoscape": "3.34.4",
+    "cytoscape-d3-force": "1.1.4"
+  },
+  "devDependencies": {
+    "@types/cytoscape": "3.21.9",
+    "@types/node": "22.20.5",
+    "esbuild": "0.25.5",
+    "obsidian": "1.14.4",
+    "typescript": "5.8.3"
+  }
+}
