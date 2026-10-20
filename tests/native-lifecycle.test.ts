@@ -24,9 +24,8 @@ type Controller = { attach(): void; refresh(): void; destroy(): void };
 
 async function loadNative(globals: object, hierarchyPositions: (...args: unknown[]) => Map<string, { x: number; y: number }>) {
   const context = createContext({
-    performance, devicePixelRatio: 1,
-    document: { visibilityState: 'visible', createElement: () => ({ getContext: () => ({ fillRect() {} }) }) },
-    ...globals,
+    performance, devicePixelRatio: 1, window: globals,
+    document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });

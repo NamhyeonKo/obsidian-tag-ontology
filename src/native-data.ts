@@ -20,8 +20,8 @@ export function nativeData(graph: Graph) {
   for (const edge of graph.edges) {
     const source = ids.get(edge.source)!, target = ids.get(edge.target)!;
     const key = edgeKey(source, target);
-    if (!data.nodes[source]!.links[target]) data.numLinks++;
-    data.nodes[source]!.links[target] = true;
+    if (!data.nodes[source].links[target]) data.numLinks++;
+    data.nodes[source].links[target] = true;
     if (!kinds.has(key) || edge.kind === 'broader') kinds.set(key, edge.kind);
   }
   return { data, kinds };

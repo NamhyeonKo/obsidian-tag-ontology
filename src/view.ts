@@ -1,6 +1,6 @@
 import { ItemView, Notice, TFile, setIcon } from 'obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
-import type { Core, Layouts, EventObject, NodeSingular } from 'cytoscape';
+import type { Layouts, EventObject, NodeSingular } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
 import { createGraph } from './renderer.ts';
 import { forceLayoutOptions } from './layout.ts';
@@ -8,7 +8,7 @@ import type { GraphHandle } from './renderer.ts';
 import type { Ontology } from './ontology.ts';
 
 export const VIEW_TYPE = 'tag-ontology';
-const painted = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+const painted = () => new Promise<void>(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
 
 export class OntologyView extends ItemView {
   private handle?: GraphHandle;
@@ -82,7 +82,7 @@ export class OntologyView extends ItemView {
     related.addEventListener('change', () => { this.showRelated = related.checked; void this.render('related'); });
     this.options.createEl('button', { text: 'Expand all' }).addEventListener('click', () => { void this.expandAll(); });
     this.options.createEl('button', { text: 'Reload' }).addEventListener('click', () => { void this.refresh(); });
-    this.options.createEl('p', { text: 'Solid arrow: parent → child\nDashed line: related\nDouble-click a tag to expand or collapse' });
+    this.options.createEl('p', { text: 'Solid arrows point from parent to child, dashed lines show related tags. Double-click a tag to expand or collapse it.' });
     this.panel = root.createDiv('tag-ontology-panel');
     this.panel.hidden = true;
     this.status = root.createDiv('tag-ontology-status');
@@ -105,10 +105,10 @@ export class OntologyView extends ItemView {
         this.style();
         handle.cy.on('tap', 'node', (e: EventObject) => {
           const node = e.target as NodeSingular;
-          if (node.data('kind') === 'note') void this.openNote(node.data('path'), !!e.originalEvent?.metaKey || !!e.originalEvent?.ctrlKey);
-          else void this.selectTag(node.data('tag'));
+          if (node.data('kind') === 'note') void this.openNote(node.data('path') as string, !!e.originalEvent?.metaKey || !!e.originalEvent?.ctrlKey);
+          else void this.selectTag(node.data('tag') as string);
         });
-        handle.cy.on('dbltap', 'node[kind = "tag"]', (e: EventObject) => { void this.toggleTag(e.target.data('tag')); });
+        handle.cy.on('dbltap', 'node[kind = "tag"]', (e: EventObject) => { void this.toggleTag((e.target as NodeSingular).data('tag') as string); });
         handle.cy.on('mouseover', 'node', (e: EventObject) => {
           const n = e.target as NodeSingular;
           handle.cy.elements().not(n.closedNeighborhood()).addClass('muted');
@@ -130,7 +130,7 @@ export class OntologyView extends ItemView {
       this.inventory.textContent = `Dictionary check · ${model.unregistered.size} unregistered`;
       await this.render(this.metrics.length ? 'refresh' : 'initial');
       if (this.selected && model.entries.has(this.selected)) this.inspect(this.selected);
-      if (this.metrics.length === 1) this.metrics[0]!.ms = performance.now() - started;
+      if (this.metrics.length === 1) this.metrics[0].ms = performance.now() - started;
     } catch (error) {
       if (this.closed || generation !== this.generation) return;
       this.status.textContent = `Could not open the graph: ${error instanceof Error ? error.message : String(error)}`;
@@ -320,7 +320,7 @@ export class OntologyView extends ItemView {
 
   private async openNote(path: string, newTab = false) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Run "Reload dictionary" and try again.'); return; }
+    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Reload the dictionary and try again.'); return; }
     const noteLeaf = !newTab ? this.app.workspace.getLeavesOfType('markdown').at(-1) : undefined;
     await (noteLeaf ?? this.app.workspace.getLeaf('tab')).openFile(file);
   }

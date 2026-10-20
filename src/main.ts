@@ -11,15 +11,15 @@ export default class TagOntologyPlugin extends Plugin {
   model?: Ontology;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
-  private refreshTimer?: ReturnType<typeof setTimeout>;
+  private refreshTimer?: number;
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(await this.loadData());
     this.registerView(VIEW_TYPE, (leaf) => new OntologyView(leaf, this));
     this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
-    this.addCommand({ id: 'open-tag-ontology', name: 'Open graph', callback: () => { void this.openView(); } });
-    this.addCommand({ id: 'open-tag-ontology-detail', name: 'Open compatibility viewer', callback: () => { void this.openDetailView(); } });
-    this.addCommand({ id: 'refresh-tag-ontology', name: 'Reload dictionary', callback: () => {
+    this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
+    this.addCommand({ id: 'open-compatibility-viewer', name: 'Open compatibility viewer', callback: () => { void this.openDetailView(); } });
+    this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews();
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
@@ -90,8 +90,8 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   private scheduleRefresh(): void {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.refreshTimer = setTimeout(() => { this.refreshTimer = undefined; void this.refreshViews(); }, 300);
+    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => { this.refreshTimer = undefined; void this.refreshViews(); }, 300);
   }
 
   private async refreshViews(): Promise<void> {
@@ -103,7 +103,7 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   onunload(): void {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.native.destroy();
   }
 }

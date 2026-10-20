@@ -7,11 +7,11 @@ import type { Graph, GraphEdge } from './ontology.ts';
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
   source: { id: string }; target: { id: string };
-  line?: { texture: Texture }; render(): void;
+  line?: { texture: Texture }; render: () => void;
 }
 interface NativeRenderer {
-  setData(data: NativeData): unknown;
-  onNodeClick(event: MouseEvent, id: string, type: string): void;
+  setData: (data: NativeData) => unknown;
+  onNodeClick: (event: MouseEvent, id: string, type: string) => void;
   changed(): void; resetPan(): void;
   width: number; height: number; targetScale: number;
   setScale(scale: number): void; setPan(x: number, y: number): void;
@@ -50,7 +50,7 @@ export class NativeGraphs {
       const view = leaf.view as unknown as NativeView, r = view.renderer;
       if (!r || typeof r.setData !== 'function' || typeof r.onNodeClick !== 'function'
         || !r.worker || !Array.isArray(r.nodes) || !Array.isArray(r.links)) {
-        new Notice('Could not attach to the core graph in this Obsidian version. Use the "Open compatibility viewer" command instead.');
+        new Notice('Could not attach to the core graph in this Obsidian version. Use the compatibility viewer command instead.');
         this.failed.add(leaf);
         continue;
       }
@@ -61,7 +61,7 @@ export class NativeGraphs {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
         click: r.onNodeClick, expanded: new Set(), tools, panel, status, kinds: new Map(), links: new Map(), stopFit: () => {},
       };
-      session.stopFit = () => { if (session.fitFrame !== undefined) cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
+      session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
@@ -145,9 +145,9 @@ export class NativeGraphs {
       const fitRoots = () => {
         if (!session.active) return;
         this.fit(session);
-        session.fitFrame = performance.now() - started < 2000 ? requestAnimationFrame(fitRoots) : undefined;
+        session.fitFrame = performance.now() - started < 2000 ? window.requestAnimationFrame(fitRoots) : undefined;
       };
-      session.fitFrame = requestAnimationFrame(fitRoots);
+      session.fitFrame = window.requestAnimationFrame(fitRoots);
     }
     session.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} tags · ${graph.nodes.filter(n => n.kind === 'note').length} notes · ${model.roots.length} roots`;
     this.metrics.push({ operation, ms: performance.now() - start, nodes: graph.nodes.length, edges: graph.edges.length, visible: document.visibilityState === 'visible' });
@@ -167,7 +167,7 @@ export class NativeGraphs {
         const kind = session.kinds.get(edgeKey(link.source.id, link.target.id));
         if (link.line && kind === 'related') {
           if (!session.texture) {
-            const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 2;
+            const canvas = createEl('canvas', { attr: { width: 256, height: 2 } });
             const ctx = canvas.getContext('2d')!; ctx.fillStyle = 'white';
             for (let x = 0; x < 256; x += 16) ctx.fillRect(x, 0, 9, 2);
             session.texture = link.line.texture.constructor.from(canvas);
@@ -263,7 +263,7 @@ export class NativeGraphs {
 
   private openNote(path: string) {
     const file = this.owner.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Run "Reload dictionary" and try again.'); return; }
+    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Reload the dictionary and try again.'); return; }
     void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));
   }
 

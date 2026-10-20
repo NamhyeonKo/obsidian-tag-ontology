@@ -28,7 +28,7 @@ function stringList(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new Error(`${field}: expected an array of strings.`);
   }
-  return [...new Set(value)];
+  return [...new Set(value as string[])];
 }
 
 export class Ontology {
@@ -73,7 +73,7 @@ export class Ontology {
     const pending = new Map([...this.entries].map(([tag, entry]) => [tag, entry.broader?.length ?? 0]));
     const queue = [...pending].filter(([, degree]) => degree === 0).map(([tag]) => tag);
     for (let index = 0; index < queue.length; index++) {
-      for (const child of this.children.get(queue[index]!)!) {
+      for (const child of this.children.get(queue[index])!) {
         const degree = pending.get(child)! - 1;
         pending.set(child, degree);
         if (degree === 0) queue.push(child);
@@ -101,7 +101,7 @@ export class Ontology {
     const found = new Set<string>();
     const queue = [tag];
     for (let index = 0; index < queue.length; index++) {
-      for (const child of this.children.get(queue[index]!) ?? []) {
+      for (const child of this.children.get(queue[index]) ?? []) {
         if (!found.has(child)) { found.add(child); queue.push(child); }
       }
     }
@@ -121,7 +121,7 @@ export class Ontology {
     const tags = new Set(this.roots);
     const queue = [...tags];
     for (let index = 0; index < queue.length; index++) {
-      const tag = queue[index]!;
+      const tag = queue[index];
       if (!expanded.has(tag)) continue;
       for (const child of this.children.get(tag) ?? []) {
         if (!tags.has(child)) { tags.add(child); queue.push(child); }
