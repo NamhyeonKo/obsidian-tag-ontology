@@ -161,6 +161,7 @@ Node.js **22.18 이상**이 필요합니다. 테스트가 Node의 내장 타입 
 
 ```sh
 npm ci
+npm run lint        # Obsidian 심사 규칙 검사 (eslint-plugin-obsidianmd)
 npm test            # 단위 테스트, vault 불필요
 npm run build       # 타입 검사 후 main.js로 번들
 npm run deploy -- "/path/to/vault"   # main.js, manifest.json, styles.css를 vault에 복사

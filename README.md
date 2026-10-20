@@ -160,6 +160,7 @@ Requires Node.js **22.18 or later**. The tests run TypeScript directly with Node
 
 ```sh
 npm ci
+npm run lint        # Obsidian review rules (eslint-plugin-obsidianmd)
 npm test            # unit tests, no vault needed
 npm run build       # type-check + bundle to main.js
 npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css into the vault
