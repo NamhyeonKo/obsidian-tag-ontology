@@ -7,13 +7,6 @@ export interface Entry {
 }
 
 export interface Note { path: string; tags: string[] }
-export interface GraphNode {
-  id: string; label: string; kind: 'tag' | 'note'; tag?: string; path?: string; size: number;
-}
-export interface GraphEdge {
-  id: string; source: string; target: string; kind: 'broader' | 'related' | 'note';
-}
-export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export function isIncludedNote(path: string): boolean {
   return path.endsWith('.md')
@@ -115,47 +108,5 @@ export class Ontology {
 
   counts(tag: string): { direct: number; rollup: number } {
     return { direct: this.direct.get(tag)?.length ?? 0, rollup: this.notesFor(tag, true).length };
-  }
-
-  visible(expanded: Set<string>, showRelated = true): Graph {
-    const tags = new Set(this.roots);
-    const queue = [...tags];
-    for (let index = 0; index < queue.length; index++) {
-      const tag = queue[index];
-      if (!expanded.has(tag)) continue;
-      for (const child of this.children.get(tag) ?? []) {
-        if (!tags.has(child)) { tags.add(child); queue.push(child); }
-      }
-    }
-    const nodes = new Map<string, GraphNode>();
-    const edges = new Map<string, GraphEdge>();
-    const addEdge = (kind: GraphEdge['kind'], source: string, target: string) => {
-      const id = 'edge:' + JSON.stringify([kind, source, target]);
-      edges.set(id, { id, source, target, kind });
-    };
-    for (const tag of tags) {
-      const id = 'tag:' + tag;
-      nodes.set(id, { id, label: tag, kind: 'tag', tag, size: this.counts(tag).rollup });
-    }
-    for (const tag of tags) {
-      const entry = this.entries.get(tag)!;
-      for (const parent of entry.broader ?? []) {
-        if (tags.has(parent)) addEdge('broader', 'tag:' + parent, 'tag:' + tag);
-      }
-      if (showRelated) {
-        for (const related of entry.related ?? []) {
-          if (!tags.has(related)) continue;
-          const [source, target] = [tag, related].sort();
-          addEdge('related', 'tag:' + source, 'tag:' + target);
-        }
-      }
-      if (!expanded.has(tag)) continue;
-      for (const path of this.direct.get(tag) ?? []) {
-        const id = 'note:' + path;
-        nodes.set(id, { id, label: path.split('/').at(-1)!.slice(0, -3), kind: 'note', path, size: 1 });
-        addEdge('note', 'tag:' + tag, id);
-      }
-    }
-    return { nodes: [...nodes.values()], edges: [...edges.values()] };
   }
 }

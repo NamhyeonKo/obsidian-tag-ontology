@@ -23,8 +23,6 @@ const notes = [
   { path: '03_Resources/Alias.md', tags: ['루트', 'missing', '#root'] },
 ];
 const make = () => new Ontology(raw, notes);
-const nodeIds = (model: Ontology, expanded: string[]) =>
-  model.visible(new Set(expanded)).nodes.map((node) => node.id).sort();
 
 test('counts unique note paths through a multi-parent hierarchy', () => {
   const model = make();
@@ -74,9 +72,6 @@ test('reports unregistered tags exactly as used without resolving aliases or add
   ]));
   assert.deepEqual([...model.direct.keys()], ['leaf', 'left', 'right', 'root', 'tip', 'unplaced']);
   assert.deepEqual(model.notesFor('root', true), []);
-  assert.deepEqual(nodeIds(model, ['root', 'left', 'right', 'leaf', 'tip']), [
-    'tag:leaf', 'tag:left', 'tag:right', 'tag:root', 'tag:tip',
-  ]);
 });
 
 test('reports tags without direct notes as unused, including roots with rollup usage', () => {
@@ -95,71 +90,6 @@ test('shows explicit roots and keeps unplaced entries separate', () => {
   assert.deepEqual(model.roots, ['root']);
   assert.equal(model.entries.has('unplaced'), true);
   assert.deepEqual(model.entries.get('left')?.aliases, []);
-  assert.deepEqual(nodeIds(model, []), ['tag:root']);
-  assert.deepEqual(nodeIds(model, ['root']), [
-    'note:01_Projects/Root.md', 'tag:left', 'tag:right', 'tag:root',
-  ]);
-});
-
-test('expanding a leaf adds its directly tagged notes', () => {
-  const graph = new Ontology({ leaf: { description: '', broader: [] } }, [
-    { path: '03_Resources/Leaf.md', tags: ['leaf'] },
-  ]).visible(new Set(['leaf']));
-  assert.deepEqual(graph.nodes.map((node) => node.id), ['tag:leaf', 'note:03_Resources/Leaf.md']);
-  assert.equal(graph.nodes[1]?.label, 'Leaf');
-  assert.equal(graph.edges.length, 1);
-  assert.equal(graph.edges[0]?.kind, 'note');
-});
-
-test('expansion reveals one level and preserves children reachable from another parent', () => {
-  const model = make();
-  assert.deepEqual(nodeIds(model, ['root', 'left']), [
-    'note:01_Projects/Root.md', 'note:03_Resources/Shared.md',
-    'tag:leaf', 'tag:left', 'tag:right', 'tag:root',
-  ]);
-  const collapsedLeft = nodeIds(model, ['root', 'right']);
-  assert.ok(collapsedLeft.includes('tag:leaf'));
-  assert.ok(!collapsedLeft.includes('tag:tip'));
-  assert.ok(!collapsedLeft.includes('note:03_Resources/Shared.md'));
-  assert.deepEqual(nodeIds(model, ['left', 'leaf']), ['tag:root']);
-});
-
-test('includes all broader edges among visible tags and deduplicates note nodes', () => {
-  const graph = make().visible(new Set(['root', 'left', 'right', 'leaf']));
-  const broader = graph.edges.filter((edge) => edge.kind === 'broader')
-    .map((edge) => [edge.source, edge.target]).sort();
-  assert.deepEqual(broader, [
-    ['tag:leaf', 'tag:tip'], ['tag:left', 'tag:leaf'], ['tag:right', 'tag:leaf'],
-    ['tag:root', 'tag:left'], ['tag:root', 'tag:right'],
-  ]);
-  assert.equal(graph.nodes.filter((node) => node.id === 'note:03_Resources/Shared.md').length, 1);
-  assert.equal(graph.nodes.find((node) => node.id === 'tag:root')?.size, 8);
-  assert.equal(new Set(graph.edges.map((edge) => edge.id)).size, graph.edges.length);
-});
-
-test('one-sided and symmetric related declarations produce one optional edge', () => {
-  const model = make();
-  assert.equal(model.visible(new Set()).edges.length, 0);
-  const expanded = new Set(['root']);
-  assert.equal(model.visible(expanded).edges.filter((edge) => edge.kind === 'related').length, 1);
-  assert.equal(model.visible(expanded, false).edges.filter((edge) => edge.kind === 'related').length, 0);
-  const symmetric = new Ontology({
-    a: { description: '', broader: [], related: ['b'] },
-    b: { description: '', broader: [], related: ['a'] },
-  }, []);
-  assert.equal(symmetric.visible(new Set()).edges.filter((edge) => edge.kind === 'related').length, 1);
-});
-
-test('edge IDs do not collide for tags or note paths containing separators', () => {
-  const model = new Ontology({
-    a: { description: '', broader: [], related: ['b:c'] },
-    'a:b': { description: '', broader: [], related: ['c'] },
-    'b:c': { description: '', broader: [] },
-    c: { description: '', broader: [] },
-  }, []);
-  const edges = model.visible(new Set()).edges;
-  assert.equal(edges.length, 2);
-  assert.equal(new Set(edges.map((edge) => edge.id)).size, 2);
 });
 
 test('rejects malformed dictionary records with an explanatory error', () => {

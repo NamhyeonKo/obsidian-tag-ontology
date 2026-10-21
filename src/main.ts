@@ -1,7 +1,6 @@
 import { Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type SettingDefinitionItem } from 'obsidian';
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
-import { OntologyView, VIEW_TYPE } from './view.ts';
 import { NativeGraphs } from './native.ts';
 
 export type { Settings } from './settings.ts';
@@ -15,10 +14,8 @@ export default class TagOntologyPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(await this.loadData(), this.app.vault.configDir);
-    this.registerView(VIEW_TYPE, (leaf) => new OntologyView(leaf, this));
     this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
-    this.addCommand({ id: 'open-compatibility-viewer', name: 'Open compatibility viewer', callback: () => { void this.openDetailView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews();
     } });
@@ -34,9 +31,6 @@ export default class TagOntologyPlugin extends Plugin {
       if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh();
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
-    this.registerEvent(this.app.metadataCache.on('resolved', () => {
-      if (this.app.workspace.getLeavesOfType(VIEW_TYPE).length) this.scheduleRefresh();
-    }));
   }
 
   async loadModel(): Promise<Ontology> {
@@ -87,13 +81,6 @@ export default class TagOntologyPlugin extends Plugin {
     } catch (error) { new Notice(`Could not open the graph: ${String(error)}`); }
   }
 
-  async openDetailView(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    const leaf = existing ?? this.app.workspace.getLeaf('tab');
-    if (!existing) await leaf.setViewState({ type: VIEW_TYPE, active: true });
-    await this.app.workspace.revealLeaf(leaf);
-  }
-
   private scheduleRefresh(): void {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => { this.refreshTimer = undefined; void this.refreshViews(); }, 300);
@@ -102,9 +89,6 @@ export default class TagOntologyPlugin extends Plugin {
   private async refreshViews(): Promise<void> {
     try { await this.loadModel(); this.native.refresh(); }
     catch (error) { console.error('Tag Ontology:', error); }
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
-      if (leaf.view instanceof OntologyView) await leaf.view.refresh();
-    }
   }
 
   onunload(): void {

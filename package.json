@@ -11,8 +11,7 @@
     "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
-    "cytoscape": "3.34.4",
-    "cytoscape-d3-force": "1.1.4"
+    "cytoscape": "3.34.4"
   },
   "devDependencies": {
     "@types/cytoscape": "3.21.9",
