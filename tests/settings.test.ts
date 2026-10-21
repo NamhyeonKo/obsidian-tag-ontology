@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SETTINGS, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
 
-test('sanitizes saved settings to the two supported fields', () => {
-  assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', notes: ['private'] }, '.obsidian'), {
-    dictionaryPath: '03_Resources/tags.json', layout: 'tree',
+test('sanitizes saved settings to the supported fields', () => {
+  assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
+    showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
+    dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
   });
-  for (const raw of [null, [], 'text', { dictionaryPath: '../tags.json', layout: 'invalid' }]) {
-    assert.deepEqual(sanitizeSettings(raw, '.obsidian'), { dictionaryPath: 'Tag-Dictionary.json', layout: 'force' });
+  for (const raw of [null, [], 'text', { dictionaryPath: '../tags.json', layout: 'invalid', expanded: 'cs' }]) {
+    assert.deepEqual(sanitizeSettings(raw, '.obsidian'), DEFAULT_SETTINGS);
   }
   assert.deepEqual(sanitizeSettings({ layout: 'radial' }, '.obsidian'), { ...DEFAULT_SETTINGS, layout: 'radial' });
 });
