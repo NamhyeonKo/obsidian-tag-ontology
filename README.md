@@ -10,6 +10,8 @@ Tag Ontology adds your **tag hierarchy** to Obsidian's core **Graph view**. You 
 
 It is **read-only**. It never edits your notes or your dictionary.
 
+> **To start:** open the graph settings and turn on **Filters → Tags**. The hierarchy appears as soon as tag nodes are shown.
+
 ![Tag Ontology demo](assets/demo.gif)
 
 ## Features
@@ -69,7 +71,7 @@ You should see two roots, `computer-science` and `security`, with the six notes 
 
 By default the plugin reads `Tag-Dictionary.json` at the vault root. You can change the path in the plugin settings.
 
-The file is a single JSON object. Each key is a tag **without `#`**, written exactly as it appears in your notes (matching is case-sensitive, so lowercase keys are recommended). A nested tag such as `#lang/python` uses the key `lang/python`.
+The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
 
 ```json
 {
