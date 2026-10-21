@@ -82,3 +82,17 @@ test('buildLayer passes numLinks through and leaves the input untouched', () => 
   const input = core(), out = buildLayer(input, model, { expanded: new Set(), showNotes: true, showRelated: true });
   assert.equal(out.data.numLinks, 5); assert.deepEqual(input, core());
 });
+
+test('an unplaced parent of a placed tag stays outside the hierarchy', () => {
+  const withHybrid = new Ontology({
+    cs: { description: '', broader: [] }, loose: { description: '' },
+    hybrid: { description: '', broader: ['cs', 'loose'] },
+  }, []);
+  const input: NativeData = { numLinks: 0, nodes: {
+    'A.md': { type: '', links: { '#hybrid': true, '#loose': true } },
+    '#hybrid': { type: 'tag', links: {} }, '#loose': { type: 'tag', links: {} },
+  } };
+  const r = resolveTags(withHybrid, input, new Set());
+  assert.ok(!r.range.has('loose')); assert.ok(!r.idOf.has('loose'));
+  assert.deepEqual(applyCollapse(input, r, withHybrid).nodes['A.md']!.links, { '#cs': true, '#loose': true });
+});
