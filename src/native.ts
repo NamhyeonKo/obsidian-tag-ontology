@@ -196,8 +196,10 @@ export class NativeGraphs {
   private staticLayout(session: Session, graph: Graph) {
     const r = session.renderer;
     const ids = new Map(graph.nodes.map(n => [n.id, n.kind === 'tag' ? '#' + n.tag : n.path!]));
-    const positions = new Map([...hierarchyPositions(graph, this.owner.model!.roots, this.owner.settings.layout === 'radial')]
-      .map(([id, position]) => [ids.get(id)!, position]));
+    const tags = graph.nodes.filter(n => n.kind === 'tag').map(n => n.tag!);
+    const edges = graph.edges.filter(e => e.kind === 'broader').map(e => [e.source.slice(4), e.target.slice(4)] as [string, string]);
+    const positions = new Map([...hierarchyPositions(tags, edges, this.owner.model!.roots.filter(t => tags.includes(t)), this.owner.settings.layout === 'radial')]
+      .map(([tag, position]) => ['#' + tag, position]));
       r.worker.postMessage({ run: false }); r.workerResults = null;
       const parents = new Map(graph.edges.filter(e => e.kind === 'note').map(e => [ids.get(e.target)!, ids.get(e.source)!]));
       for (const [i, node] of r.nodes.entries()) {

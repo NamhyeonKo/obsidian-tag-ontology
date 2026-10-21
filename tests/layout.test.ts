@@ -3,22 +3,18 @@ import { test } from 'node:test';
 import cytoscape from 'cytoscape';
 import '../src/renderer.ts';
 import { forceLayoutOptions, hierarchyPositions } from '../src/layout.ts';
-import { Ontology } from '../src/ontology.ts';
 
-test('headless Tree and Radial use bounded pixel coordinates, excluding related edges and notes', () => {
-  const model = new Ontology({
-    root: { description: '', broader: [] },
-    mid: { description: '', broader: ['root'] },
-    leaf: { description: '', broader: ['mid'], related: ['root'] },
-  }, [{ path: 'Note.md', tags: ['leaf'] }]);
-  const graph = model.visible(new Set(model.entries.keys()));
-  const tree = hierarchyPositions(graph, model.roots, false);
-  const radial = hierarchyPositions(graph, model.roots, true);
+test('headless Tree and Radial place plain tag lists inside the layout box', () => {
+  const tags = ['root', 'a', 'b', 'leaf'];
+  const edges: [string, string][] = [['root', 'a'], ['root', 'b'], ['a', 'leaf']];
+  const tree = hierarchyPositions(tags, edges, ['root'], false);
+  const radial = hierarchyPositions(tags, edges, ['root'], true);
   for (const positions of [tree, radial]) {
-    assert.equal(positions.size, 3);
-    for (const p of positions.values()) assert.ok(Math.abs(p.x) < 1e6 && Math.abs(p.y) < 1e6, 'usable pixel coordinates');
+    assert.deepEqual([...positions.keys()].sort(), ['a', 'b', 'leaf', 'root']);
+    // breadthfirst spreads the 1200x900 box by spacingFactor 1.6.
+    for (const p of positions.values()) assert.ok(Math.abs(p.x) <= 960 && Math.abs(p.y) <= 720, JSON.stringify(p));
   }
-  assert.ok(tree.get('tag:root')!.y < tree.get('tag:leaf')!.y);
+  assert.ok(tree.get('root')!.y < tree.get('leaf')!.y);
   assert.notDeepEqual(tree, radial);
 });
 

@@ -104,7 +104,7 @@ test('native session restores callbacks and lazy textures without breaking a lat
 
 test('tree layout keeps the user zoom across native updates and refits only when the layout changes', async () => {
   const NativeGraphs = await loadNative({ requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
-    (graph: unknown) => new Map((graph as { nodes: { id: string }[] }).nodes.map((n, i) => [n.id, { x: i * 400, y: 0 }])));
+    (tags: unknown) => new Map((tags as string[]).map((tag, i) => [tag, { x: i * 400, y: 0 }])));
   const renderer = {
     nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [],
     fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
