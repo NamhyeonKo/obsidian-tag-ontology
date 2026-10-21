@@ -12,7 +12,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 > **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 한 번 자동으로 켜 드리고, 그 뒤로는 플러그인이 이 설정을 바꾸지 않습니다. 직접 껐다면 다시 켜야 계층이 보입니다.
 
-![Tag Ontology 데모](assets/demo.gif)
+![Tag Ontology 데모](assets/0.3.0/demo.gif)
 
 ## 기능
 
@@ -27,7 +27,9 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 | 태그 패널 | 사전 대조 |
 | --- | --- |
-| ![상위·하위 태그와 노트 수가 표시된 태그 패널](assets/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 보여 주는 사전 대조](assets/dictionary-check.png) |
+| ![상위·하위 태그와 노트 수가 표시된 태그 패널](assets/0.3.0/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 보여 주는 사전 대조](assets/0.3.0/dictionary-check.png) |
+| **검색 추천** | **Tree 배치** |
+| ![입력하는 동안 태그를 추천하는 검색창](assets/0.3.0/search-suggestions.png) | ![노트 없이 태그 계층만 보여 주는 Tree 배치](assets/0.3.0/tree.png) |
 
 ## 동작 방식
 
@@ -116,12 +118,20 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 UI는 영어로 표시됩니다.
 
-- **Search tags or aliases**: 태그 이름이나 별칭을 정확히 입력하고 Enter를 누르면 그 태그까지 펼쳐서 선택합니다.
-- **Collapse all** / **Expand all**: 사전 태그를 모두 루트까지 접거나, 모두 펼칩니다.
-- **Fit**: 그래프를 화면에 맞춥니다.
-- **Notes** / **Related**: 태그가 아닌 노드(노트, 첨부파일, 아직 없는 파일)를 모두 숨겨 태그 계층만 보거나, 점선 연관 관계를 숨깁니다.
-- **Dictionary check**: 사전에 없는 태그와 쓰이지 않는 태그를 보여 줍니다.
-- **Layout**: Force, Tree, Radial 중에서 고릅니다.
+- **Search tags or aliases**: 태그 이름이나 별칭의 일부를 입력하면 아래에 후보가 뜹니다. 별칭으로 맞은 후보는 태그 아래에 그 별칭이 함께 보여서, `convolution`이나 `합성곱`으로도 `cnn`을 찾을 수 있습니다. 클릭하거나 Enter로 고르면 그 태그까지 펼치고 패널을 엽니다.
+- 검색창 아래의 동그란 버튼은 커서를 올리면 이름이 보입니다.
+
+| 아이콘 | 버튼 | 하는 일 |
+| --- | --- | --- |
+| `chevrons-down-up` | Collapse all | 사전 태그를 모두 루트까지 접기 |
+| `chevrons-up-down` | Expand all | 사전 태그를 모두 펼치기 |
+| `scan` | Fit | 그래프를 화면에 맞추기 |
+| `file-text` | Notes | 태그가 아닌 노드(노트, 첨부파일, 아직 없는 파일) 보이기/숨기기 |
+| `link` | Related | 점선 연관 관계 보이기/숨기기 |
+| `book-open-check` | Dictionary check | 사전에 없는 태그와 쓰이지 않는 태그 보기 |
+| `share-2` / `network` / `orbit` | Force / Tree / Radial | 배치 바꾸기. 현재 배치가 강조됨 |
+
+- **Tree**와 **Radial**에서는 태그 관계가 잘 보이도록 노트를 항상 숨깁니다. 이때 Notes 버튼은 비활성이 되고, Force로 돌아오면 원래 Notes 설정이 다시 적용됩니다.
 - 태그를 클릭하면 펼쳐지면서 정보 패널이 열립니다. 정의, 별칭, 노트 수(직접 / 하위 포함), 상위·하위·연관 태그, 노트 목록이 표시됩니다. 이미 펼친 태그를 클릭하면 패널만 다시 열립니다. 접으려면 패널의 **Collapse children and notes**를 누릅니다.
 - 나머지는 기본 동작을 따릅니다. 노트를 클릭하면 열리고(Cmd/Ctrl+클릭은 새 탭), 사전에 없는 태그를 클릭하면 검색이 열립니다.
 - 기본 그래프는 많이 축소하면 라벨과 화살표를 숨깁니다. 확대하면 보입니다.

@@ -9,15 +9,20 @@ import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 
 class Element {
-  children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {};
+  children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   createDiv() { return this.createEl('div'); }
-  createEl(_tag: string, options?: { text?: string }) {
-    const child = new Element(); child.text = options?.text ?? ''; this.children.push(child); return child;
+  createEl(_tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
+    const child = new Element(); child.text = options?.text ?? ''; this.children.push(child);
+    for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
+    Object.assign(child.attrs, options?.attr ?? {});
+    return child;
   }
   addEventListener(event: string, fn: (event?: unknown) => void) { this.events.set(event, fn); }
   removeEventListener(event: string) { this.events.delete(event); }
-  setAttribute(name: string, value: string) { this.attrs[name] = value; } addClass() {} removeClass() {} toggleClass() {}
+  setAttribute(name: string, value: string) { this.attrs[name] = value; }
+  addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
+  toggleClass(cls: string, on: boolean) { if (on) this.classes.add(cls); else this.classes.delete(cls); }
   empty() { this.children = []; } remove() { this.removed = true; }
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
@@ -43,6 +48,7 @@ interface Link { source: { id: string }; target: { id: string }; line: { texture
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [];
+  const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
     performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
@@ -50,8 +56,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File }
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
+        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = text; } }
       : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
+      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -92,7 +100,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   };
   const controller = new NativeGraphs(owner);
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
-  const click = (text: string) => contentEl.all().find(el => el.text === text)!.events.get('click')!();
+  const click = (label: string) => contentEl.all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!();
   const search = (query: string) => {
     const input = contentEl.all().find(el => el !== contentEl && el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
@@ -103,7 +111,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites };
+  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -153,7 +161,6 @@ test('other nodes keep the core click behavior', async () => {
 test('tree layout keeps the user zoom across native updates and refits only when the layout changes', async () => {
   const t = await setup({ layout: 'tree', expanded: ['cs'] });
   t.controller.attach();
-  const layoutSelect = t.contentEl.all().find(el => el.value === 'tree')!;
   const fitted = t.renderer.scale;
   t.renderer.targetScale = t.renderer.scale = 5;
   t.renderer.setData(core());
@@ -162,16 +169,17 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
   t.owner.settings.layout = 'radial'; t.controller.refresh();
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
-  assert.equal(layoutSelect.value, 'radial', 'the toolbar shows a layout changed in settings');
+  const radial = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Radial')!;
+  assert.equal(radial.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
 });
 
 test('notes and related toggles start from settings and persist', async () => {
   const t = await setup({ showNotes: false });
   t.controller.attach();
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
-  t.click('Notes');
+  t.click('Notes: hidden');
   assert.ok(t.ids().includes('A.md')); assert.equal(t.owner.settings.showNotes, true);
-  t.click('Related');
+  t.click('Related: shown');
   assert.equal(t.owner.settings.showRelated, false); assert.equal(t.owner.saves, 2);
 });
 
@@ -185,7 +193,7 @@ test('refresh prunes expanded tags that left the dictionary', async () => {
 test('searching a tag expands it and its ancestors', async () => {
   const t = await setup();
   t.controller.attach();
-  t.search('dl');
+  t.suggests[0]!.onChoose('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.ok(t.ids().includes('#DL'));
 });
@@ -194,7 +202,7 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   const t = await setup();
   t.controller.attach();
   const before = t.ids();
-  t.search('overfitting');
+  t.suggests[0]!.onChoose('overfitting');
   assert.deepEqual(t.notices, ['Not in the current graph.']);
   assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
   assert.ok(t.contentEl.all().some(el => el.text === 'overfitting'));
@@ -219,7 +227,7 @@ test('without tag nodes from the core graph the status explains how to show the 
 test('search reveals a tag whose expanded ancestor sits under a collapsed one', async () => {
   const t = await setup({ expanded: ['ml'] });
   t.controller.attach();
-  t.search('dl');
+  t.suggests[0]!.onChoose('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.ok(t.ids().includes('#DL'));
 });
@@ -239,9 +247,9 @@ test('notes toggles stay in sync across graph tabs', async () => {
   const t = await setup();
   const second = t.addTab();
   t.controller.attach();
-  t.click('Notes');
-  const other = second.all().find(el => el.text === 'Notes')!;
-  assert.equal(other.attrs['aria-pressed'], 'false');
+  t.click('Notes: shown');
+  const other = second.all().find(el => el.attrs.icon === 'file-text')!;
+  assert.equal(other.attrs['aria-pressed'], 'false'); assert.equal(other.attrs['aria-label'], 'Notes: hidden');
   other.events.get('click')!();
   assert.equal(t.owner.settings.showNotes, true, 'one click in the other tab turns notes back on');
 });
@@ -268,4 +276,91 @@ test('an existing install never touches the core Tags filter', async () => {
   const t = await setup({}, true, false, false);
   t.controller.attach();
   assert.equal(t.graphOptions.showTags, false); assert.equal(t.optionWrites.length, 0);
+});
+
+test('choosing a suggestion reveals the tag', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.suggests[0]!.onChoose('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.ok(t.ids().includes('#DL'));
+});
+
+test('the suggestion source is the model', async () => {
+  const t = await setup();
+  t.controller.attach();
+  assert.deepEqual(t.suggests[0]!.source('d'), model.suggest('d'));
+});
+
+test('Enter with no matches shows a notice', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('zzz');
+  assert.deepEqual(t.notices, ['No matching dictionary tag.']);
+});
+
+test('toolbar uses the agreed icons and tooltips', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const icons = t.contentEl.all().filter(el => el.attrs.icon);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'orbit']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Tree', 'Layout: Radial']);
+});
+
+test('layout buttons switch the layout and mark the current one', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.click('Layout: Tree');
+  assert.equal(t.owner.settings.layout, 'tree');
+  t.controller.refresh();
+  const pressed = (label: string) => t.contentEl.all().find(el => el.attrs['aria-label'] === label)!.attrs['aria-pressed'];
+  assert.equal(pressed('Layout: Tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+});
+
+test('tree hides notes without changing the saved setting', async () => {
+  const t = await setup({ layout: 'tree', showNotes: true });
+  t.controller.attach();
+  assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
+  assert.equal(t.owner.settings.showNotes, true);
+  t.owner.settings.layout = 'force'; t.controller.refresh();
+  assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
+});
+
+test('the notes button is disabled in tree', async () => {
+  const t = await setup({ layout: 'tree', showNotes: true });
+  t.controller.attach();
+  const notes = t.contentEl.all().find(el => el.attrs.icon === 'file-text')!;
+  assert.equal(notes.attrs['aria-disabled'], 'true');
+  assert.equal(notes.attrs.tooltip, 'Notes are hidden in Tree and Radial');
+  notes.events.get('click')!();
+  assert.equal(t.owner.settings.showNotes, true); assert.equal(t.owner.saves, 0);
+});
+
+test('Enter on a matching query reveals the first suggestion when the popover is closed', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.deepEqual(t.notices, []);
+});
+
+test('Enter while an IME composition is active does not select a tag', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const input = t.contentEl.all().find(el => el !== t.contentEl && el.events.has('keydown'))!;
+  input.value = 'dl'; input.events.get('keydown')!({ key: 'Enter', isComposing: true });
+  assert.deepEqual([...t.owner.settings.expanded], []);
+  assert.equal(input.value, 'dl');
+});
+
+test('revealing a tag that left the dictionary shows a notice instead of throwing', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.click('Dictionary check');
+  t.owner.model = new Ontology({ cs: { description: '', broader: [] } }, []);
+  t.controller.refresh();
+  assert.doesNotThrow(() => t.suggests[0]!.onChoose('dl'));
+  const staleUnused = t.contentEl.all().find(el => el.text === 'overfitting')!;
+  assert.doesNotThrow(() => staleUnused.events.get('click')!());
+  assert.deepEqual(t.notices, ['That tag is no longer in the dictionary.', 'That tag is no longer in the dictionary.']);
 });

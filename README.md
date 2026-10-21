@@ -12,7 +12,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on once for you; after that the plugin never changes it, so if you turn it off, turn it back on to see the hierarchy.
 
-![Tag Ontology demo](assets/demo.gif)
+![Tag Ontology demo](assets/0.3.0/demo.gif)
 
 ## Features
 
@@ -27,7 +27,9 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 | Tag panel | Dictionary check |
 | --- | --- |
-| ![Tag panel with parents, children and note counts](assets/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/dictionary-check.png) |
+| ![Tag panel with parents, children and note counts](assets/0.3.0/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/0.3.0/dictionary-check.png) |
+| **Search suggestions** | **Tree layout** |
+| ![Search box suggesting tags while typing](assets/0.3.0/search-suggestions.png) | ![Tree layout showing the tag hierarchy without notes](assets/0.3.0/tree.png) |
 
 ## How it works
 
@@ -114,12 +116,20 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 ### Toolbar and tag panel
 
-- **Search tags or aliases**: type an exact tag name or alias and press Enter. The graph expands down to that tag and selects it.
-- **Collapse all** / **Expand all**: collapse every dictionary tag to its root, or expand them all.
-- **Fit**: fit the graph to the view.
-- **Notes** / **Related**: hide every node that is not a tag (notes, attachments, unresolved links) to see the tag hierarchy alone, or hide the dashed related links.
-- **Dictionary check**: list unregistered and unused tags.
-- **Layout**: Force, Tree or Radial.
+- **Search tags or aliases**: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag and open its panel.
+- The round buttons under the search box show their name when you hover them:
+
+| Icon | Button | What it does |
+| --- | --- | --- |
+| `chevrons-down-up` | Collapse all | Collapse every dictionary tag to its root |
+| `chevrons-up-down` | Expand all | Expand every dictionary tag |
+| `scan` | Fit | Fit the graph to the view |
+| `file-text` | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
+| `link` | Related | Show or hide the dashed related links |
+| `book-open-check` | Dictionary check | List unregistered and unused tags |
+| `share-2` / `network` / `orbit` | Force / Tree / Radial | Switch the layout; the current one is highlighted |
+
+- **Tree** and **Radial** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
 - Click a tag to expand it and open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. Clicking an expanded tag only reopens the panel. Use **Collapse children and notes** in the panel to collapse it.
 - Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 
