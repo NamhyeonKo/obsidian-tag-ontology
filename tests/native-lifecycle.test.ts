@@ -343,3 +343,24 @@ test('Enter on a matching query reveals the first suggestion when the popover is
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.deepEqual(t.notices, []);
 });
+
+test('Enter while an IME composition is active does not select a tag', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const input = t.contentEl.all().find(el => el !== t.contentEl && el.events.has('keydown'))!;
+  input.value = 'dl'; input.events.get('keydown')!({ key: 'Enter', isComposing: true });
+  assert.deepEqual([...t.owner.settings.expanded], []);
+  assert.equal(input.value, 'dl');
+});
+
+test('revealing a tag that left the dictionary shows a notice instead of throwing', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.click('Dictionary check');
+  t.owner.model = new Ontology({ cs: { description: '', broader: [] } }, []);
+  t.controller.refresh();
+  assert.doesNotThrow(() => t.suggests[0]!.onChoose('dl'));
+  const staleUnused = t.contentEl.all().find(el => el.text === 'overfitting')!;
+  assert.doesNotThrow(() => staleUnused.events.get('click')!());
+  assert.deepEqual(t.notices, ['That tag is no longer in the dictionary.', 'That tag is no longer in the dictionary.']);
+});

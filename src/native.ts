@@ -95,7 +95,8 @@ export class NativeGraphs {
       new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(session, tag));
       search.addEventListener('keydown', e => {
         // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
-        if (e.key !== 'Enter' || !search.value.trim()) return;
+        // Enter that commits an IME composition (e.g. Korean) is not a submit; Obsidian's own suggest skips it too.
+        if (e.key !== 'Enter' || e.isComposing || !search.value.trim()) return;
         const [first] = this.owner.model!.suggest(search.value);
         if (!first) { new Notice('No matching dictionary tag.'); return; }
         search.value = '';
@@ -267,6 +268,8 @@ export class NativeGraphs {
   }
 
   private reveal(session: Session, tag: string) {
+    // Suggestions and panel buttons can outlive a dictionary reload that removed the tag.
+    if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
     if (!session.resolved?.range.has(tag)) { new Notice('Not in the current graph.'); this.inspect(session, tag); return; }
     // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
     const expanded = new Set(this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
@@ -274,7 +277,7 @@ export class NativeGraphs {
       const current = pending.pop()!;
       if (seen.has(current)) continue;
       seen.add(current); expanded.add(current);
-      pending.push(...this.owner.model!.entries.get(current)?.broader ?? []);
+      pending.push(...this.owner.model.entries.get(current)?.broader ?? []);
     }
     this.update({ expanded: [...expanded] }, 'reveal'); this.inspect(session, tag);
   }
