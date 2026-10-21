@@ -10,7 +10,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 **읽기 전용**입니다. 노트와 사전 파일은 절대 수정하지 않습니다.
 
-> **시작하기:** 그래프 설정에서 **필터 → Tags**를 켜세요. 태그 노드가 보이는 순간 계층이 나타납니다.
+> **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 한 번 자동으로 켜 드리고, 그 뒤로는 플러그인이 이 설정을 바꾸지 않습니다. 직접 껐다면 다시 켜야 계층이 보입니다.
 
 ![Tag Ontology 데모](assets/demo.gif)
 
@@ -63,7 +63,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 1. Obsidian에서 **폴더를 vault로 열기**를 선택하고 `examples/sample-vault`를 고릅니다.
 2. 위 방법 중 하나로 그 vault에 플러그인을 설치합니다.
 3. 리본의 **graph** 아이콘을 누르거나, 명령 팔레트에서 **Tag Ontology: Open graph**를 실행합니다.
-4. 그래프 설정(톱니바퀴 아이콘)을 열고 **필터 → Tags**를 켭니다.
+4. 처음에는 플러그인이 **필터 → Tags**를 켜 줍니다. 태그가 보이지 않으면 그래프 설정(톱니바퀴 아이콘)에서 켭니다.
 
 루트 `computer-science`와 `security`에 노트 6개가 연결되어 있고, 미등록 태그 `#to-read`가 보이면 정상입니다. `computer-science`, `machine-learning`을 차례로 클릭하면 `Dropout` 노트가 `deep-learning`으로 옮겨 붙습니다. `cryptography`와 `ai-security`는 부모가 둘입니다.
 

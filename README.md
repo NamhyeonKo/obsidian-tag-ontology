@@ -10,7 +10,7 @@ Tag Ontology adds your **tag hierarchy** to Obsidian's core **Graph view**. You 
 
 It is **read-only**. It never edits your notes or your dictionary.
 
-> **To start:** open the graph settings and turn on **Filters → Tags**. The hierarchy appears as soon as tag nodes are shown.
+> **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on once for you; after that the plugin never changes it, so if you turn it off, turn it back on to see the hierarchy.
 
 ![Tag Ontology demo](assets/demo.gif)
 
@@ -63,7 +63,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 1. In Obsidian, choose **Open folder as vault** and select `examples/sample-vault`.
 2. Install the plugin into that vault using one of the methods above.
 3. Click the **graph** ribbon icon or run **Tag Ontology: Open graph** from the command palette.
-4. Open the graph settings (gear icon) and turn on **Filters → Tags**.
+4. The plugin turns on **Filters → Tags** the first time. If the graph shows no tags, turn it on in the graph settings (gear icon).
 
 You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
 
