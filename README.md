@@ -12,7 +12,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on once for you; after that the plugin never changes it, so if you turn it off, turn it back on to see the hierarchy.
 
-![Tag Ontology demo](assets/demo.gif)
+![Tag Ontology demo](assets/0.1.0/demo.gif)
 
 ## Features
 
@@ -27,7 +27,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 | Tag panel | Dictionary check |
 | --- | --- |
-| ![Tag panel with parents, children and note counts](assets/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/dictionary-check.png) |
+| ![Tag panel with parents, children and note counts](assets/0.1.0/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/0.1.0/dictionary-check.png) |
 
 ## How it works
 
