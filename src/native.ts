@@ -1,4 +1,4 @@
-import { Notice, TFile, type ItemView, type WorkspaceLeaf } from 'obsidian';
+import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { hierarchyPositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type Resolved } from './layer.ts';
@@ -33,11 +33,14 @@ interface Session {
   base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
   kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
-  selected?: string; texture?: Texture; layout?: string; layoutSelect?: HTMLSelectElement;
-  toggles: Partial<Record<'showNotes' | 'showRelated', HTMLElement>>;
+  selected?: string; texture?: Texture; layout?: string;
+  toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
+type ToggleKey = 'showNotes' | 'showRelated';
+const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -65,7 +68,7 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, stopFit: () => {},
+        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -94,19 +97,26 @@ export class NativeGraphs {
         // With suggestions open the popover picks the highlighted one; only a query with no match needs feedback.
         if (e.key === 'Enter' && search.value.trim() && !this.owner.model!.suggest(search.value).length) new Notice('No matching dictionary tag.');
       });
-      this.button(tools, 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
-      this.button(tools, 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
-      this.button(tools, 'Fit', () => this.fit(session));
-      session.toggles.showNotes = this.toggle(tools, 'Notes', 'showNotes');
-      session.toggles.showRelated = this.toggle(tools, 'Related', 'showRelated');
-      this.button(tools, 'Dictionary check', () => this.inventory(session));
-      const select = session.layoutSelect = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
-      for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
-      select.value = this.owner.settings.layout;
-      select.addEventListener('change', () => {
-        this.owner.settings.layout = select.value as Settings['layout'];
-        void this.owner.saveSettings();
-      });
+      // A column of round icon buttons under the search box keeps the core graph settings on the right uncovered.
+      const buttons = tools.createDiv('tag-ontology-buttons');
+      this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
+      this.iconButton(buttons, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
+      this.iconButton(buttons, 'scan', 'Fit', () => this.fit(session));
+      buttons.createDiv('tag-ontology-separator');
+      for (const [key, icon, name] of TOGGLES) {
+        session.toggles[key] = this.iconButton(buttons, icon, name, () => this.update({ [key]: !this.owner.settings[key] }, 'filter'));
+        session.toggles[key].addClass('tag-ontology-toggle');
+      }
+      buttons.createDiv('tag-ontology-separator');
+      this.iconButton(buttons, 'book-open-check', 'Dictionary check', () => this.inventory(session));
+      buttons.createDiv('tag-ontology-separator');
+      for (const [layout, icon, name] of LAYOUTS) {
+        session.layoutButtons[layout] = this.iconButton(buttons, icon, `Layout: ${name}`, () => {
+          this.owner.settings.layout = layout;
+          void this.owner.saveSettings();
+        });
+      }
+      this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
       // Obsidian ships with the Tags filter off; turn it on once for a fresh install, then leave it to the user.
@@ -164,8 +174,7 @@ export class NativeGraphs {
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
     session.layout = settings.layout;
-    if (layoutChanged && session.layoutSelect) session.layoutSelect.value = session.layout;
-    for (const [key, button] of Object.entries(session.toggles)) this.syncToggle(button, settings[key as keyof typeof session.toggles]);
+    this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') {
       session.stopFit();
@@ -313,15 +322,30 @@ export class NativeGraphs {
   private button(parent: HTMLElement, text: string, action: () => void) {
     parent.createEl('button', { text }).addEventListener('click', action);
   }
-  // Toggle state lives in the shared settings so every graph tab's button shows the same value.
-  private toggle(parent: HTMLElement, text: string, key: 'showNotes' | 'showRelated') {
-    const button = parent.createEl('button', { text, cls: 'tag-ontology-toggle' });
-    button.addEventListener('click', () => this.update({ [key]: !this.owner.settings[key] }, 'filter'));
-    this.syncToggle(button, this.owner.settings[key]);
+  private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
+    const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
+    setIcon(button, icon);
+    this.label(button, label);
+    button.addEventListener('click', action);
     return button;
   }
-  private syncToggle(button: HTMLElement, on: boolean) {
-    button.toggleClass('is-active', on); button.setAttribute('aria-pressed', String(on));
+  private label(button: HTMLElement, text: string) {
+    setTooltip(button, text, { placement: 'right' });
+    button.setAttribute('aria-label', text);
+  }
+  // Toolbar state lives in the shared settings so every graph tab shows the same values.
+  private syncToolbar(session: Session) {
+    const settings = this.owner.settings;
+    for (const [key, , name] of TOGGLES) {
+      const button = session.toggles[key];
+      if (!button) continue;
+      button.toggleClass('is-active', settings[key]); button.setAttribute('aria-pressed', String(settings[key]));
+      this.label(button, `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
+    }
+    for (const [layout] of LAYOUTS) {
+      const button = session.layoutButtons[layout];
+      button?.toggleClass('is-active', settings.layout === layout); button?.setAttribute('aria-pressed', String(settings.layout === layout));
+    }
   }
 
   private openNote(path: string) {
