@@ -316,3 +316,22 @@ test('layout buttons switch the layout and mark the current one', async () => {
   const pressed = (label: string) => t.contentEl.all().find(el => el.attrs['aria-label'] === label)!.attrs['aria-pressed'];
   assert.equal(pressed('Layout: Tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
 });
+
+test('tree hides notes without changing the saved setting', async () => {
+  const t = await setup({ layout: 'tree', showNotes: true });
+  t.controller.attach();
+  assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
+  assert.equal(t.owner.settings.showNotes, true);
+  t.owner.settings.layout = 'force'; t.controller.refresh();
+  assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
+});
+
+test('the notes button is disabled in tree', async () => {
+  const t = await setup({ layout: 'tree', showNotes: true });
+  t.controller.attach();
+  const notes = t.contentEl.all().find(el => el.attrs.icon === 'file-text')!;
+  assert.equal(notes.attrs['aria-disabled'], 'true');
+  assert.equal(notes.attrs.tooltip, 'Notes are hidden in Tree and Radial');
+  notes.events.get('click')!();
+  assert.equal(t.owner.settings.showNotes, true); assert.equal(t.owner.saves, 0);
+});

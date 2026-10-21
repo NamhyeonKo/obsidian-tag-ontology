@@ -104,7 +104,10 @@ export class NativeGraphs {
       this.iconButton(buttons, 'scan', 'Fit', () => this.fit(session));
       buttons.createDiv('tag-ontology-separator');
       for (const [key, icon, name] of TOGGLES) {
-        session.toggles[key] = this.iconButton(buttons, icon, name, () => this.update({ [key]: !this.owner.settings[key] }, 'filter'));
+        session.toggles[key] = this.iconButton(buttons, icon, name, () => {
+          if (key === 'showNotes' && this.owner.settings.layout !== 'force') return;
+          this.update({ [key]: !this.owner.settings[key] }, 'filter');
+        });
         session.toggles[key].addClass('tag-ontology-toggle');
       }
       buttons.createDiv('tag-ontology-separator');
@@ -161,7 +164,8 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
-    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes, showRelated: settings.showRelated });
+    // Tree and Radial show the tag hierarchy alone; the saved Notes choice applies again in Force.
+    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
     session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
     const r = session.renderer, result = session.original.call(r, layer.data);
@@ -339,8 +343,10 @@ export class NativeGraphs {
     for (const [key, , name] of TOGGLES) {
       const button = session.toggles[key];
       if (!button) continue;
-      button.toggleClass('is-active', settings[key]); button.setAttribute('aria-pressed', String(settings[key]));
-      this.label(button, `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
+      const disabled = key === 'showNotes' && settings.layout !== 'force';
+      button.toggleClass('is-active', settings[key] && !disabled); button.setAttribute('aria-pressed', String(settings[key] && !disabled));
+      button.toggleClass('is-disabled', disabled); button.setAttribute('aria-disabled', String(disabled));
+      this.label(button, disabled ? 'Notes are hidden in Tree and Radial' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout];
