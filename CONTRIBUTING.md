@@ -49,11 +49,22 @@ npm run build
 - The lint does not check CSS (`!important`, `:has()` and so on). If you change `styles.css`, mention it in the PR so the maintainer can run a preview scan.
 - Add or update a test in `tests/` for behavior changes.
 
+## Contributor license agreement
+
+Tag Ontology is licensed under AGPL-3.0-or-later. To keep the option of offering it under other terms later, every contribution comes with this agreement. By submitting a contribution (a pull request, patch or any other material), you agree that:
+
+1. You wrote the contribution or otherwise have the right to submit it, and to your knowledge it does not infringe anyone else's rights.
+2. Your contribution is licensed to everyone under AGPL-3.0-or-later, the project's license.
+3. You also grant NamhyeonKo, the project maintainer, a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, copy, modify, distribute, sublicense and relicense your contribution, including under licenses other than the AGPL (open source or proprietary).
+4. You keep the copyright to your contribution.
+
+Confirm this with the checkbox in the pull request template. Pull requests without it can't be merged.
+
 ## Pull requests
 
 1. Work on a branch, not `main`.
 2. Open a PR. CI runs lint, tests and build.
-3. Describe what changed and how you tested it in Obsidian.
+3. Fill in the pull request template: what changed, how you tested it in Obsidian, and the checklist (including the contributor license agreement).
 
 ## Testing in Obsidian
 
