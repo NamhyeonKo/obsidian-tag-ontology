@@ -104,6 +104,13 @@ export class Ontology {
     return found;
   }
 
+  // Search is case-insensitive, matching how note tags resolve to dictionary keys.
+  find(query: string): string | undefined {
+    const q = query.trim().toLowerCase();
+    if (!q) return undefined;
+    return [...this.entries].find(([tag, entry]) => tag.toLowerCase() === q || entry.aliases.some(a => a.toLowerCase() === q))?.[0];
+  }
+
   notesFor(tag: string, rollup: boolean): string[] {
     const tags = rollup ? [tag, ...this.descendants(tag)] : [tag];
     return [...new Set(tags.flatMap((item) => this.direct.get(item) ?? []))].sort();

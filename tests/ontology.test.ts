@@ -125,3 +125,14 @@ test('note tags match dictionary keys case-insensitively, like the core graph', 
   assert.equal(model.unregistered.size, 0);
   assert.deepEqual(model.unused, []);
 });
+
+test('find matches tag keys and aliases case-insensitively', () => {
+  const model = new Ontology({
+    DeepLearning: { description: '', broader: [], aliases: ['DL'] },
+    ml: { description: '', broader: [] },
+  }, []);
+  assert.equal(model.find('deeplearning'), 'DeepLearning');
+  assert.equal(model.find('dl'), 'DeepLearning');
+  assert.equal(model.find('ML'), 'ml');
+  assert.equal(model.find('missing'), undefined);
+});

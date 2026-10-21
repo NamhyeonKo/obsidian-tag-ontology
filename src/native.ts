@@ -89,11 +89,10 @@ export class NativeGraphs {
       const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
       search.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
-        const q = search.value.trim().toLowerCase();
-        if (!q) return;
-        const match = [...this.owner.model!.entries].find(([tag, entry]) => tag === q || entry.aliases.some(a => a.toLowerCase() === q));
+        if (!search.value.trim()) return;
+        const match = this.owner.model!.find(search.value);
         if (!match) { new Notice('No matching dictionary tag.'); return; }
-        this.reveal(session, match[0]);
+        this.reveal(session, match);
       });
       this.button(tools, 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
       this.button(tools, 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
