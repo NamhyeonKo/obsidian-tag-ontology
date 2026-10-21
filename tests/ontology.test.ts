@@ -118,3 +118,10 @@ test('rejects self references and broader cycles', () => {
     c: { description: '', broader: ['a'] },
   }, []), /Cycle/);
 });
+
+test('note tags match dictionary keys case-insensitively, like the core graph', () => {
+  const model = new Ontology({ ml: { description: '', broader: [] } }, [{ path: 'A.md', tags: ['ML'] }]);
+  assert.deepEqual(model.counts('ml'), { direct: 1, rollup: 1 });
+  assert.equal(model.unregistered.size, 0);
+  assert.deepEqual(model.unused, []);
+});

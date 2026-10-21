@@ -76,9 +76,12 @@ export class Ontology {
       throw new Error(`Cycle in broader relations: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
     }
     const paths = new Map<string, Set<string>>();
+    // The core graph merges tag case variants, so index note tags against dictionary keys the same way.
+    const byLower = new Map([...this.entries.keys()].map(key => [key.toLowerCase(), key]));
     for (const note of notes) {
       if (!isIncludedNote(note.path)) continue;
-      for (const tag of note.tags) {
+      for (const raw of note.tags) {
+        const tag = byLower.get(raw.toLowerCase()) ?? raw;
         if (!paths.has(tag)) paths.set(tag, new Set());
         paths.get(tag)!.add(note.path);
       }
