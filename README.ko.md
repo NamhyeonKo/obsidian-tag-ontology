@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 [English](README.md) | **한국어**
 
@@ -203,4 +203,8 @@ scripts/deploy.mjs  # Copies the build into a local vault
 
 ## 라이선스
 
-[MIT](LICENSE)
+Copyright (C) 2026 NamhyeonKo
+
+Tag Ontology는 자유 소프트웨어입니다. 자유 소프트웨어 재단이 발표한 [GNU Affero General Public License](LICENSE) 버전 3 또는 (선택에 따라) 그 이후 버전의 조건에 따라 재배포하거나 수정할 수 있습니다. 유용하게 쓰이기를 바라며 배포하지만 어떠한 보증도 하지 않습니다. 자세한 내용은 라이선스 전문을 보세요.
+
+0.2.0 이하 버전은 MIT 라이선스로 배포되었고, 그 릴리스들은 계속 MIT입니다.

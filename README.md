@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 **English** | [한국어](README.ko.md)
 
@@ -202,4 +202,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 
 ## License
 
-[MIT](LICENSE)
+Copyright (C) 2026 NamhyeonKo
+
+Tag Ontology is free software: you can redistribute it and/or modify it under the terms of the [GNU Affero General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for details.
+
+Versions 0.2.0 and earlier were released under the MIT License, and those releases remain under MIT.
