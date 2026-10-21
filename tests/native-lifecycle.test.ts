@@ -335,3 +335,11 @@ test('the notes button is disabled in tree', async () => {
   notes.events.get('click')!();
   assert.equal(t.owner.settings.showNotes, true); assert.equal(t.owner.saves, 0);
 });
+
+test('Enter on a matching query reveals the first suggestion when the popover is closed', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.deepEqual(t.notices, []);
+});

@@ -13,7 +13,7 @@ export class TagSuggest extends AbstractInputSuggest<Suggestion> {
   }
 
   renderSuggestion(value: Suggestion, el: HTMLElement): void {
-    el.createDiv({ text: value.tag });
+    el.createDiv({ text: value.tag, cls: 'tag-ontology-suggestion-tag' });
     if (value.alias) el.createDiv({ text: value.alias, cls: 'tag-ontology-suggestion-alias' });
   }
 

@@ -94,8 +94,12 @@ export class NativeGraphs {
       const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
       new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(session, tag));
       search.addEventListener('keydown', e => {
-        // With suggestions open the popover picks the highlighted one; only a query with no match needs feedback.
-        if (e.key === 'Enter' && search.value.trim() && !this.owner.model!.suggest(search.value).length) new Notice('No matching dictionary tag.');
+        // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
+        if (e.key !== 'Enter' || !search.value.trim()) return;
+        const [first] = this.owner.model!.suggest(search.value);
+        if (!first) { new Notice('No matching dictionary tag.'); return; }
+        search.value = '';
+        this.reveal(session, first.tag);
       });
       // A column of round icon buttons under the search box keeps the core graph settings on the right uncovered.
       const buttons = tools.createDiv('tag-ontology-buttons');
