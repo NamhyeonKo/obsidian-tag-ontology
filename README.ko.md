@@ -12,7 +12,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 > **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 한 번 자동으로 켜 드리고, 그 뒤로는 플러그인이 이 설정을 바꾸지 않습니다. 직접 껐다면 다시 켜야 계층이 보입니다.
 
-![Tag Ontology 데모](assets/0.1.0/demo.gif)
+![Tag Ontology 데모](assets/0.3.0/demo.gif)
 
 ## 기능
 
@@ -27,7 +27,9 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 | 태그 패널 | 사전 대조 |
 | --- | --- |
-| ![상위·하위 태그와 노트 수가 표시된 태그 패널](assets/0.1.0/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 보여 주는 사전 대조](assets/0.1.0/dictionary-check.png) |
+| ![상위·하위 태그와 노트 수가 표시된 태그 패널](assets/0.3.0/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 보여 주는 사전 대조](assets/0.3.0/dictionary-check.png) |
+| **검색 추천** | **Tree 배치** |
+| ![입력하는 동안 태그를 추천하는 검색창](assets/0.3.0/search-suggestions.png) | ![노트 없이 태그 계층만 보여 주는 Tree 배치](assets/0.3.0/tree.png) |
 
 ## 동작 방식
 
