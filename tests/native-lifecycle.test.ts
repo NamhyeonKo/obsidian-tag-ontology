@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 
 class Element {
-  children: Element[] = []; text = ''; hidden = false; value = ''; removed = false;
+  children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {};
   events = new Map<string, (event?: unknown) => void>();
   createDiv() { return this.createEl('div'); }
   createEl(_tag: string, options?: { text?: string }) {
@@ -17,7 +17,7 @@ class Element {
   }
   addEventListener(event: string, fn: (event?: unknown) => void) { this.events.set(event, fn); }
   removeEventListener(event: string) { this.events.delete(event); }
-  setAttribute() {} addClass() {} removeClass() {} toggleClass() {}
+  setAttribute(name: string, value: string) { this.attrs[name] = value; } addClass() {} removeClass() {} toggleClass() {}
   empty() { this.children = []; } remove() { this.removed = true; }
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
@@ -78,11 +78,11 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
   };
   const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick };
   const contentEl = new Element();
-  const view = { renderer, contentEl, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view };
+  const view = { renderer, contentEl, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
   const owner = {
     model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0,
     async saveState() { owner.saves++; }, async saveSettings() {},
-    app: { workspace: { getLeavesOfType: () => [leaf] }, vault: { getAbstractFileByPath: () => null } },
+    app: { workspace: { getLeavesOfType: () => leaves }, vault: { getAbstractFileByPath: () => null } },
   };
   const controller = new NativeGraphs(owner);
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
@@ -91,7 +91,13 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
     const input = contentEl.all().find(el => el !== contentEl && el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
   };
-  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture };
+  const addTab = () => {
+    const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null })); } };
+    const tabEl = new Element();
+    leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
+    return tabEl;
+  };
+  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -202,4 +208,43 @@ test('without tag nodes from the core graph the status explains how to show the 
   t.renderer.setData({ numLinks: 0, nodes: { 'A.md': { type: '', links: {} } } });
   const status = t.contentEl.children[2]! as unknown as { textContent: string };
   assert.equal(status.textContent, 'Turn on Tags in the graph filters to show the dictionary hierarchy.');
+});
+
+test('search reveals a tag whose expanded ancestor sits under a collapsed one', async () => {
+  const t = await setup({ expanded: ['ml'] });
+  t.controller.attach();
+  t.search('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.ok(t.ids().includes('#DL'));
+});
+
+test('the panel button reads the live expansion after Expand all', async () => {
+  const t = await setup();
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  t.click('Collapse children and notes');
+  t.click('Expand all');
+  assert.ok(t.contentEl.all().some(el => el.text === 'Collapse children and notes'), 'the label follows Expand all');
+  t.click('Collapse children and notes');
+  assert.equal(t.owner.settings.expanded.length, model.entries.size - 1, 'only cs collapses');
+});
+
+test('notes toggles stay in sync across graph tabs', async () => {
+  const t = await setup();
+  const second = t.addTab();
+  t.controller.attach();
+  t.click('Notes');
+  const other = second.all().find(el => el.text === 'Notes')!;
+  assert.equal(other.attrs['aria-pressed'], 'false');
+  other.events.get('click')!();
+  assert.equal(t.owner.settings.showNotes, true, 'one click in the other tab turns notes back on');
+});
+
+test('a closed panel stays closed when the vault refreshes', async () => {
+  const t = await setup();
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  t.click('Close');
+  t.controller.refresh();
+  assert.equal(t.contentEl.children[1]!.hidden, true);
 });

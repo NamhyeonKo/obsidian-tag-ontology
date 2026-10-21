@@ -32,6 +32,7 @@ interface Session {
   kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   selected?: string; texture?: Texture; layout?: string; layoutSelect?: HTMLSelectElement;
+  toggles: Partial<Record<'showNotes' | 'showRelated', HTMLElement>>;
   fitFrame?: number; stopFit: () => void;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
@@ -62,7 +63,7 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), stopFit: () => {},
+        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -97,8 +98,8 @@ export class NativeGraphs {
       this.button(tools, 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
       this.button(tools, 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
       this.button(tools, 'Fit', () => this.fit(session));
-      this.toggle(tools, 'Notes', this.owner.settings.showNotes, on => this.update({ showNotes: on }, 'filter'));
-      this.toggle(tools, 'Related', this.owner.settings.showRelated, on => this.update({ showRelated: on }, 'filter'));
+      session.toggles.showNotes = this.toggle(tools, 'Notes', 'showNotes');
+      session.toggles.showRelated = this.toggle(tools, 'Related', 'showRelated');
       this.button(tools, 'Dictionary check', () => this.inventory(session));
       const select = session.layoutSelect = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
       for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
@@ -125,7 +126,7 @@ export class NativeGraphs {
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
     for (const session of this.sessions.values()) {
       this.render(session, 'refresh');
-      if (session.selected && model.entries.has(session.selected)) this.inspect(session, session.selected);
+      if (session.selected && !session.panel.hidden && model.entries.has(session.selected)) this.inspect(session, session.selected);
     }
   }
 
@@ -133,7 +134,10 @@ export class NativeGraphs {
   private update(patch: Partial<LayerSettings>, operation: string) {
     Object.assign(this.owner.settings, patch);
     void this.owner.saveState();
-    for (const session of this.sessions.values()) this.render(session, operation);
+    for (const session of this.sessions.values()) {
+      this.render(session, operation);
+      if (session.selected && !session.panel.hidden) this.inspect(session, session.selected);
+    }
   }
 
   private render(session: Session, operation: string) {
@@ -155,6 +159,7 @@ export class NativeGraphs {
     const layoutChanged = session.layout !== settings.layout;
     session.layout = settings.layout;
     if (layoutChanged && session.layoutSelect) session.layoutSelect.value = session.layout;
+    for (const [key, button] of Object.entries(session.toggles)) this.syncToggle(button, settings[key as keyof typeof session.toggles]);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') {
       session.stopFit();
@@ -240,11 +245,12 @@ export class NativeGraphs {
 
   private reveal(session: Session, tag: string) {
     if (!session.resolved?.range.has(tag)) { new Notice('Not in the current graph.'); this.inspect(session, tag); return; }
-    const expanded = new Set(this.owner.settings.expanded), pending = [tag];
+    // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
+    const expanded = new Set(this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
     while (pending.length) {
       const current = pending.pop()!;
-      if (expanded.has(current) && current !== tag) continue;
-      expanded.add(current);
+      if (seen.has(current)) continue;
+      seen.add(current); expanded.add(current);
       pending.push(...this.owner.model!.entries.get(current)?.broader ?? []);
     }
     this.update({ expanded: [...expanded] }, 'reveal'); this.inspect(session, tag);
@@ -257,11 +263,12 @@ export class NativeGraphs {
     this.button(panel, 'Close', () => { panel.hidden = true; });
     panel.createEl('h3', { text: tag }); panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
-    const counts = model.counts(tag), expanded = this.owner.settings.expanded;
+    const counts = model.counts(tag);
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
-    this.button(panel, expanded.includes(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
+    this.button(panel, this.owner.settings.expanded.includes(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
+      // Read the live state: Expand all or another tab may have changed it since this panel was built.
+      const expanded = this.owner.settings.expanded;
       this.update({ expanded: expanded.includes(tag) ? expanded.filter(t => t !== tag) : [...expanded, tag] }, 'expand:' + tag);
-      this.inspect(session, tag);
     });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
@@ -300,12 +307,15 @@ export class NativeGraphs {
   private button(parent: HTMLElement, text: string, action: () => void) {
     parent.createEl('button', { text }).addEventListener('click', action);
   }
-  private toggle(parent: HTMLElement, text: string, initial: boolean, onChange: (on: boolean) => void) {
-    let on = initial;
-    const button = parent.createEl('button', { text, cls: on ? 'tag-ontology-toggle is-active' : 'tag-ontology-toggle', attr: { 'aria-pressed': String(on) } });
-    button.addEventListener('click', () => {
-      on = !on; button.toggleClass('is-active', on); button.setAttribute('aria-pressed', String(on)); onChange(on);
-    });
+  // Toggle state lives in the shared settings so every graph tab's button shows the same value.
+  private toggle(parent: HTMLElement, text: string, key: 'showNotes' | 'showRelated') {
+    const button = parent.createEl('button', { text, cls: 'tag-ontology-toggle' });
+    button.addEventListener('click', () => this.update({ [key]: !this.owner.settings[key] }, 'filter'));
+    this.syncToggle(button, this.owner.settings[key]);
+    return button;
+  }
+  private syncToggle(button: HTMLElement, on: boolean) {
+    button.toggleClass('is-active', on); button.setAttribute('aria-pressed', String(on));
   }
 
   private openNote(path: string) {
