@@ -6,7 +6,7 @@
 
 **English** | [한국어](README.ko.md)
 
-Tag Ontology turns Obsidian's core **Graph view** into a map of your tag hierarchy. You describe your tags in a JSON dictionary (definition, aliases, parents, related tags). The plugin draws that hierarchy with the built-in graph renderer and attaches your notes to the tags they use.
+Tag Ontology adds your **tag hierarchy** to Obsidian's core **Graph view**. You describe your tags in a JSON dictionary (definition, aliases, parents, related tags). The plugin layers that hierarchy on top of the graph you already use, and keeps everything else the core graph does: notes, links between notes, filters, color groups and display settings.
 
 It is **read-only**. It never edits your notes or your dictionary.
 
@@ -14,14 +14,14 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 ## Features
 
-- **Tag hierarchy in the core graph.** Uses Obsidian's own Graph view renderer and physics, so it looks and pans like the graph you already know.
-- **Progressive disclosure.** Starts with root tags only. Click a tag to reveal its child tags and the notes tagged with it.
+- **An extension of the core graph.** Notes, note links, filters, color groups, arrows and the other core settings work as usual. Node size still grows with links.
+- **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to expand it one level and watch its notes move to the more specific child tags.
 - **Note counts with roll-up.** For each tag you see notes tagged *directly* and notes tagged with the tag *or any descendant*. Notes are de-duplicated across multiple tags and multiple parents.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, Tree and Radial.
 - **Search** by tag name or alias.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
-- **Open notes** by clicking note nodes or note lists.
+- **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab, like the core graph's own options.
 
 | Tag panel | Dictionary check |
 | --- | --- |
@@ -29,7 +29,9 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 ## How it works
 
-While the plugin is enabled, **every core Graph view tab shows the tag ontology** instead of the normal note graph. The local graph is not affected. Disable the plugin and the core Graph view goes back to normal: its data, click behavior and textures are restored.
+The core Graph view computes its graph as usual (with your filters and color groups applied) and hands it to the renderer. Tag Ontology adjusts that data on the way: it collapses dictionary tags, re-routes note-to-tag links to the nearest visible ancestor, and adds hierarchy and related links between tags. Tags that are not in the dictionary stay as ordinary tag nodes.
+
+The hierarchy needs tag nodes, so **turn on Tags in the graph's Filters** (it is off by default in Obsidian). If it is off, the status line at the bottom of the graph tells you so. The local graph is not affected. Disable the plugin and the core Graph view goes back to normal.
 
 Tag usage comes from Obsidian's metadata cache, which includes frontmatter `tags` and inline `#tags` in every Markdown note. Files and folders whose names start with `.` are skipped.
 
@@ -59,8 +61,9 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 1. In Obsidian, choose **Open folder as vault** and select `examples/sample-vault`.
 2. Install the plugin into that vault using one of the methods above.
 3. Click the **graph** ribbon icon or run **Tag Ontology: Open graph** from the command palette.
+4. Open the graph settings (gear icon) and turn on **Filters → Tags**.
 
-You should see two roots, `computer-science` and `security`. `cryptography` and `ai-security` have two parents each. The dictionary check lists `#to-read` as unregistered.
+You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
 
 ## Tag dictionary format
 
@@ -110,12 +113,13 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 ### Toolbar and tag panel
 
 - **Search tags or aliases**: type an exact tag name or alias and press Enter. The graph expands down to that tag and selects it.
-- **Collapse all** / **Expand all**: show root tags only, or every tag and note.
+- **Collapse all** / **Expand all**: collapse every dictionary tag to its root, or expand them all.
 - **Fit**: fit the graph to the view.
-- **Notes** / **Related**: show or hide note nodes and dashed related links. Tags always stay visible because they form the hierarchy.
+- **Notes** / **Related**: hide every node that is not a tag (notes, attachments, unresolved links) to see the tag hierarchy alone, or hide the dashed related links.
 - **Dictionary check**: list unregistered and unused tags.
 - **Layout**: Force, Tree or Radial.
 - Click a tag to expand it and open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. Clicking an expanded tag only reopens the panel. Use **Collapse children and notes** in the panel to collapse it.
+- Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 
 ### Commands
 
@@ -123,7 +127,6 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 | --- | --- |
 | Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open graph tab. |
 | Tag Ontology: Reload dictionary | Reload the dictionary and the note index. |
-| Tag Ontology: Open compatibility viewer | A standalone Cytoscape-based viewer kept for compatibility. Slower on large vaults. |
 
 ### Settings
 
@@ -138,19 +141,20 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds `dictionaryPath` and `layout`.
+- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds `dictionaryPath`, `layout`, `expanded`, `showNotes` and `showRelated`.
 
 ## Compatibility and known limitations
 
 - **Desktop only.** Tested on Obsidian 1.14.4 (macOS).
 - The plugin hooks into **undocumented internals** of the core Graph view (renderer, PIXI, layout worker). A future Obsidian update may break it. If the internals look unfamiliar, the plugin detaches and leaves the core graph alone.
-- The core graph's own filters, color groups and arrow settings are hidden while the ontology is shown.
+- The hierarchy appears only while the core graph's **Tags** filter is on.
+- On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
 - Labels get dense when every tag is expanded, and switching Tree/Radial on a fully expanded graph takes a moment.
 - Untested together with other plugins that patch the Graph view.
 
 ## Roadmap
 
-- Restore core graph settings while the ontology is shown: color groups, arrows, and tag/attachment/orphan toggles.
+- Show the hierarchy in the local graph too.
 
 Bug reports and feature requests are welcome in [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues). Please include your Obsidian version and OS for bugs.
 
@@ -176,11 +180,9 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 src/
 ├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
-├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, layouts)
-├── native-data.ts  # Converts the visible ontology into the core graph's data format
+├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, clicks, layouts)
+├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Tree/Radial positions (headless Cytoscape)
-├── view.ts         # Compatibility viewer (standalone Cytoscape view)
-├── renderer.ts     # Cytoscape setup for the compatibility viewer
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -194,7 +196,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
-- [Cytoscape.js](https://js.cytoscape.org/) and [d3-force](https://github.com/d3/d3-force) are used for Tree/Radial layout computation and the compatibility viewer.
+- [Cytoscape.js](https://js.cytoscape.org/) computes the Tree/Radial layouts.
 
 ## License
 

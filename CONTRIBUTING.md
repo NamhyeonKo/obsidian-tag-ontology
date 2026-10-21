@@ -64,15 +64,10 @@ npm run build
   ```
 
   The target vault needs a `.obsidian/` folder; opening it once in Obsidian creates it.
-- After deploying, disable and re-enable the plugin, or restart Obsidian.
-- Quick check that the new build is loaded: the core graph toolbar shows the **Notes** and **Related** toggles.
-- The plugin has two views. Know which one you are testing:
-
-  | View | Tab title | `data-type` | Source |
-  | --- | --- | --- | --- |
-  | Core graph integration (default) | Graph view | `graph` | `src/native.ts` |
-  | Compatibility viewer | Tag ontology | `tag-ontology` | `src/view.ts` |
-
+- After deploying, disable and re-enable the plugin, or restart Obsidian. Obsidian keeps running the old code until you do.
+- Turn on **Filters → Tags** in the graph settings. It is off by default, and without tag nodes the hierarchy has nothing to attach to (the status line says so).
+- Quick check that the new build is loaded: with everything collapsed, notes are still shown and linked to the root tags.
+- The plugin lives inside the core Graph view (`data-type="graph"`). `src/native.ts` wires the renderer, toolbar and panel; `src/layer.ts` transforms the graph data and is where most logic and tests live.
 - When inspecting CSS in DevTools, select the `.view-content` div, not the `canvas`. The `padding: 0` on the canvas is Obsidian's own inline style.
 - `npm run test:vault` is the maintainer's integration test against a private vault (`OBSIDIAN_VAULT_PATH`). You don't need to run it.
 
