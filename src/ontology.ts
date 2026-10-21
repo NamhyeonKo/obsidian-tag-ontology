@@ -7,6 +7,7 @@ export interface Entry {
 }
 
 export interface Note { path: string; tags: string[] }
+export interface Suggestion { tag: string; alias?: string }
 
 export function isIncludedNote(path: string): boolean {
   return path.endsWith('.md')
@@ -109,6 +110,23 @@ export class Ontology {
     const q = query.trim().toLowerCase();
     if (!q) return undefined;
     return [...this.entries].find(([tag, entry]) => tag.toLowerCase() === q || entry.aliases.some(a => a.toLowerCase() === q))?.[0];
+  }
+
+  // Type-ahead ranking: key prefix, key substring, alias prefix, alias substring; one row per tag.
+  suggest(query: string, limit = 10): Suggestion[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const ranked: { rank: number; suggestion: Suggestion }[] = [];
+    for (const [tag, entry] of this.entries) {
+      const key = tag.toLowerCase();
+      if (key.startsWith(q)) { ranked.push({ rank: 0, suggestion: { tag } }); continue; }
+      if (key.includes(q)) { ranked.push({ rank: 1, suggestion: { tag } }); continue; }
+      const prefix = entry.aliases.find(a => a.toLowerCase().startsWith(q));
+      const alias = prefix ?? entry.aliases.find(a => a.toLowerCase().includes(q));
+      if (alias) ranked.push({ rank: prefix ? 2 : 3, suggestion: { tag, alias } });
+    }
+    return ranked.sort((a, b) => a.rank - b.rank || a.suggestion.tag.localeCompare(b.suggestion.tag))
+      .slice(0, limit).map(r => r.suggestion);
   }
 
   notesFor(tag: string, rollup: boolean): string[] {

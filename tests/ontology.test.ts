@@ -136,3 +136,19 @@ test('find matches tag keys and aliases case-insensitively', () => {
   assert.equal(model.find('ML'), 'ml');
   assert.equal(model.find('missing'), undefined);
 });
+
+test('suggest ranks key matches before alias matches and caps the list', () => {
+  const model = new Ontology({
+    cnn: { description: '', broader: [], aliases: ['Convolutional Neural Network', '합성곱 신경망'] },
+    convolution: { description: '', broader: [], aliases: ['Convolution 연산', '합성곱'] },
+    filter: { description: '', broader: [], aliases: ['Convolution Filter'] },
+    'conv-net': { description: '', broader: [] },
+  }, []);
+  assert.deepEqual(model.suggest('conv'), [
+    { tag: 'conv-net' }, { tag: 'convolution' },
+    { tag: 'cnn', alias: 'Convolutional Neural Network' }, { tag: 'filter', alias: 'Convolution Filter' },
+  ]);
+  assert.deepEqual(model.suggest('합성곱').map(s => s.tag), ['cnn', 'convolution']);
+  assert.deepEqual(model.suggest('  '), []);
+  assert.equal(model.suggest('o', 2).length, 2);
+});
