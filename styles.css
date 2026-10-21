@@ -16,3 +16,4 @@
 .tag-ontology-native .tag-ontology-tools { flex-wrap: wrap; max-width: calc(100% - 70px); }
 .tag-ontology-native .tag-ontology-panel button { margin: 4px; }
 .tag-ontology-native .tag-ontology-toggle:not(.is-active) { color: var(--text-faint); text-decoration: line-through; }
+.tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }

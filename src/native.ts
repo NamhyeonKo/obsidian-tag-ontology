@@ -3,6 +3,7 @@ import { hierarchyPositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
+import { TagSuggest } from './search.ts';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
@@ -88,12 +89,10 @@ export class NativeGraphs {
         this.inspect(session, tag);
       };
       const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+      new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(session, tag));
       search.addEventListener('keydown', e => {
-        if (e.key !== 'Enter') return;
-        if (!search.value.trim()) return;
-        const match = this.owner.model!.find(search.value);
-        if (!match) { new Notice('No matching dictionary tag.'); return; }
-        this.reveal(session, match);
+        // With suggestions open the popover picks the highlighted one; only a query with no match needs feedback.
+        if (e.key === 'Enter' && search.value.trim() && !this.owner.model!.suggest(search.value).length) new Notice('No matching dictionary tag.');
       });
       this.button(tools, 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
       this.button(tools, 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));

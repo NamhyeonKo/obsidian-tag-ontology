@@ -43,6 +43,7 @@ interface Link { source: { id: string }; target: { id: string }; line: { texture
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [];
+  const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
     performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
@@ -52,6 +53,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File }
       : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
+      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -103,7 +105,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites };
+  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -185,7 +187,7 @@ test('refresh prunes expanded tags that left the dictionary', async () => {
 test('searching a tag expands it and its ancestors', async () => {
   const t = await setup();
   t.controller.attach();
-  t.search('dl');
+  t.suggests[0]!.onChoose('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.ok(t.ids().includes('#DL'));
 });
@@ -194,7 +196,7 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   const t = await setup();
   t.controller.attach();
   const before = t.ids();
-  t.search('overfitting');
+  t.suggests[0]!.onChoose('overfitting');
   assert.deepEqual(t.notices, ['Not in the current graph.']);
   assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
   assert.ok(t.contentEl.all().some(el => el.text === 'overfitting'));
@@ -219,7 +221,7 @@ test('without tag nodes from the core graph the status explains how to show the 
 test('search reveals a tag whose expanded ancestor sits under a collapsed one', async () => {
   const t = await setup({ expanded: ['ml'] });
   t.controller.attach();
-  t.search('dl');
+  t.suggests[0]!.onChoose('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.ok(t.ids().includes('#DL'));
 });
@@ -268,4 +270,25 @@ test('an existing install never touches the core Tags filter', async () => {
   const t = await setup({}, true, false, false);
   t.controller.attach();
   assert.equal(t.graphOptions.showTags, false); assert.equal(t.optionWrites.length, 0);
+});
+
+test('choosing a suggestion reveals the tag', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.suggests[0]!.onChoose('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.ok(t.ids().includes('#DL'));
+});
+
+test('the suggestion source is the model', async () => {
+  const t = await setup();
+  t.controller.attach();
+  assert.deepEqual(t.suggests[0]!.source('d'), model.suggest('d'));
+});
+
+test('Enter with no matches shows a notice', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('zzz');
+  assert.deepEqual(t.notices, ['No matching dictionary tag.']);
 });
