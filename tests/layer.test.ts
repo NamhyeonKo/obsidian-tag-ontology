@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Ontology } from '../src/ontology.ts';
-import { applyCollapse, resolveTags, type NativeData } from '../src/layer.ts';
+import { addEdges, applyCollapse, buildLayer, edgeKey, resolveTags, type NativeData } from '../src/layer.ts';
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -52,4 +52,33 @@ test('no tag nodes in the input means no dictionary nodes are added', () => {
 test('applyCollapse never mutates its input', () => {
   const input = core(); applyCollapse(input, resolveTags(model, input, new Set()), model);
   assert.deepEqual(input, core());
+});
+
+const withOverfitting = (): NativeData => {
+  const d = core(); d.nodes['D.md'] = { type: '', links: { '#overfitting': true } }; d.nodes['#overfitting'] = { type: 'tag', links: {} }; return d;
+};
+
+test('adds hierarchy edges between visible tags and one related edge per pair', () => {
+  const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
+  const { data, kinds } = addEdges(applyCollapse(input, r, model), r, model, ['broader', 'related']);
+  assert.ok(data.nodes['#cs']!.links['#ml'] && data.nodes['#ml']!.links['#DL'] && data.nodes['#sec']!.links['#crypto']);
+  assert.equal(kinds.get(edgeKey('#ml', '#DL')), 'broader');
+  assert.equal(kinds.get(edgeKey('#DL', '#overfitting')), 'related');
+  assert.equal([...kinds.values()].filter(k => k === 'related').length, 1);
+});
+
+test('related edges are skipped when the kind is not requested', () => {
+  const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
+  assert.ok(![...addEdges(applyCollapse(input, r, model), r, model, ['broader']).kinds.values()].includes('related'));
+});
+
+test('hideNotes keeps only tag nodes and their links among tags', () => {
+  const { data } = buildLayer(core(), model, { expanded: new Set(['cs']), showNotes: false, showRelated: true });
+  assert.ok(Object.values(data.nodes).every(n => n.type === 'tag'));
+  assert.ok(data.nodes['#cs']!.links['#ml']);
+});
+
+test('buildLayer passes numLinks through and leaves the input untouched', () => {
+  const input = core(), out = buildLayer(input, model, { expanded: new Set(), showNotes: true, showRelated: true });
+  assert.equal(out.data.numLinks, 5); assert.deepEqual(input, core());
 });

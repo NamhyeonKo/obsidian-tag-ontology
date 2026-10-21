@@ -70,3 +70,46 @@ export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontol
   for (const tag of visible) nodes[idOf.get(tag)!] ??= { type: 'tag', links: {} };
   return { ...data, nodes };
 }
+
+export type EdgeKind = 'broader' | 'related';
+export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean }
+
+const copyNodes = (data: NativeData): NativeData['nodes'] =>
+  Object.fromEntries(Object.entries(data.nodes).map(([id, node]) => [id, { ...node, links: { ...node.links } }]));
+
+export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, kinds: readonly EdgeKind[]) {
+  const { idOf, visible } = resolved, nodes = copyNodes(data), edges = new Map<string, EdgeKind>();
+  const link = (source: string, target: string, kind: EdgeKind) => {
+    const from = idOf.get(source)!, to = idOf.get(target)!, key = edgeKey(from, to);
+    if (edges.get(key) === 'broader') return;
+    nodes[from].links[to] = true;
+    edges.set(key, kind);
+  };
+  for (const tag of visible) {
+    const entry = model.entries.get(tag)!;
+    if (kinds.includes('broader')) for (const parent of entry.broader ?? []) if (visible.has(parent)) link(parent, tag, 'broader');
+    if (kinds.includes('related')) {
+      for (const other of entry.related ?? []) {
+        if (!visible.has(other)) continue;
+        const [source, target] = [tag, other].sort();
+        link(source, target, 'related');
+      }
+    }
+  }
+  return { data: { ...data, nodes }, kinds: edges };
+}
+
+export function hideNotes(data: NativeData): NativeData {
+  const nodes = Object.fromEntries(Object.entries(data.nodes).filter(([, node]) => node.type === 'tag'));
+  for (const [id, node] of Object.entries(nodes)) {
+    nodes[id] = { ...node, links: Object.fromEntries(Object.entries(node.links).filter(([target]) => Object.hasOwn(nodes, target))) };
+  }
+  return { ...data, nodes };
+}
+
+export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
+  const resolved = resolveTags(model, data, state.expanded);
+  const collapsed = applyCollapse(data, resolved, model);
+  const edges = addEdges(collapsed, resolved, model, state.showRelated ? ['broader', 'related'] : ['broader']);
+  return { data: state.showNotes ? edges.data : hideNotes(edges.data), kinds: edges.kinds, resolved };
+}
