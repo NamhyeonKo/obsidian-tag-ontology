@@ -1,8 +1,8 @@
 import { Notice, TFile, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { hierarchyPositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
-import { nativeData, edgeKey, type NativeData } from './native-data.ts';
-import type { Graph, GraphEdge } from './ontology.ts';
+import { buildLayer, edgeKey, type EdgeKind, type NativeData, type Resolved } from './layer.ts';
+import type { Settings } from './settings.ts';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
@@ -25,19 +25,21 @@ interface NativeView extends ItemView { renderer: NativeRenderer; update(): void
 interface Session {
   leaf: WorkspaceLeaf; view: NativeView; renderer: NativeRenderer; active: boolean;
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
-  click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick']; expanded: Set<string>;
+  click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
   tools: HTMLElement; panel: HTMLElement; status: HTMLElement;
-  kinds: Map<string, GraphEdge['kind']>;
+  // The engine's latest data, already filtered by the core graph; every render layers it again.
+  base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
+  kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
-  selected?: string; texture?: Texture; layout?: string;
-  showNotes: boolean; showRelated: boolean; layoutSelect?: HTMLSelectElement;
+  selected?: string; texture?: Texture; layout?: string; layoutSelect?: HTMLSelectElement;
   fitFrame?: number; stopFit: () => void;
 }
+type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   private failed = new WeakSet<WorkspaceLeaf>();
-  metrics: { operation: string; ms: number; nodes: number; edges: number; visible: boolean }[] = [];
+  metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   constructor(private owner: TagOntologyPlugin) {}
 
   attach() {
@@ -51,7 +53,7 @@ export class NativeGraphs {
       const view = leaf.view as unknown as NativeView, r = view.renderer;
       if (!r || typeof r.setData !== 'function' || typeof r.onNodeClick !== 'function'
         || !r.worker || !Array.isArray(r.nodes) || !Array.isArray(r.links)) {
-        new Notice('Could not attach to the core graph in this Obsidian version. Use the compatibility viewer command instead.');
+        new Notice('Could not attach to the core graph in this Obsidian version.');
         this.failed.add(leaf);
         continue;
       }
@@ -60,14 +62,15 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, expanded: new Set(), tools, panel, status, kinds: new Map(), links: new Map(), stopFit: () => {},
-        showNotes: true, showRelated: true,
+        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
-        try { return this.render(session, 'update'); }
+        const first = !session.base;
+        session.base = data;
+        try { return this.render(session, first ? 'initial' : 'update'); }
         catch (error) {
           this.failed.add(leaf); this.detach(leaf, false);
           new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
@@ -76,14 +79,11 @@ export class NativeGraphs {
       };
       r.setData = session.wrapped;
       session.ownClick = r.onNodeClick = (event, id, type) => {
-        if (!session.active) session.click.call(r, event, id, type);
-        else if (type === 'tag' && this.owner.model?.entries.has(id.slice(1))) {
-          const tag = id.slice(1);
-          // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
-          if (!session.expanded.has(tag)) { session.expanded.add(tag); this.render(session, 'expand:' + tag); }
-          this.inspect(session, tag);
-        }
-        else if (type !== 'tag') this.openNote(id);
+        const tag = session.active ? session.tagById.get(id) : undefined;
+        if (!tag) { session.click.call(r, event, id, type); return; }
+        // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
+        if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
+        this.inspect(session, tag);
       };
       const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
       search.addEventListener('keydown', e => {
@@ -94,22 +94,23 @@ export class NativeGraphs {
         if (!match) { new Notice('No matching dictionary tag.'); return; }
         this.reveal(session, match[0]);
       });
-      this.button(tools, 'Collapse all', () => { session.expanded.clear(); panel.hidden = true; this.render(session, 'roots'); });
-      this.button(tools, 'Expand all', () => { session.expanded = new Set(this.owner.model!.entries.keys()); this.render(session, 'expand-all'); });
+      this.button(tools, 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
+      this.button(tools, 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
       this.button(tools, 'Fit', () => this.fit(session));
-      this.toggle(tools, 'Notes', on => { session.showNotes = on; this.render(session, 'filter'); });
-      this.toggle(tools, 'Related', on => { session.showRelated = on; this.render(session, 'filter'); });
+      this.toggle(tools, 'Notes', this.owner.settings.showNotes, on => this.update({ showNotes: on }, 'filter'));
+      this.toggle(tools, 'Related', this.owner.settings.showRelated, on => this.update({ showRelated: on }, 'filter'));
       this.button(tools, 'Dictionary check', () => this.inventory(session));
       const select = session.layoutSelect = tools.createEl('select', { attr: { 'aria-label': 'Layout' } });
       for (const [value, text] of [['force', 'Force'], ['tree', 'Tree'], ['radial', 'Radial']]) select.createEl('option', { value, text });
       select.value = this.owner.settings.layout;
       select.addEventListener('change', () => {
-        this.owner.settings.layout = select.value as 'force' | 'tree' | 'radial';
+        this.owner.settings.layout = select.value as Settings['layout'];
         void this.owner.saveSettings();
       });
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
-      try { this.render(session, 'initial'); }
+      // Ask the engine to send its data again so the first render goes through the layer.
+      try { view.update(); }
       catch (error) {
         this.failed.add(leaf); this.detach(leaf, true);
         new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
@@ -119,36 +120,40 @@ export class NativeGraphs {
 
   refresh() {
     this.attach();
+    const model = this.owner.model!, settings = this.owner.settings;
+    const kept = settings.expanded.filter(tag => model.entries.has(tag));
+    if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
     for (const session of this.sessions.values()) {
-      session.expanded = new Set([...session.expanded].filter(t => this.owner.model!.entries.has(t)));
       this.render(session, 'refresh');
-      if (session.selected && this.owner.model!.entries.has(session.selected)) this.inspect(session, session.selected);
+      if (session.selected && model.entries.has(session.selected)) this.inspect(session, session.selected);
     }
   }
 
+  // Graph state is shared by every graph tab, like the core graph's own options.
+  private update(patch: Partial<LayerSettings>, operation: string) {
+    Object.assign(this.owner.settings, patch);
+    void this.owner.saveState();
+    for (const session of this.sessions.values()) this.render(session, operation);
+  }
+
   private render(session: Session, operation: string) {
-    const model = this.owner.model;
-    if (!model || !session.active) return;
+    const model = this.owner.model, settings = this.owner.settings;
+    if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
-    let graph = model.visible(session.expanded, session.showRelated);
-    if (!session.showNotes) graph = { nodes: graph.nodes.filter(n => n.kind !== 'note'), edges: graph.edges.filter(e => e.kind !== 'note') };
-    const { data, kinds } = nativeData(graph), r = session.renderer;
-    session.kinds = kinds;
-    const result = session.original.call(r, data);
+    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes, showRelated: settings.showRelated });
+    session.resolved = layer.resolved; session.kinds = layer.kinds;
+    session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
+    const r = session.renderer, result = session.original.call(r, layer.data);
     this.styleLinks(session);
-    if (this.owner.settings.layout !== 'force') this.staticLayout(session, graph);
+    if (settings.layout !== 'force') this.staticLayout(session, layer.data);
     else {
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
-      if (operation === 'initial' || operation === 'roots') r.nodes.forEach((node, i) => {
-        node.x = Math.cos(i * Math.PI * 2 / r.nodes.length) * 250;
-        node.y = Math.sin(i * Math.PI * 2 / r.nodes.length) * 250;
-      });
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
     }
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
-    const layoutChanged = session.layout !== this.owner.settings.layout;
-    session.layout = this.owner.settings.layout;
+    const layoutChanged = session.layout !== settings.layout;
+    session.layout = settings.layout;
     if (layoutChanged && session.layoutSelect) session.layoutSelect.value = session.layout;
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') {
@@ -161,8 +166,14 @@ export class NativeGraphs {
       };
       session.fitFrame = window.requestAnimationFrame(fitRoots);
     }
-    session.status.textContent = `${graph.nodes.filter(n => n.kind === 'tag').length} / ${model.entries.size} tags · ${graph.nodes.filter(n => n.kind === 'note').length} notes · ${model.roots.length} roots`;
-    this.metrics.push({ operation, ms: performance.now() - start, nodes: graph.nodes.length, edges: graph.edges.length, visible: document.visibilityState === 'visible' });
+    const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)])).size;
+    const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
+    // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
+    const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
+    session.status.textContent = tagsShown
+      ? `${layer.resolved.visible.size} / ${placed} tags · ${notes} notes · ${model.roots.length} roots`
+      : 'Turn on Tags in the graph filters to show the dictionary hierarchy.';
+    this.metrics.push({ operation, ms: performance.now() - start, nodes: Object.keys(layer.data.nodes).length, visible: document.visibilityState === 'visible' });
     this.metrics = this.metrics.slice(-50);
     return result;
   }
@@ -186,43 +197,57 @@ export class NativeGraphs {
           }
           link.line.texture = session.texture;
         } else if (link.line && original.texture) link.line.texture = original.texture;
+        // Hierarchy direction is the meaning of the edge, so it ignores the user's arrow setting; other links follow it.
         const arrows = r.fShowArrow;
-        r.fShowArrow = kind === 'broader';
+        r.fShowArrow = kind === 'broader' ? true : kind === 'related' ? false : arrows;
         try { original.render.call(link); } finally { r.fShowArrow = arrows; }
       };
     }
   }
 
-  private staticLayout(session: Session, graph: Graph) {
-    const r = session.renderer;
-    const ids = new Map(graph.nodes.map(n => [n.id, n.kind === 'tag' ? '#' + n.tag : n.path!]));
-    const tags = graph.nodes.filter(n => n.kind === 'tag').map(n => n.tag!);
-    const edges = graph.edges.filter(e => e.kind === 'broader').map(e => [e.source.slice(4), e.target.slice(4)] as [string, string]);
-    const positions = new Map([...hierarchyPositions(tags, edges, this.owner.model!.roots.filter(t => tags.includes(t)), this.owner.settings.layout === 'radial')]
-      .map(([tag, position]) => ['#' + tag, position]));
-      r.worker.postMessage({ run: false }); r.workerResults = null;
-      const parents = new Map(graph.edges.filter(e => e.kind === 'note').map(e => [ids.get(e.target)!, ids.get(e.source)!]));
-      for (const [i, node] of r.nodes.entries()) {
-        const item = positions.get(node.id);
-        const parentId = parents.get(node.id);
-        const p = item ?? (parentId ? positions.get(parentId) : undefined) ?? { x: 0, y: 0 };
-        node.x = item ? p.x + .01 : p.x + Math.cos(i * 2.39996) * 50;
-        node.y = item ? p.y + .01 : p.y + Math.sin(i * 2.39996) * 50;
-        node.fx = node.x; node.fy = node.y;
+  private staticLayout(session: Session, data: NativeData) {
+    const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
+    const tags = [...visible];
+    const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
+    const positions = new Map([...hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), this.owner.settings.layout === 'radial')]
+      .map(([tag, position]) => [idOf.get(tag)!, position]));
+    r.worker.postMessage({ run: false }); r.workerResults = null;
+    const anchorOf = (id: string) => Object.keys(data.nodes[id]?.links ?? {}).find(target => positions.has(target));
+    const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
+    const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
+    const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
+    const loose = r.nodes.filter(node => !positions.has(node.id) && !anchorOf(node.id)).length;
+    const around = new Map<string, number>();
+    let ringIndex = 0;
+    for (const node of r.nodes) {
+      let p = positions.get(node.id);
+      const anchor = p ? undefined : anchorOf(node.id);
+      if (anchor) {
+        // Sunflower spiral keeps many notes around one tag readable without overlapping.
+        const k = around.get(anchor) ?? 0, a = positions.get(anchor)!;
+        around.set(anchor, k + 1);
+        p = { x: a.x + Math.cos(k * 2.39996) * 14 * Math.sqrt(k + 1), y: a.y + Math.sin(k * 2.39996) * 14 * Math.sqrt(k + 1) };
+      } else if (!p) {
+        const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
+        p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
       }
-      r.changed();
+      // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
+      node.x = p.x + .01; node.y = p.y + .01;
+      node.fx = node.x; node.fy = node.y;
+    }
+    r.changed();
   }
 
   private reveal(session: Session, tag: string) {
-    session.expanded.add(tag);
-    const pending = [tag], seen = new Set<string>();
+    if (!session.resolved?.range.has(tag)) { new Notice('Not in the current graph.'); this.inspect(session, tag); return; }
+    const expanded = new Set(this.owner.settings.expanded), pending = [tag];
     while (pending.length) {
       const current = pending.pop()!;
-      if (seen.has(current)) continue;
-      seen.add(current);
-      for (const parent of this.owner.model!.entries.get(current)?.broader ?? []) { session.expanded.add(parent); pending.push(parent); }
+      if (expanded.has(current) && current !== tag) continue;
+      expanded.add(current);
+      pending.push(...this.owner.model!.entries.get(current)?.broader ?? []);
     }
-    this.render(session, 'reveal'); this.inspect(session, tag);
+    this.update({ expanded: [...expanded] }, 'reveal'); this.inspect(session, tag);
   }
 
   private inspect(session: Session, tag: string) {
@@ -232,11 +257,11 @@ export class NativeGraphs {
     this.button(panel, 'Close', () => { panel.hidden = true; });
     panel.createEl('h3', { text: tag }); panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
-    const counts = model.counts(tag);
+    const counts = model.counts(tag), expanded = this.owner.settings.expanded;
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
-    this.button(panel, session.expanded.has(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
-      session.expanded.has(tag) ? session.expanded.delete(tag) : session.expanded.add(tag);
-      this.render(session, 'expand:' + tag); this.inspect(session, tag);
+    this.button(panel, expanded.includes(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
+      this.update({ expanded: expanded.includes(tag) ? expanded.filter(t => t !== tag) : [...expanded, tag] }, 'expand:' + tag);
+      this.inspect(session, tag);
     });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
@@ -275,9 +300,9 @@ export class NativeGraphs {
   private button(parent: HTMLElement, text: string, action: () => void) {
     parent.createEl('button', { text }).addEventListener('click', action);
   }
-  private toggle(parent: HTMLElement, text: string, onChange: (on: boolean) => void) {
-    let on = true;
-    const button = parent.createEl('button', { text, cls: 'tag-ontology-toggle is-active', attr: { 'aria-pressed': 'true' } });
+  private toggle(parent: HTMLElement, text: string, initial: boolean, onChange: (on: boolean) => void) {
+    let on = initial;
+    const button = parent.createEl('button', { text, cls: on ? 'tag-ontology-toggle is-active' : 'tag-ontology-toggle', attr: { 'aria-pressed': String(on) } });
     button.addEventListener('click', () => {
       on = !on; button.toggleClass('is-active', on); button.setAttribute('aria-pressed', String(on)); onChange(on);
     });

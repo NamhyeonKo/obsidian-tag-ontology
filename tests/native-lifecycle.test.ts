@@ -4,16 +4,18 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from '../src/ontology.ts';
-import { nativeData, edgeKey } from '../src/native-data.ts';
+import * as layer from '../src/layer.ts';
+import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
+import type { NativeData } from '../src/layer.ts';
 
 class Element {
   children: Element[] = []; text = ''; hidden = false; value = ''; removed = false;
-  events = new Map<string, () => void>();
+  events = new Map<string, (event?: unknown) => void>();
   createDiv() { return this.createEl('div'); }
   createEl(_tag: string, options?: { text?: string }) {
     const child = new Element(); child.text = options?.text ?? ''; this.children.push(child); return child;
   }
-  addEventListener(event: string, fn: () => void) { this.events.set(event, fn); }
+  addEventListener(event: string, fn: (event?: unknown) => void) { this.events.set(event, fn); }
   removeEventListener(event: string) { this.events.delete(event); }
   setAttribute() {} addClass() {} removeClass() {} toggleClass() {}
   empty() { this.children = []; } remove() { this.removed = true; }
@@ -22,145 +24,182 @@ class Element {
 class File {}
 type Controller = { attach(): void; refresh(): void; destroy(): void };
 
-async function loadNative(globals: object, hierarchyPositions: (...args: unknown[]) => Map<string, { x: number; y: number }>) {
+const model = new Ontology({
+  cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
+  ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['ml'] },
+  crypto: { description: '', broader: ['cs', 'sec'] },
+  overfitting: { description: '', broader: ['ml'], related: ['dl'] },
+  loose: { description: '' },
+}, []);
+const core = (): NativeData => ({ numLinks: 5, nodes: {
+  'A.md': { type: '', links: { '#DL': true, 'B.md': true } },
+  'B.md': { type: '', links: { '#crypto': true, '#loose': true, '#to-read': true } },
+  'C.md': { type: '', links: {} },
+  '#DL': { type: 'tag', links: {} }, '#crypto': { type: 'tag', links: {} },
+  '#loose': { type: 'tag', links: {} }, '#to-read': { type: 'tag', links: {} },
+} });
+
+interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
+
+async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
+  const notices: string[] = [];
   const context = createContext({
-    performance, devicePixelRatio: 1, window: globals,
+    performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports = specifier === 'obsidian' ? { Notice: class {}, TFile: File }
-      : specifier === './layout.ts' ? { hierarchyPositions }
-      : { nativeData, edgeKey };
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File }
+      : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
+      : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
   });
   await module.evaluate();
-  return (module.namespace as { NativeGraphs: new(owner: object) => Controller }).NativeGraphs;
-}
-
-test('native session restores callbacks and lazy textures without breaking a later wrapper', async () => {
-  let frame = 0;
-  const frames = new Map<number, () => void>();
-  const NativeGraphs = await loadNative({
-    requestAnimationFrame: (fn: () => void) => { frames.set(++frame, fn); return frame; },
-    cancelAnimationFrame: (id: number) => frames.delete(id),
-  }, () => { throw new Error('Force must use the native worker'); });
-  let destroyed = 0, fileClicks = 0, forwards = 0;
-  const nativeTexture = { constructor: { from: () => ({ destroy: () => destroyed++ }) } };
-  const line = { texture: nativeTexture as object };
-  let expectedArrow = false;
-  const link = { source: { id: '#a' }, target: { id: '#b' }, line: undefined as { texture: object } | undefined, render() { assert.equal(renderer.fShowArrow, expectedArrow); } };
-  const render = link.render;
+  const NativeGraphs = (module.namespace as { NativeGraphs: new(owner: object) => Controller }).NativeGraphs;
+  const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
+  const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
-    nodes: [] as { id: string }[], links: [link], fShowArrow: true, worker: { postMessage() {} },
-    changed() {}, resetPan() {}, onNodeClick() { fileClicks++; },
-    setData(data: { nodes: object }) { forwards++; this.nodes = Object.keys(data.nodes).map(id => ({ id })); },
-  };
-  const originalSet = renderer.setData, originalClick = renderer.onNodeClick;
-  const contentEl = new Element();
-  const view = { renderer, contentEl, update() {} }, leaf = { view };
-  const owner = {
-    model: new Ontology({ a: { description: '', broader: [], related: ['b'] }, b: { description: '', broader: [] } }, []),
-    settings: { layout: 'force' }, app: {
-      vault: { getAbstractFileByPath: (id: string) => id === 'Real.md' ? new File() : null },
-      workspace: { getLeavesOfType: () => [leaf], getLeaf: () => ({ openFile: async () => { fileClicks++; } }) },
+    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as Link[],
+    fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    changed() {}, resetPan() {}, setPan() {}, setScale(scale: number) { this.scale = scale; },
+    onNodeClick(...args: unknown[]) { engineClicks.push(args); },
+    setData(data: NativeData) {
+      forwarded.push(data);
+      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null }));
+      this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
+        const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
+          render() { link.arrows = renderer.fShowArrow; } };
+        return link;
+      }));
     },
   };
-  const controller = new NativeGraphs(owner); controller.attach(); controller.attach();
-  assert.equal(forwards, 1, 'layout-change must not attach a second wrapper');
-  link.line = line; link.render();
-  assert.notEqual(line.texture, nativeTexture);
-  assert.equal(renderer.fShowArrow, true);
-  (renderer.onNodeClick as Function)({}, 'missing.md', ''); assert.equal(fileClicks, 0, 'stale nodes must not create files');
-  (renderer.onNodeClick as Function)({}, 'Real.md', ''); assert.equal(fileClicks, 1);
-  owner.model = new Ontology({ a: { description: '', broader: [] }, b: { description: '', broader: ['a'] } }, []);
-  controller.refresh();
-  (renderer.onNodeClick as Function)({}, '#a', 'tag');
-  assert.ok(renderer.nodes.some(n => n.id === '#b'), 'clicking a tag expands its children');
-  (renderer.onNodeClick as Function)({}, '#a', 'tag');
-  assert.ok(renderer.nodes.some(n => n.id === '#b'), 'clicking an expanded tag keeps it expanded');
-  assert.ok(contentEl.all().some(el => el.text === 'Collapse children and notes'));
-  expectedArrow = true; link.render();
-  assert.equal(line.texture, nativeTexture, 'changing related to broader restores a solid line');
-  const ours = renderer.setData;
-  renderer.setData = data => { ours.call(renderer, data); };
-  const laterWrapper = renderer.setData;
-  controller.destroy();
-  assert.equal(renderer.setData, laterWrapper);
-  assert.equal(renderer.onNodeClick, originalClick);
-  assert.equal(link.render, render);
-  assert.equal(line.texture, nativeTexture);
-  assert.equal(destroyed, 1);
-  assert.equal(contentEl.children.every(c => c.removed), true);
-  assert.equal(frames.size, 0, 'closing must cancel root fit animation');
-  assert.equal(contentEl.events.size, 0);
-  renderer.setData({ nodes: { 'Real.md': {} } });
-  assert.deepEqual(renderer.nodes.map(n => n.id), ['Real.md']);
-  assert.notEqual(ours, originalSet);
+  const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick };
+  const contentEl = new Element();
+  const view = { renderer, contentEl, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view };
+  const owner = {
+    model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0,
+    async saveState() { owner.saves++; }, async saveSettings() {},
+    app: { workspace: { getLeavesOfType: () => [leaf] }, vault: { getAbstractFileByPath: () => null } },
+  };
+  const controller = new NativeGraphs(owner);
+  const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
+  const click = (text: string) => contentEl.all().find(el => el.text === text)!.events.get('click')!();
+  const search = (query: string) => {
+    const input = contentEl.all().find(el => el !== contentEl && el.events.has('keydown'))!;
+    input.value = query; input.events.get('keydown')!({ key: 'Enter' });
+  };
+  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture };
+}
+
+test('layers the core data and restores the renderer on destroy', async () => {
+  const t = await setup();
+  t.controller.attach();
+  assert.ok(t.ids().includes('#cs')); assert.ok(!t.ids().includes('#DL'));
+  t.controller.destroy();
+  assert.equal(t.renderer.setData, t.original.setData);
+  assert.equal(t.renderer.onNodeClick, t.original.onNodeClick);
+  assert.ok(t.contentEl.children.every(c => c.removed));
+});
+
+test('hierarchy links always show arrows, related links are dashed, other links keep the user setting', async () => {
+  const t = await setup({ expanded: ['cs', 'ml'] });
+  t.renderer.fShowArrow = false;
+  t.controller.attach();
+  t.renderer.setData({ ...core(), nodes: { ...core().nodes, 'D.md': { type: '', links: { '#overfitting': true } }, '#overfitting': { type: 'tag', links: {} } } });
+  const find = (source: string, target: string) => t.renderer.links.find(l => l.source.id === source && l.target.id === target)!;
+  for (const link of t.renderer.links) link.render();
+  assert.equal(find('#ml', '#DL').arrows, true);
+  assert.equal(find('#DL', '#overfitting').arrows, false);
+  assert.equal(find('#DL', '#overfitting').line.texture, t.dashTexture);
+  assert.equal(find('A.md', 'B.md').arrows, false);
+  t.renderer.fShowArrow = true; find('A.md', 'B.md').render();
+  assert.equal(find('A.md', 'B.md').arrows, true);
+});
+
+test('clicking a dictionary tag expands it, saves the state and re-renders', async () => {
+  const t = await setup();
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.ok(t.ids().includes('#ml'));
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.ok(t.ids().includes('#ml')); assert.equal(t.owner.saves, 1);
+});
+
+test('other nodes keep the core click behavior', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const event = {};
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)(event, '#to-read', 'tag');
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)(event, 'A.md', '');
+  assert.deepEqual(t.engineClicks, [[event, '#to-read', 'tag'], [event, 'A.md', '']]);
 });
 
 test('tree layout keeps the user zoom across native updates and refits only when the layout changes', async () => {
-  const NativeGraphs = await loadNative({ requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
-    (tags: unknown) => new Map((tags as string[]).map((tag, i) => [tag, { x: i * 400, y: 0 }])));
-  const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [],
-    fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
-    changed() {}, resetPan() {}, onNodeClick() {}, setPan() {},
-    setScale(scale: number) { this.scale = scale; },
-    setData(data: { nodes: object }) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null })); },
-  };
-  const view = { renderer, contentEl: new Element(), update() {} }, leaf = { view };
-  const owner = {
-    model: new Ontology({ a: { description: '', broader: [] }, b: { description: '', broader: [] } }, []),
-    settings: { layout: 'tree' }, app: { workspace: { getLeavesOfType: () => [leaf] } },
-  };
-  const controller = new NativeGraphs(owner); controller.attach();
-  const layoutSelect = view.contentEl.all().find(el => el.value === 'tree')!;
-  const fitted = renderer.scale;
-  renderer.targetScale = renderer.scale = 5;
-  renderer.setData({ nodes: {} });
-  assert.equal(renderer.scale, 5, 'a native graph update must not reset the zoom');
-  controller.refresh();
-  assert.equal(renderer.scale, 5, 'a metadata refresh must not reset the zoom');
-  owner.settings.layout = 'radial'; controller.refresh();
-  assert.equal(renderer.scale, fitted, 'switching layout refits the new positions');
+  const t = await setup({ layout: 'tree', expanded: ['cs'] });
+  t.controller.attach();
+  const layoutSelect = t.contentEl.all().find(el => el.value === 'tree')!;
+  const fitted = t.renderer.scale;
+  t.renderer.targetScale = t.renderer.scale = 5;
+  t.renderer.setData(core());
+  assert.equal(t.renderer.scale, 5, 'a native graph update must not reset the zoom');
+  t.controller.refresh();
+  assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
+  t.owner.settings.layout = 'radial'; t.controller.refresh();
+  assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
   assert.equal(layoutSelect.value, 'radial', 'the toolbar shows a layout changed in settings');
-  controller.destroy();
 });
 
-test('notes and related toggles hide those elements without touching tag structure', async () => {
-  const NativeGraphs = await loadNative({ requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
-    () => { throw new Error('Force must use the native worker'); });
-  const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as object[],
-    fShowArrow: true, worker: { postMessage() {} }, width: 800, height: 600, targetScale: 1, scale: 1,
-    changed() {}, resetPan() {}, onNodeClick() {}, setPan() {}, setScale() {},
-    setData(data: { nodes: Record<string, { links: Record<string, true> }> }) {
-      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null }));
-      this.links = Object.entries(data.nodes).flatMap(([source, n]) => Object.keys(n.links).map(target => ({ source, target })));
-    },
-  };
-  const contentEl = new Element();
-  const leaf = { view: { renderer, contentEl, update() {} } };
-  const owner = {
-    model: new Ontology({ a: { description: '', broader: [], related: ['b'] }, b: { description: '', broader: [] } }, [{ path: 'N.md', tags: ['a'] }]),
-    settings: { layout: 'force' }, app: { workspace: { getLeavesOfType: () => [leaf] } },
-  };
-  const controller = new NativeGraphs(owner); controller.attach();
-  (renderer.onNodeClick as Function)({}, '#a', 'tag');
-  assert.deepEqual(renderer.nodes.map(n => n.id).sort(), ['#a', '#b', 'N.md']);
-  assert.equal(renderer.links.length, 2);
-  const click = (text: string) => contentEl.all().find(el => el.text === text)!.events.get('click')!();
-  click('Notes');
-  assert.deepEqual(renderer.nodes.map(n => n.id).sort(), ['#a', '#b'], 'hiding notes keeps every tag');
-  click('Related');
-  assert.equal(renderer.links.length, 0, 'hiding related removes the dashed link');
-  click('Notes'); click('Related');
-  assert.equal(renderer.nodes.length, 3); assert.equal(renderer.links.length, 2);
-  click('b');
-  assert.ok(contentEl.all().some(el => el.text === 'Collapse children and notes'), 'panel navigation expands the target tag like a node click');
-  controller.destroy();
+test('notes and related toggles start from settings and persist', async () => {
+  const t = await setup({ showNotes: false });
+  t.controller.attach();
+  assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
+  t.click('Notes');
+  assert.ok(t.ids().includes('A.md')); assert.equal(t.owner.settings.showNotes, true);
+  t.click('Related');
+  assert.equal(t.owner.settings.showRelated, false); assert.equal(t.owner.saves, 2);
+});
+
+test('refresh prunes expanded tags that left the dictionary', async () => {
+  const t = await setup({ expanded: ['gone', 'cs'] });
+  t.controller.attach();
+  t.controller.refresh();
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.ok(t.owner.saves >= 1);
+});
+
+test('searching a tag expands it and its ancestors', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.ok(t.ids().includes('#DL'));
+});
+
+test('searching a tag outside the current graph opens the panel with a notice', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const before = t.ids();
+  t.search('overfitting');
+  assert.deepEqual(t.notices, ['Not in the current graph.']);
+  assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
+  assert.ok(t.contentEl.all().some(el => el.text === 'overfitting'));
+});
+
+test('rendering before any core data does nothing', async () => {
+  const t = await setup({}, false);
+  t.controller.attach();
+  assert.equal(t.forwarded.length, 0);
+  t.renderer.setData(core());
+  assert.ok(t.ids().includes('#cs'));
+});
+
+test('without tag nodes from the core graph the status explains how to show the hierarchy', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.renderer.setData({ numLinks: 0, nodes: { 'A.md': { type: '', links: {} } } });
+  const status = t.contentEl.children[2]! as unknown as { textContent: string };
+  assert.equal(status.textContent, 'Turn on Tags in the graph filters to show the dictionary hierarchy.');
 });
