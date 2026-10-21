@@ -10,10 +10,14 @@ export default class TagOntologyPlugin extends Plugin {
   model?: Ontology;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
+  // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
+  firstRun = false;
   private refreshTimer?: number;
 
   async onload(): Promise<void> {
-    this.settings = sanitizeSettings(await this.loadData(), this.app.vault.configDir);
+    const saved: unknown = await this.loadData();
+    this.firstRun = saved === null || saved === undefined;
+    this.settings = sanitizeSettings(saved, this.app.vault.configDir);
     this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {

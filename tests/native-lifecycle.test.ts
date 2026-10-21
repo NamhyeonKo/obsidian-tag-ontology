@@ -41,7 +41,7 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
-async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
+async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [];
   const context = createContext({
     performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
@@ -78,9 +78,15 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
   };
   const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick };
   const contentEl = new Element();
-  const view = { renderer, contentEl, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
+  const graphOptions = { showTags, showOrphans: true }, optionWrites: object[] = [];
+  const dataEngine = {
+    getOptions: () => ({ ...graphOptions }),
+    setOptions(options: typeof graphOptions) { Object.assign(graphOptions, options); optionWrites.push(options); },
+    onOptionsChange() {},
+  };
+  const view = { renderer, contentEl, dataEngine, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
   const owner = {
-    model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0,
+    model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
     app: { workspace: { getLeavesOfType: () => leaves }, vault: { getAbstractFileByPath: () => null } },
   };
@@ -97,7 +103,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true) {
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab };
+  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -247,4 +253,19 @@ test('a closed panel stays closed when the vault refreshes', async () => {
   t.click('Close');
   t.controller.refresh();
   assert.equal(t.contentEl.children[1]!.hidden, true);
+});
+
+test('a fresh install turns on the core Tags filter once', async () => {
+  const t = await setup({}, true, true, false);
+  t.controller.attach();
+  assert.equal(t.graphOptions.showTags, true);
+  assert.equal(t.owner.firstRun, false); assert.equal(t.owner.saves, 1);
+  t.graphOptions.showTags = false; t.controller.refresh();
+  assert.equal(t.graphOptions.showTags, false, 'later choices are left alone');
+});
+
+test('an existing install never touches the core Tags filter', async () => {
+  const t = await setup({}, true, false, false);
+  t.controller.attach();
+  assert.equal(t.graphOptions.showTags, false); assert.equal(t.optionWrites.length, 0);
 });

@@ -21,7 +21,8 @@ interface NativeRenderer {
   nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null }[];
   links: NativeLink[];
 }
-interface NativeView extends ItemView { renderer: NativeRenderer; update(): void }
+interface GraphEngine { getOptions(): Record<string, unknown>; setOptions(options: Record<string, unknown>): void; onOptionsChange(): void }
+interface NativeView extends ItemView { renderer: NativeRenderer; dataEngine?: GraphEngine; update(): void }
 interface Session {
   leaf: WorkspaceLeaf; view: NativeView; renderer: NativeRenderer; active: boolean;
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
@@ -109,6 +110,13 @@ export class NativeGraphs {
       });
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
+      // Obsidian ships with the Tags filter off; turn it on once for a fresh install, then leave it to the user.
+      if (this.owner.firstRun && view.dataEngine) {
+        this.owner.firstRun = false;
+        const options = view.dataEngine.getOptions();
+        if (!options.showTags) { options.showTags = true; view.dataEngine.setOptions(options); view.dataEngine.onOptionsChange(); }
+        void this.owner.saveState();
+      }
       // Ask the engine to send its data again so the first render goes through the layer.
       try { view.update(); }
       catch (error) {
