@@ -42,7 +42,7 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void;
 }
-type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
+type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
@@ -121,8 +121,7 @@ export class NativeGraphs {
       tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
-          this.owner.settings.layout = layout;
-          void this.owner.saveSettings();
+          if (this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
         });
       }
       this.syncToolbar(session);
