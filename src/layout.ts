@@ -41,17 +41,17 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
   // depth in its tree is its level.
   const local = new Map<string, { x: number; y: number }>();
   const trees = roots.map(root => {
-    const members: string[] = [], levels: number[] = [], next = [root], nextLevels = [0];
+    const members: string[] = [], next = [root], nextLevels = [0];
     let leaves = 0, depth = 0;
     while (next.length) {
       const tag = next.pop()!, y = nextLevels.pop()!, kids = children.get(tag)!;
-      members.push(tag); levels.push(y); depth = Math.max(depth, y);
+      members.push(tag); depth = Math.max(depth, y);
       if (!kids.length) local.set(tag, { x: leaves++, y });
       for (let k = kids.length - 1; k >= 0; k--) { next.push(kids[k]); nextLevels.push(y + 1); }
     }
     for (let i = members.length - 1; i >= 0; i--) {
-      const kids = children.get(members[i])!;
-      if (kids.length) local.set(members[i], { x: (local.get(kids[0])!.x + local.get(kids[kids.length - 1])!.x) / 2, y: levels[i] });
+      const kids = children.get(members[i])!, first = kids.length ? local.get(kids[0])! : undefined;
+      if (first) local.set(members[i], { x: (first.x + local.get(kids[kids.length - 1])!.x) / 2, y: first.y - 1 });
     }
     return { members, width: (leaves - 1) * SIBLING, height: depth * LEVEL };
   });
