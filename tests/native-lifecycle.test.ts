@@ -59,7 +59,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
-        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = text; } }
+        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };

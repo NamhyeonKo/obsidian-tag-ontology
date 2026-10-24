@@ -404,9 +404,9 @@ export class NativeGraphs {
     button.addEventListener('click', action);
     return button;
   }
+  // setTooltip also sets aria-label, which screen readers and the tests use.
   private label(button: HTMLElement, text: string) {
     setTooltip(button, text, { placement: 'right' });
-    button.setAttribute('aria-label', text);
   }
   // Toolbar state lives in the shared settings so every graph tab shows the same values.
   private syncToolbar(session: Session) {
