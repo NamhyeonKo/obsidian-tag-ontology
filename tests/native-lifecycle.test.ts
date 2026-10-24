@@ -11,7 +11,9 @@ import type { NativeData } from '../src/layer.ts';
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  createDiv() { return this.createEl('div'); }
+  css: Record<string, string> = {};
+  setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
+  createDiv(cls?: string) { return this.createEl('div', { cls }); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
     const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
     for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
@@ -70,14 +72,16 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as Link[],
+    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
     fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
+    highlightNode: null as unknown, dragNode: null as unknown,
+    getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
     changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
-      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null }));
+      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null }));
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
           render() { link.arrows = renderer.fShowArrow; } };
@@ -85,7 +89,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       }));
     },
   };
-  const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick };
+  const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick, getHighlightNode: renderer.getHighlightNode };
   const contentEl = new Element();
   const graphOptions = { showTags, showOrphans: true }, optionWrites: object[] = [];
   const dataEngine = {
@@ -114,7 +118,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
   };
   const addTab = () => {
-    const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null })); } };
+    const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
     const tabEl = new Element();
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
@@ -439,4 +443,68 @@ test('clicking a node in the graph keeps the camera where it is', async () => {
   const pans = t.renderer.pans.length;
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
   assert.equal(t.renderer.pans.length, pans);
+});
+
+test('custom colors give every tag node the tag color and turning them off gives the core colors back', async () => {
+  const t = await setup({ customColors: true, tagColor: '#12ab3c' });
+  t.controller.attach();
+  const colors = () => Object.values(t.forwarded.at(-1)!.nodes).filter(n => n.type === 'tag').map(n => n.color as { a: number; rgb: number });
+  assert.ok(colors().every(c => c.rgb === 0x12ab3c && c.a === 1));
+  t.owner.settings.customColors = false; t.controller.refresh();
+  assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.color === undefined));
+});
+
+const TAG = 0x8b6cef, HIGHLIGHT = 0x6d47eb;
+const rgbOf = (t: { renderer: { nodes: { id: string; color: unknown }[] } }, id: string) => (t.renderer.nodes.find(n => n.id === id)!.color as { rgb: number } | null)?.rgb;
+
+test('the selected tag takes the highlight color and the one before goes back to the tag color', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs'] });
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT); assert.equal(rgbOf(t, '#sec'), TAG);
+  t.suggests[0]!.onChoose('ml');
+  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT, 'an already expanded tag is highlighted without a re-render');
+  assert.equal(rgbOf(t, '#ml'), TAG);
+});
+
+test('the highlight toggles add up: the tag itself, its descendants and its directly connected tags', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs', 'ml'], highlightSelected: false, highlightDescendants: true });
+  t.controller.attach();
+  const highlighted = () => t.renderer.nodes.filter(n => (n.color as { rgb?: number } | null)?.rgb === HIGHLIGHT).map(n => n.id).sort();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.deepEqual(highlighted(), ['#DL', '#crypto', '#ml']);
+  Object.assign(t.owner.settings, { highlightSelected: true, highlightDescendants: false, highlightConnected: true }); t.controller.refresh();
+  t.suggests[0]!.onChoose('ml');
+  assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
+  t.owner.settings.customColors = false; t.controller.refresh();
+  assert.deepEqual(highlighted(), []);
+});
+
+test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
+  const t = await setup({ customColors: true });
+  const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
+  const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
+  t.suggests[0]!.onChoose('cs');
+  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#6d47eb');
+  t.owner.settings.titleAccent = false; t.controller.refresh();
+  assert.ok(!title().classes.has('tag-ontology-accent'));
+  Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
+  assert.ok(!title().classes.has('tag-ontology-accent'));
+});
+
+test('focus keeps the selected tag looking hovered until something else is hovered or it is turned off', async () => {
+  const t = await setup({ focus: true });
+  t.controller.attach();
+  const node = (id: string) => t.renderer.nodes.find(n => n.id === id);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(t.renderer.getHighlightNode(), node('#cs'));
+  t.renderer.highlightNode = node('#sec');
+  assert.equal(t.renderer.getHighlightNode(), node('#sec'), 'hovering another node still wins');
+  t.renderer.highlightNode = null;
+  t.owner.settings.focus = false; t.controller.refresh();
+  assert.equal(t.renderer.getHighlightNode(), null);
+  t.controller.destroy();
+  assert.equal(t.renderer.getHighlightNode, t.original.getHighlightNode);
 });
