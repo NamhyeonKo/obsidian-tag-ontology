@@ -105,23 +105,22 @@ export class NativeGraphs {
       // Node and link drawing fade everything not linked to this node; with focus on, the selected tag counts as hovered when nothing else is.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || session.focus || null;
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
-      const buttons = tools.createDiv('tag-ontology-buttons');
-      this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
-      this.iconButton(buttons, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
-      this.iconButton(buttons, 'scan', 'Fit', () => this.fit(session));
-      buttons.createDiv('tag-ontology-separator');
+      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
+      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
+      this.iconButton(tools, 'scan', 'Fit', () => this.fit(session));
+      tools.createDiv('tag-ontology-separator');
       for (const [key, icon, name] of TOGGLES) {
-        session.toggles[key] = this.iconButton(buttons, icon, name, () => {
+        session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && this.owner.settings.layout !== 'force') return;
           this.update({ [key]: !this.owner.settings[key] }, 'filter');
         });
         session.toggles[key].addClass('tag-ontology-toggle');
       }
-      buttons.createDiv('tag-ontology-separator');
-      this.iconButton(buttons, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
-      buttons.createDiv('tag-ontology-separator');
+      tools.createDiv('tag-ontology-separator');
+      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
+      tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
-        session.layoutButtons[layout] = this.iconButton(buttons, icon, `Layout: ${name}`, () => {
+        session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
           this.owner.settings.layout = layout;
           void this.owner.saveSettings();
         });
