@@ -3,6 +3,7 @@
 // Leaves sit side by side, each parent is centered over its children, and root trees wrap into rows to roughly fit a screen,
 // so a link to a parent in another root tree can point up from a lower row.
 // ponytail: leaves never share a column (no Reingold–Tilford contour packing); add it if shallow subtrees beside deep ones waste width.
+// ponytail: recursive, so a chain of a couple of thousand levels overflows the stack; tag dictionaries are a few levels deep.
 // Upright, siblings sit a label apart (Obsidian labels are about 90–130 wide) and levels leave room for the label under
 // each dot; on its side, siblings only need a label's height and levels a label's width.
 const SPACING = { upright: { sibling: 120, level: 160 }, sideways: { sibling: 40, level: 260 } }, SCREEN = 1.6;
@@ -33,7 +34,8 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
     place(root, 0);
     return { members, width: (leaves - 1) * SIBLING, height: depth * LEVEL };
   });
-  // Try every row count and keep the arrangement whose shape is closest to a screen (turned, for a tree on its side).
+  // Add rows until the shape stops getting closer to a screen (turned, for a tree on its side): more rows only ever make
+  // the drawing narrower and taller, so the first step away is the best one.
   const total = trees.reduce((sum, tree) => sum + tree.width + GAP, 0);
   const arrange = (limit: number) => {
     const at: { x: number; y: number }[] = [];
@@ -48,6 +50,7 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
   let best = arrange(total);
   for (let rows = 2; rows <= trees.length; rows++) {
     const next = arrange(total / rows);
+    if (next.misfit > best.misfit) break;
     if (next.misfit < best.misfit) best = next;
   }
   const positions = new Map<string, { x: number; y: number }>();
