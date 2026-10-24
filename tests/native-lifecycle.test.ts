@@ -72,7 +72,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const renderer = {
     nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as Link[],
     fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
-    changed() {}, resetPan() {}, setPan() {}, setScale(scale: number) { this.scale = scale; },
+    pans: [] as [number, number][],
+    changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
@@ -421,4 +422,20 @@ test('parent, child and related lists start open', async () => {
     }
   }
   assert.deepEqual([...new Set(seen)].sort(), ['Children', 'Parents', 'Related']);
+});
+
+test('choosing a tag in the sidebar centers it in the open graph', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  t.suggests[0]!.onChoose('dl');
+  const node = t.renderer.nodes.find(n => n.id === '#DL')!;
+  assert.deepEqual(t.renderer.pans.at(-1), [400 - node.x * t.renderer.scale, 300 - node.y * t.renderer.scale]);
+});
+
+test('clicking a node in the graph keeps the camera where it is', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  const pans = t.renderer.pans.length;
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(t.renderer.pans.length, pans);
 });

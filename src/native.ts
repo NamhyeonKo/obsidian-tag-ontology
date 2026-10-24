@@ -15,7 +15,7 @@ interface NativeRenderer {
   setData: (data: NativeData) => unknown;
   onNodeClick: (event: MouseEvent, id: string, type: string) => void;
   changed(): void; resetPan(): void;
-  width: number; height: number; targetScale: number;
+  width: number; height: number; scale: number; targetScale: number;
   setScale(scale: number): void; setPan(x: number, y: number): void;
   fShowArrow: boolean;
   worker: Worker;
@@ -199,16 +199,7 @@ export class NativeGraphs {
     session.layout = settings.layout;
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
-    if (operation === 'initial' || operation === 'roots') {
-      session.stopFit();
-      const started = performance.now();
-      const fitRoots = () => {
-        if (!session.active) return;
-        this.fit(session);
-        session.fitFrame = performance.now() - started < 2000 ? window.requestAnimationFrame(fitRoots) : undefined;
-      };
-      session.fitFrame = window.requestAnimationFrame(fitRoots);
-    }
+    if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
     const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)])).size;
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
@@ -297,6 +288,16 @@ export class NativeGraphs {
       pending.push(...this.owner.model.entries.get(current)?.broader ?? []);
     }
     this.update({ expanded: [...expanded] }, 'reveal');
+    // Center the chosen tag in every open graph; with no graph open there is nothing to move.
+    for (const session of this.sessions.values()) {
+      const id = session.resolved?.idOf.get(tag), r = session.renderer;
+      if (!id) continue;
+      const center = () => {
+        const node = r.nodes.find(n => n.id === id);
+        if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
+      };
+      center(); this.follow(session, center);
+    }
   }
 
   private renderPanel() {
@@ -395,6 +396,18 @@ export class NativeGraphs {
     const file = this.owner.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Reload the dictionary and try again.'); return; }
     void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));
+  }
+
+  // Repeats a camera move every frame for two seconds while the force layout settles; any user input stops it.
+  private follow(session: Session, move: () => void) {
+    session.stopFit();
+    const started = performance.now();
+    const frame = () => {
+      if (!session.active) return;
+      move();
+      session.fitFrame = performance.now() - started < 2000 ? window.requestAnimationFrame(frame) : undefined;
+    };
+    session.fitFrame = window.requestAnimationFrame(frame);
   }
 
   private fit(session: Session) {
