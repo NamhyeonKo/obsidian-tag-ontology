@@ -41,8 +41,6 @@ interface Session {
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void; repin: () => void;
-  // Where a tree layout put each node, for a dragged one to return to.
-  home: Map<string, { x: number; y: number }>;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
@@ -80,28 +78,18 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
       // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
-      // restarted its simulation, which would then carry the node off. The tree layouts pin it again and ease it back to
-      // its place with a slight overshoot, like a spring; grabbing it again stops that.
+      // restarted its simulation, which would then carry the node off. The tree layouts keep it where it was released.
       // ponytail: a release outside the graph pane is missed; listen on window if that matters.
       session.repin = () => {
         if (!session.active || this.owner.settings.layout === 'force') return;
-        const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
-        if (!released.length) return;
-        r.worker.postMessage({ run: false });
-        for (const { node } of released) { node.fx = node.x; node.fy = node.y; }
-        this.follow(session, progress => {
-          const k = 1 + 2.2 * (progress - 1) ** 3 + 1.2 * (progress - 1) ** 2;
-          for (const { node, x, y, home } of released) {
-            node.x = node.fx = progress < 1 ? x + (home.x - x) * k : home.x;
-            node.y = node.fy = progress < 1 ? y + (home.y - y) * k : home.y;
-          }
-          r.changed();
-        }, 450);
+        const loose = r.nodes.filter(node => node.fx === null);
+        for (const node of loose) { node.fx = node.x; node.fy = node.y; }
+        if (loose.length) r.worker.postMessage({ run: false });
       };
       view.contentEl.addEventListener('pointerup', session.repin);
       session.wrapped = data => {
@@ -279,11 +267,11 @@ export class NativeGraphs {
       .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
     const positions = treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
-    r.worker.postMessage({ run: false }); r.workerResults = null; session.home.clear();
+    r.worker.postMessage({ run: false }); r.workerResults = null;
     for (const node of r.nodes) {
       const p = positions.get(node.id)!;
       // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
-      node.x = p.x + .01; node.y = p.y + .01; session.home.set(node.id, { x: node.x, y: node.y });
+      node.x = p.x + .01; node.y = p.y + .01;
       node.fx = node.x; node.fy = node.y;
     }
     r.changed();
@@ -445,16 +433,14 @@ export class NativeGraphs {
     void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));
   }
 
-  // Repeats a move every frame for a while (two seconds while the force layout settles) and passes how far along it is,
-  // ending on 1; any user input stops it.
-  private follow(session: Session, move: (progress: number) => void, ms = 2000) {
+  // Repeats a camera move every frame for two seconds while the force layout settles; any user input stops it.
+  private follow(session: Session, move: () => void) {
     session.stopFit();
     const started = performance.now();
     const frame = () => {
       if (!session.active) return;
-      const progress = Math.min(1, (performance.now() - started) / ms);
-      move(progress);
-      session.fitFrame = progress < 1 ? window.requestAnimationFrame(frame) : undefined;
+      move();
+      session.fitFrame = performance.now() - started < 2000 ? window.requestAnimationFrame(frame) : undefined;
     };
     session.fitFrame = window.requestAnimationFrame(frame);
   }

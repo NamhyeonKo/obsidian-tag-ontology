@@ -54,14 +54,9 @@ const layoutOutside: string[][] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
-  // Animation frames wait until a test advances the fake clock with tick().
-  const frames = new Map<number, () => void>();
-  let frameId = 0, clock = 0;
-  const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
   const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
-    performance: { now: () => clock }, devicePixelRatio: 1,
-    window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
+    performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
@@ -132,7 +127,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick };
+  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -351,18 +346,15 @@ test('tree pins every node and hands the tags outside the hierarchy to the layou
   assert.deepEqual([...layoutOutside.at(-1)!].sort(), ['#loose', '#to-read']);
 });
 
-test('in a tree, a node released after a drag springs back to its place', async () => {
+test('in a tree, a node released after a click or drag stays pinned where it is', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
-  const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
   // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
-  node.x += 300; node.y += 100; node.fx = null; node.fy = null;
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!;
+  node.x = 50; node.y = 60; node.fx = null; node.fy = null;
   t.contentEl.events.get('pointerup')!();
+  assert.deepEqual([node.fx, node.fy], [50, 60]);
   assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
-  t.tick(100);
-  assert.ok(node.fx === node.x && Math.abs(node.x - home[0]) < 300, 'pinned on its way back');
-  t.tick(1000);
-  assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
   // Force leaves the core behavior alone.
   t.click('Layout: Force');
   node.fx = null; t.contentEl.events.get('pointerup')!();
