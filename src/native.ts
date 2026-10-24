@@ -145,12 +145,13 @@ export class NativeGraphs {
     }
   }
 
-  refresh() {
+  // Note edits only change counts and note lists; the core graph re-sends its own data for them, so only redraw for the dictionary or settings.
+  refresh(redraw = true) {
     this.attach();
     const model = this.owner.model!, settings = this.owner.settings;
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
-    for (const session of this.sessions.values()) this.render(session, 'refresh');
+    if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
     this.renderPanel();
   }
 

@@ -15,6 +15,7 @@ export default class TagOntologyPlugin extends Plugin {
   // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
   firstRun = false;
   private refreshTimer?: number;
+  private redraw = false;
 
   async onload(): Promise<void> {
     const saved: unknown = await this.loadData();
@@ -30,12 +31,12 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
     this.app.workspace.onLayoutReady(() => { void this.refreshViews(); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
-    const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(); };
+    const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
     this.registerEvent(this.app.vault.on('create', changed));
     this.registerEvent(this.app.vault.on('delete', changed));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-      if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh();
+      if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
   }
@@ -89,13 +90,19 @@ export default class TagOntologyPlugin extends Plugin {
     } catch (error) { new Notice(`Could not open the graph: ${String(error)}`); }
   }
 
-  private scheduleRefresh(): void {
+  // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
+  private scheduleRefresh(...paths: string[]): void {
+    this.redraw ||= paths.includes(this.settings.dictionaryPath);
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => { this.refreshTimer = undefined; void this.refreshViews(); }, 300);
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = undefined;
+      const redraw = this.redraw; this.redraw = false;
+      void this.refreshViews(redraw);
+    }, 300);
   }
 
-  private async refreshViews(): Promise<void> {
-    try { await this.loadModel(); this.native.refresh(); }
+  private async refreshViews(redraw = true): Promise<void> {
+    try { await this.loadModel(); this.native.refresh(redraw); }
     catch (error) { console.error('Tag Ontology:', error); }
   }
 
