@@ -31,7 +31,7 @@ interface Session {
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
-  tools: HTMLElement; status: HTMLElement;
+  overlay: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -42,7 +42,7 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void;
 }
-type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
+type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
@@ -73,11 +73,12 @@ export class NativeGraphs {
         this.failed.add(leaf);
         continue;
       }
-      const tools = view.contentEl.createDiv('tag-ontology-tools');
-      const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
+      // The toolbar and the status line share one column, so a status line that wraps pushes the buttons up instead of covering them.
+      const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
+      const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -121,8 +122,7 @@ export class NativeGraphs {
       tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
-          this.owner.settings.layout = layout;
-          void this.owner.saveSettings();
+          if (this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
         });
       }
       this.syncToolbar(session);
@@ -199,7 +199,7 @@ export class NativeGraphs {
     const r = session.renderer, result = session.original.call(r, layer.data);
     session.data = layer.data; this.paint(session);
     this.styleLinks(session);
-    if (settings.layout !== 'force') this.staticLayout(session, layer.data);
+    if (settings.layout !== 'force') this.staticLayout(session);
     else {
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
@@ -250,29 +250,22 @@ export class NativeGraphs {
     }
   }
 
-  private staticLayout(session: Session, data: NativeData) {
+  private staticLayout(session: Session) {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
     const tags = [...visible];
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
     const positions = new Map([...hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), this.owner.settings.layout === 'radial')]
       .map(([tag, position]) => [idOf.get(tag)!, position]));
     r.worker.postMessage({ run: false }); r.workerResults = null;
-    const anchorOf = (id: string) => Object.keys(data.nodes[id]?.links ?? {}).find(target => positions.has(target));
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
     const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
     const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
-    const loose = r.nodes.filter(node => !positions.has(node.id) && !anchorOf(node.id)).length;
-    const around = new Map<string, number>();
+    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place; they go on a ring around it.
+    const loose = r.nodes.filter(node => !positions.has(node.id)).length;
     let ringIndex = 0;
     for (const node of r.nodes) {
       let p = positions.get(node.id);
-      const anchor = p ? undefined : anchorOf(node.id);
-      if (anchor) {
-        // Sunflower spiral keeps many notes around one tag readable without overlapping.
-        const k = around.get(anchor) ?? 0, a = positions.get(anchor)!;
-        around.set(anchor, k + 1);
-        p = { x: a.x + Math.cos(k * 2.39996) * 14 * Math.sqrt(k + 1), y: a.y + Math.sin(k * 2.39996) * 14 * Math.sqrt(k + 1) };
-      } else if (!p) {
+      if (!p) {
         const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
         p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
       }
@@ -412,9 +405,9 @@ export class NativeGraphs {
     button.addEventListener('click', action);
     return button;
   }
+  // setTooltip also sets aria-label, which screen readers and the tests use.
   private label(button: HTMLElement, text: string) {
     setTooltip(button, text, { placement: 'right' });
-    button.setAttribute('aria-label', text);
   }
   // Toolbar state lives in the shared settings so every graph tab shows the same values.
   private syncToolbar(session: Session) {
@@ -424,7 +417,7 @@ export class NativeGraphs {
       if (!button) continue;
       const disabled = key === 'showNotes' && settings.layout !== 'force';
       button.toggleClass('is-active', settings[key] && !disabled); button.setAttribute('aria-pressed', String(settings[key] && !disabled));
-      button.toggleClass('is-disabled', disabled); button.setAttribute('aria-disabled', String(disabled));
+      button.setAttribute('aria-disabled', String(disabled));
       this.label(button, disabled ? 'Notes are hidden in Tree and Radial' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const [layout] of LAYOUTS) {
@@ -475,7 +468,7 @@ export class NativeGraphs {
       if (link.line && original.texture) link.line.texture = original.texture;
     }
     s.texture?.destroy();
-    s.tools.remove(); s.status.remove(); s.view.contentEl.removeClass('tag-ontology-native');
+    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native');
     this.sessions.delete(id);
     if (redraw) {
       for (const node of s.renderer.nodes) { node.fx = null; node.fy = null; }
