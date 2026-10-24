@@ -89,6 +89,8 @@ test('shows explicit roots and keeps unplaced entries separate', () => {
   const model = make();
   assert.deepEqual(model.roots, ['root']);
   assert.equal(model.entries.has('unplaced'), true);
+  assert.deepEqual([...model.placed].sort(), ['root', ...model.descendants('root')].sort());
+  assert.equal(model.placed.has('unplaced'), false);
   assert.deepEqual(model.entries.get('left')?.aliases, []);
 });
 

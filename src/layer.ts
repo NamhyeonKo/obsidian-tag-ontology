@@ -15,8 +15,8 @@ export interface Resolved {
 }
 
 export function resolveTags(model: Ontology, data: NativeData, expanded: ReadonlySet<string>): Resolved {
-  // Unplaced entries (no broader key) have no position in the hierarchy, so they stay ordinary tags.
-  const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)]));
+  // Unplaced entries have no position in the hierarchy, so they stay ordinary tags.
+  const { placed } = model;
   // The core graph merges tag case variants into one node, so match dictionary keys the same way.
   const byLower = new Map([...placed].map(tag => [tag.toLowerCase(), tag]));
   const tagOf = new Map<string, string>(), idOf = new Map<string, string>(), range = new Set<string>();

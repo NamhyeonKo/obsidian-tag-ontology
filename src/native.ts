@@ -210,12 +210,11 @@ export class NativeGraphs {
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
-    const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)])).size;
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
     session.status.textContent = tagsShown
-      ? `${layer.resolved.visible.size} / ${placed} tags · ${notes} notes · ${model.roots.length} roots`
+      ? `${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`
       : 'Turn on Tags in the graph filters to show the dictionary hierarchy.';
     this.metrics.push({ operation, ms: performance.now() - start, nodes: Object.keys(layer.data.nodes).length, visible: document.visibilityState === 'visible' });
     this.metrics = this.metrics.slice(-50);
