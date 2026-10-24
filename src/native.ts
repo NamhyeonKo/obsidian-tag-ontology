@@ -20,7 +20,7 @@ interface NativeRenderer {
   fShowArrow: boolean;
   worker: Worker;
   workerResults: unknown;
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null }[];
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[];
   links: NativeLink[];
 }
 interface GraphEngine { getOptions(): Record<string, unknown>; setOptions(options: Record<string, unknown>): void; onOptionsChange(): void }
@@ -32,6 +32,8 @@ interface Session {
   tools: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
+  // The layered data last sent to the renderer, with the colors it gave each node.
+  data?: NativeData;
   kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   texture?: Texture; layout?: string;
@@ -95,7 +97,7 @@ export class NativeGraphs {
         this.selected = tag; this.checking = false;
         // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
         if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
-        else this.renderPanel();
+        else this.showSelection();
         this.showPanel(true);
       };
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
@@ -192,6 +194,7 @@ export class NativeGraphs {
     session.resolved = layer.resolved; session.kinds = layer.kinds;
     session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
     const r = session.renderer, result = session.original.call(r, layer.data);
+    session.data = layer.data; this.paint(session);
     this.styleLinks(session);
     if (settings.layout !== 'force') this.staticLayout(session, layer.data);
     else {
@@ -282,7 +285,7 @@ export class NativeGraphs {
     this.selected = tag; this.checking = false;
     // Expansion is shared by every graph tab; with no graph open it is saved for the next one.
     const sessions = [...this.sessions.values()];
-    if (sessions.length && !sessions.some(s => s.resolved?.range.has(tag))) { new Notice('Not in the current graph.'); this.renderPanel(); return; }
+    if (sessions.length && !sessions.some(s => s.resolved?.range.has(tag))) { new Notice('Not in the current graph.'); this.showSelection(); return; }
     // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
     const expanded = new Set(this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
     while (pending.length) {
@@ -302,6 +305,32 @@ export class NativeGraphs {
       };
       center(); this.follow(session, center);
     }
+  }
+
+  // Shows the selected tag in the panel and in every graph without layering the graphs again.
+  private showSelection() {
+    this.renderPanel();
+    for (const session of this.sessions.values()) this.paint(session);
+  }
+
+  // Tags to show in the highlight color for the current selection.
+  private highlighted(): string[] {
+    const settings = this.owner.settings, model = this.owner.model, tag = this.selected, entry = tag ? model?.entries.get(tag) : undefined;
+    if (!settings.customColors || !model || !tag || !entry) return [];
+    return [
+      ...settings.highlightSelected ? [tag] : [],
+      ...settings.highlightDescendants ? model.descendants(tag) : [],
+      ...settings.highlightConnected ? [...entry.broader ?? [], ...model.children.get(tag) ?? [], ...entry.related ?? []] : [],
+    ];
+  }
+
+  // The renderer reads node colors every frame, so recoloring needs no new data: highlighted tags take the
+  // highlight color and every other node the color the layer gave it.
+  private paint(session: Session) {
+    const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor);
+    const ids = new Set(this.highlighted().flatMap(tag => session.resolved?.idOf.get(tag) ?? []));
+    for (const node of r.nodes) node.color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
+    r.changed();
   }
 
   private renderPanel() {

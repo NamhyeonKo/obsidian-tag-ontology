@@ -118,6 +118,12 @@ const PATH_HINT = 'Enter a .json path inside the vault, outside the config folde
 const LAYOUTS = { force: 'Force', tree: 'Tree', radial: 'Radial' };
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };
+const HIGHLIGHT_COLOR = { name: 'Highlight color', desc: 'Highlighted tags take this color.' };
+const HIGHLIGHTS = [
+  { key: 'highlightSelected', name: 'Highlight the selected tag', desc: 'The tag you clicked or searched.' },
+  { key: 'highlightDescendants', name: 'Highlight its descendants', desc: 'Every tag under the selected tag.' },
+  { key: 'highlightConnected', name: 'Highlight its connected tags', desc: 'The parents, children and related tags of the selected tag.' },
+] as const;
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
@@ -134,6 +140,8 @@ class OntologySettingsTab extends PluginSettingTab {
       // The color options only show while custom colors are on.
       { type: 'group', visible: () => this.owner.settings.customColors, items: [
         { ...TAG_COLOR, control: { type: 'color', key: 'tagColor', defaultValue: DEFAULT_SETTINGS.tagColor } },
+        { ...HIGHLIGHT_COLOR, control: { type: 'color', key: 'highlightColor', defaultValue: DEFAULT_SETTINGS.highlightColor } },
+        ...HIGHLIGHTS.map(({ key, name, desc }) => ({ name, desc, control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
       ] },
     ];
   }
@@ -170,6 +178,12 @@ class OntologySettingsTab extends PluginSettingTab {
     });
     custom.push(new Setting(containerEl).setName(TAG_COLOR.name).setDesc(TAG_COLOR.desc).addColorPicker((picker) => {
       picker.setValue(this.owner.settings.tagColor).onChange(value => this.setControlValue('tagColor', value));
+    }));
+    custom.push(new Setting(containerEl).setName(HIGHLIGHT_COLOR.name).setDesc(HIGHLIGHT_COLOR.desc).addColorPicker((picker) => {
+      picker.setValue(this.owner.settings.highlightColor).onChange(value => this.setControlValue('highlightColor', value));
+    }));
+    for (const { key, name, desc } of HIGHLIGHTS) custom.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
     }));
     for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
   }

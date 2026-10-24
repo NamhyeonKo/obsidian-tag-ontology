@@ -70,14 +70,14 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null }[], links: [] as Link[],
+    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
     fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
-      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null }));
+      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null }));
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
           render() { link.arrows = renderer.fShowArrow; } };
@@ -114,7 +114,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
   };
   const addTab = () => {
-    const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null })); } };
+    const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
     const tabEl = new Element();
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
@@ -448,4 +448,32 @@ test('custom colors give every tag node the tag color and turning them off gives
   assert.ok(colors().every(c => c.rgb === 0x12ab3c && c.a === 1));
   t.owner.settings.customColors = false; t.controller.refresh();
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.color === undefined));
+});
+
+const TAG = 0x8b6cef, HIGHLIGHT = 0x6d47eb;
+const rgbOf = (t: { renderer: { nodes: { id: string; color: unknown }[] } }, id: string) => (t.renderer.nodes.find(n => n.id === id)!.color as { rgb: number } | null)?.rgb;
+
+test('the selected tag takes the highlight color and the one before goes back to the tag color', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs'] });
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT); assert.equal(rgbOf(t, '#sec'), TAG);
+  t.suggests[0]!.onChoose('ml');
+  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT, 'an already expanded tag is highlighted without a re-render');
+  assert.equal(rgbOf(t, '#ml'), TAG);
+});
+
+test('the highlight toggles add up: the tag itself, its descendants and its directly connected tags', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs', 'ml'], highlightSelected: false, highlightDescendants: true });
+  t.controller.attach();
+  const highlighted = () => t.renderer.nodes.filter(n => (n.color as { rgb?: number } | null)?.rgb === HIGHLIGHT).map(n => n.id).sort();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.deepEqual(highlighted(), ['#DL', '#crypto', '#ml']);
+  Object.assign(t.owner.settings, { highlightSelected: true, highlightDescendants: false, highlightConnected: true }); t.controller.refresh();
+  t.suggests[0]!.onChoose('ml');
+  assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
+  t.owner.settings.customColors = false; t.controller.refresh();
+  assert.deepEqual(highlighted(), []);
 });
