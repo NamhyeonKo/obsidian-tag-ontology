@@ -325,7 +325,7 @@ export class NativeGraphs {
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
-      const details = panel.createEl('details'); details.createEl('summary', { text: `${label} ${tags.length}` });
+      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `${label} ${tags.length}` });
       this.tagLinks(details, tags);
     }
     panel.createEl('hr');

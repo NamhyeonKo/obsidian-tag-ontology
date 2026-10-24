@@ -408,3 +408,17 @@ test('the sidebar search expands a tag without an open graph', async () => {
   assert.deepEqual(t.notices, []);
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'dl'));
 });
+
+test('parent, child and related lists start open', async () => {
+  const t = await setup();
+  const relations = () => t.sidebar.all().filter(el => el.tag === 'details' && /^(Parents|Children|Related) /.test(el.children[0]!.text));
+  const seen: string[] = [];
+  for (const tag of ['ml', 'overfitting']) {
+    t.suggests[0]!.onChoose(tag);
+    for (const list of relations()) {
+      assert.equal((list as unknown as { open?: boolean }).open, true, `${tag}: ${list.children[0]!.text}`);
+      seen.push(list.children[0]!.text.split(' ')[0]!);
+    }
+  }
+  assert.deepEqual([...new Set(seen)].sort(), ['Children', 'Parents', 'Related']);
+});
