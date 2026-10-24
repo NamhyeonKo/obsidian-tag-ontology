@@ -210,7 +210,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── layout.ts       # Tree/Radial positions (breadth-first levels)
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -224,7 +224,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
-- [Cytoscape.js](https://js.cytoscape.org/) computes the Tree/Radial layouts.
+- The Tree/Radial layouts follow the breadthfirst layout rules of [Cytoscape.js](https://js.cytoscape.org/), reimplemented without the dependency.
 
 ## License
 

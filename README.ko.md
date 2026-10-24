@@ -211,7 +211,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── layout.ts       # Tree/Radial positions (breadth-first levels)
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -225,7 +225,7 @@ scripts/deploy.mjs  # Copies the build into a local vault
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
-- Tree/Radial 배치 계산에 [Cytoscape.js](https://js.cytoscape.org/)를 사용합니다.
+- Tree/Radial 배치는 [Cytoscape.js](https://js.cytoscape.org/)의 breadthfirst 배치 규칙을 의존성 없이 다시 구현한 것입니다.
 
 ## 라이선스
 
