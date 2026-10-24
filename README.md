@@ -23,6 +23,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Three layouts.** Force, Tree and Radial.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
+- **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab, like the core graph's own options.
 
 | Tag panel | Dictionary check |
@@ -153,6 +154,14 @@ The round buttons on the left of the graph show their name when you hover them:
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. Paths inside the vault's config folder (usually `.obsidian/`) or `.git/` are rejected. |
 | Layout | Force, Tree or Radial. |
+| Keep the selected tag focused | Keep the selected tag and its links bright and fade the rest, as when you hover it. Hovering another node still shows that node. Off by default. |
+| Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
+| &nbsp;&nbsp;Tag color | Color of every tag in the graph, including tags that are not in the dictionary and tags in a color group. Default `#8b6cef` (Obsidian's default accent). |
+| &nbsp;&nbsp;Highlight color | Color of the highlighted tags. Default `#6d47eb`, a little darker. |
+| &nbsp;&nbsp;Highlight the selected tag | Highlight the tag you clicked or searched. On by default. |
+| &nbsp;&nbsp;Highlight its descendants | Also highlight every tag under it. Off by default. |
+| &nbsp;&nbsp;Highlight its connected tags | Also highlight its parents, children and related tags. Off by default. The three switches add up. |
+| &nbsp;&nbsp;Tag title in the highlight color | Show the selected tag's title in the sidebar tab in the highlight color. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
@@ -160,7 +169,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds `dictionaryPath`, `layout`, `expanded`, `showNotes` and `showRelated`.
+- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds the settings above, the expanded tags and the Notes/Related toggles.
 
 ## Compatibility and known limitations
 

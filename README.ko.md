@@ -23,6 +23,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 - **세 가지 배치.** Force, Tree, Radial.
 - **사이드바 탭.** 파일·검색 탭 옆의 탭에서 태그 이름이나 별칭으로 찾고, 태그 정보를 보고, 사전 대조를 합니다. 여기서 태그를 고르면 열린 그래프가 그 태그를 가운데로 옮깁니다.
 - **사전 대조.** vault에서 쓰이지만 사전에 없는 태그와, 사전에는 있지만 아직 아무 노트도 쓰지 않는 태그를 보여 줍니다. 보고만 하고 아무것도 바꾸지 않습니다.
+- **사용자 색상(선택).** 모든 태그를 한 가지 색으로 칠하고, 선택한 태그(원하면 그 하위 태그나 바로 연결된 태그까지)를 강조색으로 칠합니다. 선택한 태그를 마우스를 올린 것처럼 계속 강조해 둘 수도 있습니다.
 - **보던 상태 기억.** 펼친 태그와 Notes·Related 토글이 저장되고, 기본 그래프 설정처럼 모든 그래프 탭이 같은 상태를 씁니다.
 
 | 태그 패널 | 사전 대조 |
@@ -156,12 +157,20 @@ UI는 영어로 표시됩니다.
 | --- | --- |
 | Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. vault 설정 폴더(보통 `.obsidian/`)와 `.git/` 안의 경로는 쓸 수 없습니다. |
 | Layout | 그래프 배치. Force, Tree, Radial 중 하나를 고릅니다. |
+| Keep the selected tag focused | 마우스를 올렸을 때처럼 선택한 태그와 그 연결선은 밝게 두고 나머지는 흐리게 유지합니다. 다른 노드에 마우스를 올리면 그 노드가 보입니다. 기본값은 꺼짐입니다. |
+| Custom colors | 기본값은 꺼짐이며, 이때는 그래프 본래 색을 그대로 씁니다. 켜면 아래 항목이 나타납니다. |
+| &nbsp;&nbsp;Tag color | 그래프의 모든 태그 색. 사전에 없는 태그와 색상 그룹에 속한 태그도 이 색이 됩니다. 기본값은 `#8b6cef`(Obsidian 기본 강조색)입니다. |
+| &nbsp;&nbsp;Highlight color | 강조할 태그의 색. 기본값은 조금 더 어두운 `#6d47eb`입니다. |
+| &nbsp;&nbsp;Highlight the selected tag | 클릭하거나 검색한 태그를 강조합니다. 기본값은 켜짐입니다. |
+| &nbsp;&nbsp;Highlight its descendants | 그 아래 모든 하위 태그도 강조합니다. 기본값은 꺼짐입니다. |
+| &nbsp;&nbsp;Highlight its connected tags | 상위·하위·연관 태그도 강조합니다. 기본값은 꺼짐입니다. 세 항목은 합쳐서 적용됩니다. |
+| &nbsp;&nbsp;Tag title in the highlight color | 사이드바 탭에서 선택한 태그의 제목을 강조색으로 표시합니다. 기본값은 켜짐입니다. |
 
 ## 개인정보
 
 - 네트워크 요청, 사용 통계 수집, 계정이 없습니다.
 - 노트의 메타데이터와 사전 파일만 읽습니다.
-- 자체 설정 파일(설정 폴더 안의 `plugins/tag-ontology/data.json`, 보통 `.obsidian/` 아래, `dictionaryPath`, `layout`, `expanded`, `showNotes`, `showRelated` 저장)에만 씁니다.
+- 자체 설정 파일(설정 폴더 안의 `plugins/tag-ontology/data.json`, 보통 `.obsidian/` 아래, 위 설정과 펼친 태그, Notes·Related 토글 저장)에만 씁니다.
 
 ## 호환성과 알려진 한계
 
