@@ -440,3 +440,12 @@ test('clicking a node in the graph keeps the camera where it is', async () => {
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
   assert.equal(t.renderer.pans.length, pans);
 });
+
+test('custom colors give every tag node the tag color and turning them off gives the core colors back', async () => {
+  const t = await setup({ customColors: true, tagColor: '#12ab3c' });
+  t.controller.attach();
+  const colors = () => Object.values(t.forwarded.at(-1)!.nodes).filter(n => n.type === 'tag').map(n => n.color as { a: number; rgb: number });
+  assert.ok(colors().every(c => c.rgb === 0x12ab3c && c.a === 1));
+  t.owner.settings.customColors = false; t.controller.refresh();
+  assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.color === undefined));
+});

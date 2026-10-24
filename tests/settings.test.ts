@@ -6,7 +6,10 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
+    customColors: false, tagColor: '#8b6cef',
   });
+  assert.deepEqual(sanitizeSettings({ customColors: true, tagColor: '#12AB3c' }, '.obsidian'), { ...DEFAULT_SETTINGS, customColors: true, tagColor: '#12AB3c' });
+  assert.equal(sanitizeSettings({ tagColor: 'red' }, '.obsidian').tagColor, '#8b6cef');
   for (const raw of [null, [], 'text', { dictionaryPath: '../tags.json', layout: 'invalid', expanded: 'cs' }]) {
     assert.deepEqual(sanitizeSettings(raw, '.obsidian'), DEFAULT_SETTINGS);
   }

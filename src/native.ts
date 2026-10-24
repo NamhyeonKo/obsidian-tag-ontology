@@ -1,7 +1,7 @@
 import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { hierarchyPositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
-import { buildLayer, edgeKey, type EdgeKind, type NativeData, type Resolved } from './layer.ts';
+import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
 import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
@@ -43,6 +43,8 @@ type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
 export const PANEL_VIEW = 'tag-ontology-panel';
+// The renderer's color format.
+const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -185,7 +187,8 @@ export class NativeGraphs {
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
     // Tree and Radial show the tag hierarchy alone; the saved Notes choice applies again in Force.
-    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated });
+    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
+      tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
     session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
     const r = session.renderer, result = session.original.call(r, layer.data);

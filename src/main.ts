@@ -116,6 +116,8 @@ class DictionaryView extends ItemView {
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
 const LAYOUTS = { force: 'Force', tree: 'Tree', radial: 'Radial' };
+const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
+const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
@@ -128,6 +130,11 @@ class OntologySettingsTab extends PluginSettingTab {
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
       { name: 'Layout', control: { type: 'dropdown', key: 'layout', options: LAYOUTS, defaultValue: DEFAULT_SETTINGS.layout } },
+      { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
+      // The color options only show while custom colors are on.
+      { type: 'group', visible: () => this.owner.settings.customColors, items: [
+        { ...TAG_COLOR, control: { type: 'color', key: 'tagColor', defaultValue: DEFAULT_SETTINGS.tagColor } },
+      ] },
     ];
   }
 
@@ -154,5 +161,16 @@ class OntologySettingsTab extends PluginSettingTab {
           await this.owner.saveSettings();
         });
     });
+    const custom: Setting[] = [];
+    new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.customColors).onChange((value) => {
+        for (const setting of custom) setting.settingEl.toggle(value);
+        return this.setControlValue('customColors', value);
+      });
+    });
+    custom.push(new Setting(containerEl).setName(TAG_COLOR.name).setDesc(TAG_COLOR.desc).addColorPicker((picker) => {
+      picker.setValue(this.owner.settings.tagColor).onChange(value => this.setControlValue('tagColor', value));
+    }));
+    for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
   }
 }

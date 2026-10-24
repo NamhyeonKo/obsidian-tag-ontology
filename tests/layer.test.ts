@@ -49,6 +49,14 @@ test('no tag nodes in the input means no dictionary nodes are added', () => {
   assert.deepEqual(Object.keys(applyCollapse(input, r, model).nodes), ['A.md']);
 });
 
+test('a tag color paints every tag node, dictionary or not, and no note', () => {
+  const input = core(), before = structuredClone(input), green = { a: 1, rgb: 0x00ff00 };
+  const { data } = buildLayer(input, model, { expanded: new Set(['cs']), showNotes: true, showRelated: true, tagColor: green });
+  for (const [id, node] of Object.entries(data.nodes)) assert.equal(node.color, node.type === 'tag' ? green : undefined, id);
+  assert.ok(data.nodes['#to-read'] && data.nodes['#ml'], 'covers tags outside the dictionary and tags the layer adds');
+  assert.deepEqual(input, before, 'the core data keeps its own colors');
+});
+
 test('applyCollapse never mutates its input', () => {
   const input = core(); applyCollapse(input, resolveTags(model, input, new Set()), model);
   assert.deepEqual(input, core());

@@ -72,7 +72,8 @@ export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontol
 }
 
 export type EdgeKind = 'broader' | 'related';
-export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean }
+export interface NodeColor { a: number; rgb: number }
+export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor }
 
 const copyNodes = (data: NativeData): NativeData['nodes'] =>
   Object.fromEntries(Object.entries(data.nodes).map(([id, node]) => [id, { ...node, links: { ...node.links } }]));
@@ -111,5 +112,8 @@ export function buildLayer(data: NativeData, model: Ontology, state: LayerState)
   const resolved = resolveTags(model, data, state.expanded);
   const collapsed = applyCollapse(data, resolved, model);
   const edges = addEdges(collapsed, resolved, model, state.showRelated ? ['broader', 'related'] : ['broader']);
-  return { data: state.showNotes ? edges.data : hideNotes(edges.data), kinds: edges.kinds, resolved };
+  const layered = state.showNotes ? edges.data : hideNotes(edges.data);
+  // Every node here is already a copy, so coloring tags leaves the core data alone.
+  if (state.tagColor) for (const node of Object.values(layered.nodes)) if (node.type === 'tag') node.color = state.tagColor;
+  return { data: layered, kinds: edges.kinds, resolved };
 }
