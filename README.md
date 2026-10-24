@@ -142,7 +142,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | `share-2` / `network` / `list-tree` | Force / Vertical tree / Horizontal tree | Switch the layout; the current one is highlighted |
 
 - The **tree layouts** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
-- In a tree, each tag sits one level below its deepest parent and hangs under it; arrows from its other parents are drawn too. Root trees wrap into rows (or columns) to fit the screen. Drag a tag and it stays where you drop it until the graph is drawn again. Tags that are not in the dictionary gather to the right of the tree and move as in Force.
+- In a tree, each tag sits one level below its deepest parent and hangs under it; arrows from its other parents are drawn too. Root trees wrap into rows (or columns) to fit the screen. Drag a tag and it stays where you drop it until the graph is drawn again.
 - Click a tag in the graph to expand it and show it in the sidebar tab, which comes forward if another tab was showing. Clicking an expanded tag only shows it again. Collapse it with the icon next to its title in the tab.
 - Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 

@@ -338,22 +338,13 @@ test('tree hides notes without changing the saved setting', async () => {
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
 });
 
-test('tree pins the hierarchy and lets the tags outside it settle to its right under the core forces', async () => {
+test('tree pins every node and rings the tags outside the hierarchy around it', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
-  const messages = t.renderer.worker.messages as { nodes?: Record<string, [number, number]>; forceNode?: { id: string; x: number | null }; run?: boolean }[];
-  const inside = t.renderer.nodes.filter(n => n.id === '#cs' || n.id === '#sec'), outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
-  assert.ok(inside.every(n => n.fx === n.x && n.fy === n.y)); assert.ok(outside.every(n => n.fx === null));
-  // The core forces pull toward the origin, so the tree sits left of it and the outside tags start next to it.
-  assert.ok(inside.every(n => n.x < 0));
-  const start = messages.filter(m => m.nodes).at(-1)!.nodes!;
-  for (const n of outside) assert.ok(Math.hypot(...start[n.id]) < 100);
-  // The simulation pins the tree too and runs for the rest.
-  for (const n of inside) assert.ok(messages.some(m => m.forceNode?.id === n.id && m.forceNode.x === n.x));
-  assert.equal(messages.at(-1)!.run, true);
-  // Force lets every tree node go again.
-  t.click('Layout: Force');
-  for (const n of inside) assert.ok(messages.some(m => m.forceNode?.id === n.id && m.forceNode.x === null));
+  assert.ok(t.renderer.nodes.every(n => n.fx === n.x && n.fy === n.y));
+  // The fake layout puts the roots cs and sec at x 0 and 400, so the ring is 150 beyond half that width.
+  const outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
+  assert.deepEqual(outside.map(n => Math.round(Math.hypot(n.x - 200, n.y))), [350, 350]);
 });
 
 test('in a tree, a node released after a click or drag stays pinned where it is', async () => {
@@ -362,11 +353,9 @@ test('in a tree, a node released after a click or drag stays pinned where it is'
   // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
   const node = t.renderer.nodes.find(n => n.id === '#cs')!;
   node.x = 50; node.y = 60; node.fx = null; node.fy = null;
-  const outside = t.renderer.nodes.find(n => n.id === '#to-read')!;
   t.contentEl.events.get('pointerup')!();
   assert.deepEqual([node.fx, node.fy], [50, 60]);
-  assert.deepEqual({ ...(t.renderer.worker.messages.at(-1) as { forceNode: object }).forceNode }, { id: '#cs', x: 50, y: 60 }, 'the simulation pins it too');
-  assert.equal(outside.fx, null, 'tags outside the hierarchy stay free');
+  assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
   // Force leaves the core behavior alone.
   t.click('Layout: Force');
   node.fx = null; t.contentEl.events.get('pointerup')!();

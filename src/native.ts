@@ -41,8 +41,6 @@ interface Session {
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void; repin: () => void;
-  // Tree layouts: the nodes pinned in the simulation, and the tags left free beside the tree.
-  pinned: Set<string>; loose: Set<string>;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
@@ -80,19 +78,18 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, pinned: new Set(), loose: new Set(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
       // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
-      // restarted its simulation, which would then carry the node off. The tree layouts keep a tree node where it was
-      // released; the tags beside the tree stay free.
+      // restarted its simulation, which would then carry the node off. The tree layouts keep it where it was released.
       // ponytail: a release outside the graph pane is missed; listen on window if that matters.
       session.repin = () => {
         if (!session.active || this.owner.settings.layout === 'force') return;
-        const released = r.nodes.filter(node => node.fx === null && !session.loose.has(node.id));
-        for (const node of released) this.pin(session, node);
-        if (released.length && !session.loose.size) r.worker.postMessage({ run: false });
+        const loose = r.nodes.filter(node => node.fx === null);
+        for (const node of loose) { node.fx = node.x; node.fy = node.y; }
+        if (loose.length) r.worker.postMessage({ run: false });
       };
       view.contentEl.addEventListener('pointerup', session.repin);
       session.wrapped = data => {
@@ -214,7 +211,6 @@ export class NativeGraphs {
     this.styleLinks(session);
     if (settings.layout !== 'force') this.staticLayout(session);
     else {
-      this.unpin(session);
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
     }
@@ -223,8 +219,7 @@ export class NativeGraphs {
     session.layout = settings.layout;
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
-    // Force and the tags beside a tree keep moving for a while after they are drawn.
-    if (operation === 'initial' || operation === 'roots' || (layoutChanged && session.loose.size)) this.follow(session, () => this.fit(session));
+    if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
@@ -271,43 +266,24 @@ export class NativeGraphs {
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
     const positions = new Map([...treePositions(tags, edges, this.owner.settings.layout === 'tree-horizontal')]
       .map(([tag, position]) => [idOf.get(tag)!, position]));
-    r.workerResults = null;
-    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place (ones missing from the
-    // dictionary). The core forces pull every free node toward the origin, so the tree is shifted to put the origin a gap
-    // to its right: those tags gather there and move like in Force, while the tree stays pinned on screen and in the simulation.
+    r.worker.postMessage({ run: false }); r.workerResults = null;
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
-    const dx = xs.length ? Math.max(...xs) + 300 : 0, dy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
-    const wasLoose = session.loose;
-    session.loose = new Set(r.nodes.filter(node => !positions.has(node.id)).map(node => node.id));
+    const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
+    const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
+    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place; they go on a ring around it.
+    const loose = r.nodes.filter(node => !positions.has(node.id)).length;
+    let ringIndex = 0;
     for (const node of r.nodes) {
-      const p = positions.get(node.id);
-      // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
-      if (p) { node.x = p.x - dx + .01; node.y = p.y - dy + .01; node.fx = node.x; node.fy = node.y; }
-      else { node.fx = null; node.fy = null; }
-    }
-    if (session.loose.size) {
-      // Tags that were already free keep their place; new ones start around the origin.
-      r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map((node, i) => [node.id,
-        node.fx !== null || wasLoose.has(node.id) ? [node.x, node.y] : [Math.cos(i) * 30, Math.sin(i) * 30]])) });
-      for (const node of r.nodes) {
-        if (node.fx !== null) this.pin(session, node);
-        else r.worker.postMessage({ forceNode: { id: node.id, x: null, y: null } });
+      let p = positions.get(node.id);
+      if (!p) {
+        const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
+        p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
       }
-      r.worker.postMessage({ alpha: 1, alphaTarget: 0, run: true });
-    } else r.worker.postMessage({ run: false });
+      // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
+      node.x = p.x + .01; node.y = p.y + .01;
+      node.fx = node.x; node.fy = node.y;
+    }
     r.changed();
-  }
-
-  private pin(session: Session, node: NativeRenderer['nodes'][number]) {
-    node.fx = node.x; node.fy = node.y;
-    session.renderer.worker.postMessage({ forceNode: { id: node.id, x: node.x, y: node.y } });
-    session.pinned.add(node.id);
-  }
-
-  // Lets the simulation move every node a tree layout pinned in it.
-  private unpin(session: Session) {
-    for (const id of session.pinned) session.renderer.worker.postMessage({ forceNode: { id, x: null, y: null } });
-    session.pinned.clear(); session.loose.clear();
   }
 
   private reveal(tag: string) {
@@ -498,7 +474,6 @@ export class NativeGraphs {
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
-    this.unpin(s);
     for (const [link, original] of s.links) {
       link.render = original.render;
       if (link.line && original.texture) link.line.texture = original.texture;
