@@ -416,7 +416,7 @@ export class NativeGraphs {
       if (!button) continue;
       const disabled = key === 'showNotes' && settings.layout !== 'force';
       button.toggleClass('is-active', settings[key] && !disabled); button.setAttribute('aria-pressed', String(settings[key] && !disabled));
-      button.toggleClass('is-disabled', disabled); button.setAttribute('aria-disabled', String(disabled));
+      button.setAttribute('aria-disabled', String(disabled));
       this.label(button, disabled ? 'Notes are hidden in Tree and Radial' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const [layout] of LAYOUTS) {
