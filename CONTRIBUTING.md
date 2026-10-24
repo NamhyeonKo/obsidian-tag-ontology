@@ -84,6 +84,10 @@ Confirm this with the checkbox in the pull request template. Pull requests witho
 
 ## Maintainers
 
+### Merging
+
+Merge pull requests into `main` with a merge commit (`gh pr merge --merge`, or `git merge --no-ff` locally) so the branch history stays. Don't fast-forward, squash or rebase.
+
 ### Releasing
 
 1. Merge the release-ready changes into `main` through a PR with passing CI.
