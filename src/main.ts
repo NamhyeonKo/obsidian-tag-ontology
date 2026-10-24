@@ -16,9 +16,11 @@ export default class TagOntologyPlugin extends Plugin {
   firstRun = false;
   private refreshTimer?: number;
   private redraw = false;
+  private disposed = false;
 
   async onload(): Promise<void> {
     const saved: unknown = await this.loadData();
+    if (this.disposed) return;
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
@@ -79,15 +81,18 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async openView(): Promise<void> {
+    if (this.disposed) return;
     try {
       await this.loadModel();
+      if (this.disposed) return;
       const existing = this.app.workspace.getLeavesOfType('graph')[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type: 'graph', active: true });
+      if (this.disposed) return;
       this.native.attach();
       this.native.showPanel(false);
       await this.app.workspace.revealLeaf(leaf);
-    } catch (error) { new Notice(`Could not open the graph: ${String(error)}`); }
+    } catch (error) { if (!this.disposed) new Notice(`Could not open the graph: ${String(error)}`); }
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
@@ -102,11 +107,13 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   private async refreshViews(redraw = true): Promise<void> {
-    try { await this.loadModel(); this.native.refresh(redraw); }
-    catch (error) { console.error('Tag Ontology:', error); }
+    if (this.disposed) return;
+    try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
+    catch (error) { if (!this.disposed) console.error('Tag Ontology:', error); }
   }
 
   onunload(): void {
+    this.disposed = true;
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.native.destroy();
   }
