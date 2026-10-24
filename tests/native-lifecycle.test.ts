@@ -333,6 +333,15 @@ test('tree hides notes without changing the saved setting', async () => {
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
 });
 
+test('tree pins every node and rings the tags outside the hierarchy around it', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  assert.ok(t.renderer.nodes.every(n => n.fx === n.x && n.fy === n.y));
+  // The fake layout puts the roots cs and sec at x 0 and 400, so the ring is 150 beyond half that width.
+  const outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
+  assert.deepEqual(outside.map(n => Math.round(Math.hypot(n.x - 200, n.y))), [350, 350]);
+});
+
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
   t.controller.attach();

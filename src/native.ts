@@ -198,7 +198,7 @@ export class NativeGraphs {
     const r = session.renderer, result = session.original.call(r, layer.data);
     session.data = layer.data; this.paint(session);
     this.styleLinks(session);
-    if (settings.layout !== 'force') this.staticLayout(session, layer.data);
+    if (settings.layout !== 'force') this.staticLayout(session);
     else {
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
@@ -249,29 +249,22 @@ export class NativeGraphs {
     }
   }
 
-  private staticLayout(session: Session, data: NativeData) {
+  private staticLayout(session: Session) {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
     const tags = [...visible];
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
     const positions = new Map([...hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), this.owner.settings.layout === 'radial')]
       .map(([tag, position]) => [idOf.get(tag)!, position]));
     r.worker.postMessage({ run: false }); r.workerResults = null;
-    const anchorOf = (id: string) => Object.keys(data.nodes[id]?.links ?? {}).find(target => positions.has(target));
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
     const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
     const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
-    const loose = r.nodes.filter(node => !positions.has(node.id) && !anchorOf(node.id)).length;
-    const around = new Map<string, number>();
+    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place; they go on a ring around it.
+    const loose = r.nodes.filter(node => !positions.has(node.id)).length;
     let ringIndex = 0;
     for (const node of r.nodes) {
       let p = positions.get(node.id);
-      const anchor = p ? undefined : anchorOf(node.id);
-      if (anchor) {
-        // Sunflower spiral keeps many notes around one tag readable without overlapping.
-        const k = around.get(anchor) ?? 0, a = positions.get(anchor)!;
-        around.set(anchor, k + 1);
-        p = { x: a.x + Math.cos(k * 2.39996) * 14 * Math.sqrt(k + 1), y: a.y + Math.sin(k * 2.39996) * 14 * Math.sqrt(k + 1) };
-      } else if (!p) {
+      if (!p) {
         const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
         p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
       }
