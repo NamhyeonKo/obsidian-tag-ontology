@@ -21,7 +21,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Note counts with roll-up.** For each tag you see notes tagged *directly* and notes tagged with the tag *or any descendant*. Notes are de-duplicated across multiple tags and multiple parents.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, Tree and Radial.
-- **Search** by tag name or alias.
+- **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab, like the core graph's own options.
 
@@ -64,7 +64,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 
 1. In Obsidian, choose **Open folder as vault** and select `examples/sample-vault`.
 2. Install the plugin into that vault using one of the methods above.
-3. Click the **graph** ribbon icon or run **Tag Ontology: Open graph** from the command palette.
+3. Click the **Open tag ontology** ribbon icon (a book) or run **Tag Ontology: Open graph** from the command palette.
 4. The plugin turns on **Filters → Tags** the first time. If the graph shows no tags, turn it on in the graph settings (gear icon).
 
 You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
@@ -114,10 +114,17 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 ## Usage
 
-### Toolbar and tag panel
+### Sidebar tab
 
-- **Search tags or aliases**: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag and open its panel.
-- The round buttons under the search box show their name when you hover them:
+Opening a graph adds a **Tag dictionary** tab to the left sidebar, next to Files and Search, without switching to it. Drag the tab to the right sidebar if you prefer; it stays where you put it. If you close it, it comes back the next time a graph opens.
+
+- **Search tags or aliases** at the top of the tab: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag, show it in the tab and center it in the open graph. Search works with no graph open too: the expansion is saved for the next graph.
+- With no tag chosen, the tab lists the root tags.
+- A tag shows its description, aliases, note counts (direct and including descendants), its parents, children and related tags as `#tag` links, and below a rule its note lists. Click a `#tag` to move to it. The icon next to the title expands or collapses the tag.
+
+### Graph toolbar
+
+The round buttons on the left of the graph show their name when you hover them:
 
 | Icon | Button | What it does |
 | --- | --- | --- |
@@ -126,11 +133,11 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 | `scan` | Fit | Fit the graph to the view |
 | `file-text` | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
 | `link` | Related | Show or hide the dashed related links |
-| `book-open-check` | Dictionary check | List unregistered and unused tags |
+| `book-open-check` | Dictionary check | List unregistered and unused tags in the sidebar tab |
 | `share-2` / `network` / `orbit` | Force / Tree / Radial | Switch the layout; the current one is highlighted |
 
 - **Tree** and **Radial** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
-- Click a tag to expand it and open its panel: description, aliases, note counts (direct and including descendants), parents, children, related tags and note lists. Clicking an expanded tag only reopens the panel. Use **Collapse children and notes** in the panel to collapse it.
+- Click a tag in the graph to expand it and show it in the sidebar tab, which comes forward if another tab was showing. Clicking an expanded tag only shows it again. Collapse it with the icon next to its title in the tab.
 - Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 
 ### Commands
@@ -192,7 +199,7 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 src/
 ├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
-├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, clicks, layouts)
+├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Tree/Radial positions (headless Cytoscape)
 └── settings.ts     # Settings shape and path validation
