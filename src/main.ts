@@ -27,7 +27,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
-      void this.refreshViews();
+      void this.refreshViews({ notify: true });
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
@@ -77,7 +77,7 @@ export default class TagOntologyPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveData(this.settings);
-    await this.refreshViews();
+    await this.refreshViews({ notify: true });
   }
 
   async openView(): Promise<void> {
@@ -102,14 +102,18 @@ export default class TagOntologyPlugin extends Plugin {
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = undefined;
       const redraw = this.redraw; this.redraw = false;
-      void this.refreshViews(redraw);
+      void this.refreshViews({ redraw });
     }, 300);
   }
 
-  private async refreshViews(redraw = true): Promise<void> {
+  private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
     if (this.disposed) return;
     try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
-    catch (error) { if (!this.disposed) console.error('Tag Ontology:', error); }
+    catch (error) {
+      if (this.disposed) return;
+      console.error('Tag Ontology:', error);
+      if (notify) new Notice(`Could not reload the dictionary: ${String(error)}`);
+    }
   }
 
   onunload(): void {

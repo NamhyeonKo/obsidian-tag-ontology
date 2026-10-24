@@ -132,3 +132,73 @@ test('a failed graph open does not show a notice after unload', async () => {
   t.plugin.onunload(); read.resolve('{invalid'); await pending;
   assert.deepEqual(t.notices, []);
 });
+
+test('a manual reload reports failure and keeps the last valid model and graph', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  const previous = t.plugin.model;
+  t.vault.cachedRead = async () => '{invalid';
+  t.commands.get('reload-dictionary')!(); await settle();
+  assert.equal(t.notices.length, 1);
+  assert.match(t.notices[0], /dictionary/i);
+  assert.equal(t.errors.length, 1);
+  assert.equal(t.plugin.model, previous);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+});
+
+test('a settings change reports a dictionary reload failure', async () => {
+  const t = await setup();
+  t.vault.cachedRead = async () => '{invalid';
+  await t.plugin.saveSettings();
+  assert.equal(t.notices.length, 1);
+  assert.equal(t.errors.length, 1);
+});
+
+test('a background reload failure only logs and keeps the last valid model', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  const previous = t.plugin.model;
+  t.vault.cachedRead = async () => '{invalid';
+  t.events.get('modify')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
+  assert.deepEqual(t.notices, []);
+  assert.equal(t.errors.length, 1);
+  assert.equal(t.plugin.model, previous);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+});
+
+test('a pending manual reload does not report its failure after unload', async () => {
+  const t = await setup(), read = deferred<string>();
+  t.vault.cachedRead = () => read.promise;
+  t.commands.get('reload-dictionary')!();
+  t.plugin.onunload(); read.resolve('{invalid'); await settle();
+  assert.deepEqual(t.notices, []);
+  assert.deepEqual(t.errors, []);
+});
+
+test('note edits still skip graph redraws and a coalesced dictionary edit still redraws', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
+  t.events.get('modify')!({ path: 'Tag-Dictionary.json' });
+  t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'refresh:false', 'refresh:true']);
+  assert.equal(t.reads(), 3);
+});
+
+test('unload cancels a scheduled refresh', async () => {
+  const t = await setup();
+  t.events.get('modify')!({ path: 'Notes/A.md' });
+  t.plugin.onunload(); t.runTimers(); await settle();
+  assert.equal(t.reads(), 0);
+  assert.deepEqual(t.plugin.native.calls, ['destroy']);
+});
+
+test('a successful manual reload updates the model and graph without an error notice', async () => {
+  const t = await setup();
+  t.vault.cachedRead = async () => JSON.stringify({ updated: { description: '', broader: [] } });
+  t.commands.get('reload-dictionary')!(); await settle();
+  assert.deepEqual(t.plugin.model!.roots, ['updated']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  assert.deepEqual(t.notices, []);
+  assert.deepEqual(t.errors, []);
+});
