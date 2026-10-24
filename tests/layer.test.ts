@@ -59,6 +59,13 @@ test('a tag color paints every tag node, dictionary or not, and no note', () => 
   assert.deepEqual(input, before, 'the core data keeps its own colors');
 });
 
+test('buildLayer never mutates the core data it layers', () => {
+  // Every render layers the same core data again, so adding edges in place must only touch copies.
+  const input = withOverfitting(), before = structuredClone(input);
+  buildLayer(input, model, { expanded: new Set(['cs', 'ml']), showNotes: true, showRelated: true });
+  assert.deepEqual(input, before);
+});
+
 test('applyCollapse never mutates its input', () => {
   const input = core(); applyCollapse(input, resolveTags(model, input, new Set()), model);
   assert.deepEqual(input, core());

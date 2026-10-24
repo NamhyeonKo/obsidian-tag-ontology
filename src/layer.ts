@@ -75,11 +75,9 @@ export type EdgeKind = 'broader' | 'related';
 export interface NodeColor { a: number; rgb: number }
 export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor }
 
-const copyNodes = (data: NativeData): NativeData['nodes'] =>
-  Object.fromEntries(Object.entries(data.nodes).map(([id, node]) => [id, { ...node, links: { ...node.links } }]));
-
+// Adds links to the given nodes in place: buildLayer passes the fresh copy from applyCollapse.
 export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, kinds: readonly EdgeKind[]) {
-  const { idOf, visible } = resolved, nodes = copyNodes(data), edges = new Map<string, EdgeKind>();
+  const { idOf, visible } = resolved, { nodes } = data, edges = new Map<string, EdgeKind>();
   const link = (source: string, target: string, kind: EdgeKind) => {
     const from = idOf.get(source)!, to = idOf.get(target)!, key = edgeKey(from, to);
     if (edges.get(key) === 'broader') return;
@@ -97,7 +95,7 @@ export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, 
       }
     }
   }
-  return { data: { ...data, nodes }, kinds: edges };
+  return { data, kinds: edges };
 }
 
 export function hideNotes(data: NativeData): NativeData {
