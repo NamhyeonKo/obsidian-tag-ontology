@@ -309,8 +309,8 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'orbit']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Tree', 'Layout: Radial']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'orbit']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: Radial']);
 });
 
 test('layout buttons switch the layout without rereading the dictionary and mark the current one', async () => {
@@ -320,11 +320,13 @@ test('layout buttons switch the layout without rereading the dictionary and mark
   const sent = t.forwarded.length;
   t.click('Layout: Force');
   assert.equal(t.forwarded.length, sent, 'the current layout is not drawn again');
-  t.click('Layout: Tree');
+  t.click('Layout: Vertical tree');
   assert.equal(t.owner.settings.layout, 'tree'); assert.equal(t.forwarded.length, sent + 1);
   assert.equal(reloads, 0); assert.equal(t.owner.saves, 1);
   const pressed = (label: string) => t.contentEl.all().find(el => el.attrs['aria-label'] === label)!.attrs['aria-pressed'];
-  assert.equal(pressed('Layout: Tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+  assert.equal(pressed('Layout: Vertical tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+  t.click('Layout: Horizontal tree');
+  assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.equal(pressed('Layout: Horizontal tree'), 'true');
 });
 
 test('tree hides notes without changing the saved setting', async () => {

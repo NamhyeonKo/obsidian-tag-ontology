@@ -3,9 +3,11 @@
 // Leaves sit side by side, each parent is centered over its children, and root trees wrap into rows to roughly fit a screen,
 // so a link to a parent in another root tree can point up from a lower row.
 // ponytail: leaves never share a column (no Reingold–Tilford contour packing); add it if shallow subtrees beside deep ones waste width.
-// Siblings sit a label apart (Obsidian labels are about 90–130 wide); levels leave room for the label under each dot.
-const SIBLING = 120, LEVEL = 160, GAP = 2 * SIBLING, SCREEN = 1.6;
-export function treePositions(tags: string[], edges: [parent: string, child: string][]) {
+// Upright, siblings sit a label apart (Obsidian labels are about 90–130 wide) and levels leave room for the label under
+// each dot; on its side, siblings only need a label's height and levels a label's width.
+const SPACING = { upright: { sibling: 120, level: 160 }, sideways: { sibling: 40, level: 260 } }, SCREEN = 1.6;
+export function treePositions(tags: string[], edges: [parent: string, child: string][], horizontal = false) {
+  const { sibling: SIBLING, level: LEVEL } = horizontal ? SPACING.sideways : SPACING.upright, GAP = 2 * SIBLING;
   const parents = new Map(tags.map(tag => [tag, [] as string[]]));
   for (const [parent, child] of edges) parents.get(child)?.push(parent);
   // The dictionary rejects broader cycles, so this ends.
@@ -31,7 +33,7 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
     place(root, 0);
     return { members, width: (leaves - 1) * SIBLING, height: depth * LEVEL };
   });
-  // Try every row count and keep the arrangement whose shape is closest to a screen.
+  // Try every row count and keep the arrangement whose shape is closest to a screen (turned, for a tree on its side).
   const total = trees.reduce((sum, tree) => sum + tree.width + GAP, 0);
   const arrange = (limit: number) => {
     const at: { x: number; y: number }[] = [];
@@ -41,7 +43,7 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
       at.push({ x, y });
       width = Math.max(width, x + tree.width); x += tree.width + GAP; rowHeight = Math.max(rowHeight, tree.height);
     }
-    return { at, misfit: Math.abs(Math.log((width + GAP) / (y + rowHeight + LEVEL) / SCREEN)) };
+    return { at, misfit: Math.abs(Math.log((width + GAP) / (y + rowHeight + LEVEL) / (horizontal ? 1 / SCREEN : SCREEN))) };
   };
   let best = arrange(total);
   for (let rows = 2; rows <= trees.length; rows++) {
@@ -51,8 +53,8 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
   const positions = new Map<string, { x: number; y: number }>();
   trees.forEach((tree, i) => {
     for (const tag of tree.members) {
-      const p = local.get(tag)!;
-      positions.set(tag, { x: best.at[i].x + p.x * SIBLING, y: best.at[i].y + p.y * LEVEL });
+      const p = local.get(tag)!, across = best.at[i].x + p.x * SIBLING, down = best.at[i].y + p.y * LEVEL;
+      positions.set(tag, horizontal ? { x: down, y: across } : { x: across, y: down });
     }
   });
   return positions;

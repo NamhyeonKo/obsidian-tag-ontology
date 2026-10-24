@@ -1,5 +1,5 @@
 export interface Settings {
-  dictionaryPath: string; layout: 'force' | 'tree' | 'radial';
+  dictionaryPath: string; layout: 'force' | 'tree' | 'tree-horizontal' | 'radial';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
   // With customColors on, every tag node in the graph takes tagColor and the highlighted ones (the selected tag,
   // its descendants, its directly connected tags, as switched on) take highlightColor; with it off the plugin leaves colors alone.
@@ -31,7 +31,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
-    layout: value.layout === 'tree' || value.layout === 'radial' ? value.layout : 'force',
+    layout: value.layout === 'tree' || value.layout === 'tree-horizontal' || value.layout === 'radial' ? value.layout : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), tagColor: hex('tagColor'), highlightColor: hex('highlightColor'),

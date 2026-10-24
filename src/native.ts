@@ -45,7 +45,7 @@ interface Session {
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree'], ['radial', 'orbit', 'Radial']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The renderer's color format.
 const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
@@ -255,7 +255,7 @@ export class NativeGraphs {
     const tags = [...visible];
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
     const placed = this.owner.settings.layout === 'radial'
-      ? hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), true) : treePositions(tags, edges);
+      ? hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), true) : treePositions(tags, edges, this.owner.settings.layout === 'tree-horizontal');
     const positions = new Map([...placed].map(([tag, position]) => [idOf.get(tag)!, position]));
     r.worker.postMessage({ run: false }); r.workerResults = null;
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);

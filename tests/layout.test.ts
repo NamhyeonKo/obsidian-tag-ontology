@@ -52,3 +52,12 @@ test('root trees wrap into rows, in order, once one row would be too wide for a 
   const small = treePositions(['a', 'b', 'a1', 'a2', 'b1'], [['a', 'a1'], ['a', 'a2'], ['b', 'b1']]);
   assert.equal(small.get('a')!.y, small.get('b')!.y);
 });
+
+test('the horizontal tree is the same tree on its side', () => {
+  const edges: [string, string][] = [['root', 'x'], ['root', 'y'], ['x', 'leaf']];
+  const side = treePositions(['root', 'x', 'y', 'leaf'], edges, true);
+  const [root, x, y, leaf] = ['root', 'x', 'y', 'leaf'].map(tag => side.get(tag)!);
+  assert.ok(root.x < x.x && x.x < leaf.x, 'levels run left to right');
+  assert.equal(x.x, y.x); assert.ok(x.y < y.y, 'siblings stack top to bottom');
+  assert.equal(root.y, (x.y + y.y) / 2);
+});

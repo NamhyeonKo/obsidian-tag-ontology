@@ -19,6 +19,7 @@ test('sanitizes saved settings to the supported fields', () => {
     assert.deepEqual(sanitizeSettings(raw, '.obsidian'), DEFAULT_SETTINGS);
   }
   assert.deepEqual(sanitizeSettings({ layout: 'radial' }, '.obsidian'), { ...DEFAULT_SETTINGS, layout: 'radial' });
+  assert.equal(sanitizeSettings({ layout: 'tree-horizontal' }, '.obsidian').layout, 'tree-horizontal');
 });
 
 test('rejects dictionary paths outside the allowed vault scope', () => {
