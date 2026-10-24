@@ -20,7 +20,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to expand it one level and watch its notes move to the more specific child tags.
 - **Note counts with roll-up.** For each tag you see notes tagged *directly* and notes tagged with the tag *or any descendant*. Notes are de-duplicated across multiple tags and multiple parents.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
-- **Three layouts.** Force, Tree and Radial.
+- **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
@@ -29,10 +29,12 @@ It is **read-only**. It never edits your notes or your dictionary.
 | Sidebar tab | Dictionary check |
 | --- | --- |
 | ![Sidebar tab showing a tag with its parents, children and note counts](assets/0.5.1/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.5.1/dictionary-check.png) |
-| **Search suggestions** | **Tree layout** |
-| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | ![Tree layout showing the tag hierarchy without notes](assets/0.5.1/tree.png) |
+| **Vertical tree** | **Horizontal tree** |
+| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.6.0/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.6.0/tree-horizontal.png) |
 | **Custom colors** | **Keep the selected tag focused** |
 | ![Every tag in one color, the selected tag and its connected tags in the highlight color](assets/0.5.1/custom-colors.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.5.1/focus.png) |
+| **Search suggestions** | |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | |
 
 ## How it works
 
@@ -137,9 +139,10 @@ The round buttons on the left of the graph show their name when you hover them:
 | `file-text` | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
 | `link` | Related | Show or hide the dashed related links |
 | `book-open-check` | Dictionary check | List unregistered and unused tags in the sidebar tab |
-| `share-2` / `network` / `orbit` | Force / Tree / Radial | Switch the layout; the current one is highlighted |
+| `share-2` / `network` / `list-tree` | Force / Vertical tree / Horizontal tree | Switch the layout; the current one is highlighted |
 
-- **Tree** and **Radial** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
+- The **tree layouts** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
+- In a tree, each tag sits one level below its deepest parent and hangs under it; arrows from its other parents are drawn too. Root trees wrap into rows (or columns) to fit the screen. Tags that are not in the dictionary sit together in the tree's bottom-right corner. Drag a tag and it stays where you drop it until the graph is drawn again.
 - Click a tag in the graph to expand it and show it in the sidebar tab, which comes forward if another tab was showing. Clicking an expanded tag only shows it again. Collapse it with the icon next to its title in the tab.
 - Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 
@@ -155,7 +158,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. Paths inside the vault's config folder (usually `.obsidian/`) or `.git/` are rejected. |
-| Layout | Force, Tree or Radial. |
+| Layout | Force, Vertical tree or Horizontal tree. A saved Radial layout (removed in 0.6.0) opens as the vertical tree. |
 | Keep the selected tag focused | Keep the selected tag and its links bright and fade the rest, as when you hover it. Hovering another node still shows that node. Off by default. |
 | Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
 | &nbsp;&nbsp;Tag color | Color of every tag in the graph, including tags that are not in the dictionary and tags in a color group. Default `#8b6cef` (Obsidian's default accent). |
@@ -179,7 +182,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 - The plugin hooks into **undocumented internals** of the core Graph view (renderer, PIXI, layout worker). A future Obsidian update may break it. If the internals look unfamiliar, the plugin detaches and leaves the core graph alone.
 - The hierarchy appears only while the core graph's **Tags** filter is on.
 - On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
-- Labels get dense when every tag is expanded, and switching Tree/Radial on a fully expanded graph takes a moment.
+- Labels get dense when every tag is expanded, especially in Force.
 - Untested together with other plugins that patch the Graph view.
 
 ## Roadmap
@@ -212,7 +215,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (breadth-first levels)
+├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -226,7 +229,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
-- The Tree/Radial layouts follow the breadthfirst layout rules of [Cytoscape.js](https://js.cytoscape.org/), reimplemented without the dependency.
 
 ## License
 

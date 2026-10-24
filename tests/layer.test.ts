@@ -113,3 +113,11 @@ test('an unplaced parent of a placed tag stays outside the hierarchy', () => {
   assert.ok(!r.range.has('loose')); assert.ok(!r.idOf.has('loose'));
   assert.deepEqual(applyCollapse(input, r, withHybrid).nodes['A.md']!.links, { '#cs': true, '#loose': true });
 });
+
+test('a note on the deepest tag of a 10,000-level chain links to the collapsed root', () => {
+  const dict = Object.fromEntries(Array.from({ length: 10000 }, (_, i) => [`t${i}`, { description: '', broader: i ? [`t${i - 1}`] : [] }]));
+  const model = new Ontology(dict, [{ path: 'a.md', tags: ['t9999'] }]);
+  const data: NativeData = { numLinks: 1, nodes: { 'a.md': { type: '', links: { '#t9999': true } }, '#t9999': { type: 'tag', links: {} } } };
+  const { data: layered } = buildLayer(data, model, { expanded: new Set(), showNotes: true, showRelated: true });
+  assert.deepEqual(Object.keys(layered.nodes['a.md'].links), ['#t0']);
+});

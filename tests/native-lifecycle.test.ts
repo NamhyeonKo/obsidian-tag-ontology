@@ -48,6 +48,10 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
+// The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
+const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
+const layoutOutside: string[][] = [];
+
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
   const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
@@ -60,7 +64,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
@@ -73,7 +77,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
-    fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
@@ -179,10 +183,10 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a native graph update must not reset the zoom');
   t.controller.refresh();
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
-  t.owner.settings.layout = 'radial'; t.controller.refresh();
+  t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
-  const radial = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Radial')!;
-  assert.equal(radial.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
+  const horizontal = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Horizontal tree')!;
+  assert.equal(horizontal.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
 });
 
 test('notes and related toggles start from settings and persist', async () => {
@@ -306,8 +310,8 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'orbit']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Tree', 'Layout: Radial']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']);
 });
 
 test('layout buttons switch the layout without rereading the dictionary and mark the current one', async () => {
@@ -317,11 +321,13 @@ test('layout buttons switch the layout without rereading the dictionary and mark
   const sent = t.forwarded.length;
   t.click('Layout: Force');
   assert.equal(t.forwarded.length, sent, 'the current layout is not drawn again');
-  t.click('Layout: Tree');
+  t.click('Layout: Vertical tree');
   assert.equal(t.owner.settings.layout, 'tree'); assert.equal(t.forwarded.length, sent + 1);
   assert.equal(reloads, 0); assert.equal(t.owner.saves, 1);
   const pressed = (label: string) => t.contentEl.all().find(el => el.attrs['aria-label'] === label)!.attrs['aria-pressed'];
-  assert.equal(pressed('Layout: Tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+  assert.equal(pressed('Layout: Vertical tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+  t.click('Layout: Horizontal tree');
+  assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.equal(pressed('Layout: Horizontal tree'), 'true');
 });
 
 test('tree hides notes without changing the saved setting', async () => {
@@ -333,13 +339,26 @@ test('tree hides notes without changing the saved setting', async () => {
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
 });
 
-test('tree pins every node and rings the tags outside the hierarchy around it', async () => {
+test('tree pins every node and hands the tags outside the hierarchy to the layout for its corner', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
   assert.ok(t.renderer.nodes.every(n => n.fx === n.x && n.fy === n.y));
-  // The fake layout puts the roots cs and sec at x 0 and 400, so the ring is 150 beyond half that width.
-  const outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
-  assert.deepEqual(outside.map(n => Math.round(Math.hypot(n.x - 200, n.y))), [350, 350]);
+  assert.deepEqual([...layoutOutside.at(-1)!].sort(), ['#loose', '#to-read']);
+});
+
+test('in a tree, a node released after a click or drag stays pinned where it is', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!;
+  node.x = 50; node.y = 60; node.fx = null; node.fy = null;
+  t.contentEl.events.get('pointerup')!();
+  assert.deepEqual([node.fx, node.fy], [50, 60]);
+  assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
+  // Force leaves the core behavior alone.
+  t.click('Layout: Force');
+  node.fx = null; t.contentEl.events.get('pointerup')!();
+  assert.equal(node.fx, null);
 });
 
 test('the notes button is disabled in tree', async () => {
@@ -347,7 +366,7 @@ test('the notes button is disabled in tree', async () => {
   t.controller.attach();
   const notes = t.contentEl.all().find(el => el.attrs.icon === 'file-text')!;
   assert.equal(notes.attrs['aria-disabled'], 'true');
-  assert.equal(notes.attrs.tooltip, 'Notes are hidden in Tree and Radial');
+  assert.equal(notes.attrs.tooltip, 'Notes are hidden in tree layouts');
   notes.events.get('click')!();
   assert.equal(t.owner.settings.showNotes, true); assert.equal(t.owner.saves, 0);
 });

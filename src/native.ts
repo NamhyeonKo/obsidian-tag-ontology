@@ -1,5 +1,5 @@
 import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
-import { hierarchyPositions } from './layout.ts';
+import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
@@ -40,12 +40,12 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
-  fitFrame?: number; stopFit: () => void;
+  fitFrame?: number; stopFit: () => void; repin: () => void;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The renderer's color format.
 const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
@@ -78,10 +78,20 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
+      // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
+      // restarted its simulation, which would then carry the node off. The tree layouts keep it where it was released.
+      // ponytail: a release outside the graph pane is missed; listen on window if that matters.
+      session.repin = () => {
+        if (!session.active || this.owner.settings.layout === 'force') return;
+        const loose = r.nodes.filter(node => node.fx === null);
+        for (const node of loose) { node.fx = node.x; node.fy = node.y; }
+        if (loose.length) r.worker.postMessage({ run: false });
+      };
+      view.contentEl.addEventListener('pointerup', session.repin);
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
@@ -192,7 +202,7 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
-    // Tree and Radial show the tag hierarchy alone; the saved Notes choice applies again in Force.
+    // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
@@ -252,23 +262,14 @@ export class NativeGraphs {
 
   private staticLayout(session: Session) {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
-    const tags = [...visible];
-    const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
-    const positions = new Map([...hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), this.owner.settings.layout === 'radial')]
-      .map(([tag, position]) => [idOf.get(tag)!, position]));
+    const ids = [...visible].map(tag => idOf.get(tag)!), inTree = new Set(ids);
+    const edges = [...visible].flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent))
+      .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
+    // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
+    const positions = treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
     r.worker.postMessage({ run: false }); r.workerResults = null;
-    const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
-    const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
-    const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
-    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place; they go on a ring around it.
-    const loose = r.nodes.filter(node => !positions.has(node.id)).length;
-    let ringIndex = 0;
     for (const node of r.nodes) {
-      let p = positions.get(node.id);
-      if (!p) {
-        const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
-        p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
-      }
+      const p = positions.get(node.id)!;
       // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
       node.x = p.x + .01; node.y = p.y + .01;
       node.fx = node.x; node.fy = node.y;
@@ -418,7 +419,7 @@ export class NativeGraphs {
       const disabled = key === 'showNotes' && settings.layout !== 'force';
       button.toggleClass('is-active', settings[key] && !disabled); button.setAttribute('aria-pressed', String(settings[key] && !disabled));
       button.setAttribute('aria-disabled', String(disabled));
-      this.label(button, disabled ? 'Notes are hidden in Tree and Radial' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
+      this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout];
@@ -460,6 +461,7 @@ export class NativeGraphs {
     s.active = false;
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
+    s.view.contentEl.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;

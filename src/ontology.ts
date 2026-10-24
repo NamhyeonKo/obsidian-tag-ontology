@@ -34,6 +34,8 @@ export class Ontology {
   direct = new Map<string, string[]>();
   unregistered = new Map<string, string[]>();
   unused: string[] = [];
+  // Every dictionary tag, parents before children.
+  order: string[] = [];
 
   constructor(raw: unknown, notes: Note[]) {
     if (!isRecord(raw)) throw new Error('The tag dictionary must be a JSON object.');
@@ -78,6 +80,7 @@ export class Ontology {
     if (queue.length !== this.entries.size) {
       throw new Error(`Cycle in broader relations: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
     }
+    this.order = queue;
     this.placed = new Set(this.roots.flatMap(root => [root, ...this.descendants(root)]));
     const paths = new Map<string, Set<string>>();
     // The core graph merges tag case variants, so index note tags against dictionary keys the same way.

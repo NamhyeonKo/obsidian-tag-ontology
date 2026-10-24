@@ -1,40 +1,89 @@
-// Breadth-first hierarchy layout with the same rules as the cytoscape breadthfirst settings it replaces:
-// depth is the distance from the nearest root, each level is ordered by where its neighbors above sit,
-// levels spread over a 1200x900 box (rows for Tree, rings for Radial), then everything is spaced out by 1.6.
-export function hierarchyPositions(tags: string[], edges: [parent: string, child: string][], roots: string[], circle: boolean) {
-  const children = new Map<string, string[]>(), neighbors = new Map(tags.map(tag => [tag, new Set<string>()]));
-  for (const [parent, child] of edges) {
-    children.set(parent, [...children.get(parent) ?? [], child]);
-    neighbors.get(parent)?.add(child); neighbors.get(child)?.add(parent);
-  }
-  const depth = new Map(roots.map(root => [root, 0])), queue = [...roots];
-  for (let i = 0; i < queue.length; i++) {
-    for (const child of children.get(queue[i]) ?? []) {
-      if (!depth.has(child)) { depth.set(child, depth.get(queue[i])! + 1); queue.push(child); }
+// Tidy tree for the tag hierarchy. A tag's level is one below its deepest parent, so within its root tree it sits below
+// every parent; it hangs under that parent (the first one given on a tie) and links to its other parents are only drawn.
+// Leaves sit side by side, each parent is centered over its children, and root trees wrap into rows to roughly fit a screen,
+// so a link to a parent in another root tree can point up from a lower row.
+// ponytail: leaves never share a column (no Reingold–Tilford contour packing); add it if shallow subtrees beside deep ones waste width.
+// Upright, siblings sit a label apart (Obsidian labels are about 90–130 wide) and levels leave room for the label under
+// each dot; on its side, siblings only need a label's height and levels a label's width.
+const SPACING = { upright: { sibling: 120, level: 160 }, sideways: { sibling: 40, level: 260 } }, SCREEN = 1.6;
+// Tags the hierarchy can't place (`outside`, such as ones missing from the dictionary) sit in a small grid of label-sized
+// cells in the tree's bottom-right corner.
+const CELL = { x: 120, y: 60 }, CORNER_GAP = 240;
+export function treePositions(tags: string[], edges: [parent: string, child: string][], horizontal = false, outside: string[] = []) {
+  const { sibling: SIBLING, level: LEVEL } = horizontal ? SPACING.sideways : SPACING.upright, GAP = 2 * SIBLING;
+  const parents = new Map(tags.map(tag => [tag, [] as string[]]));
+  for (const [parent, child] of edges) parents.get(child)?.push(parent);
+  // A tag's level is one below its deepest parent. It is only needed to pick the parent of a tag with several, and is
+  // worked out on demand from an explicit stack rather than by recursion, so any depth works; the dictionary rejects
+  // broader cycles, so the stack empties.
+  const level = new Map<string, number>(), stack: string[] = [];
+  const levelOf = (tag: string) => {
+    if (!level.has(tag)) stack.push(tag);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      let deepest = -1, waiting = false;
+      for (const parent of parents.get(top)!) {
+        const above = level.get(parent);
+        if (above === undefined) { stack.push(parent); waiting = true; } else deepest = Math.max(deepest, above);
+      }
+      if (!waiting) { level.set(top, deepest + 1); stack.pop(); }
     }
+    return level.get(tag)!;
+  };
+  const children = new Map(tags.map(tag => [tag, [] as string[]])), roots: string[] = [];
+  for (const tag of tags) {
+    const above = parents.get(tag)!;
+    if (above.length) children.get(above.reduce((a, b) => levelOf(b) > levelOf(a) ? b : a))!.push(tag);
+    else roots.push(tag);
   }
-  const levels: string[][] = [], index = new Map<string, number>();
-  for (const [tag, d] of depth) (levels[d] ??= []).push(tag);
-  for (const [d, level] of levels.entries()) {
-    const weight = new Map(level.map(tag => {
-      const above = [...neighbors.get(tag) ?? []].filter(other => (depth.get(other) ?? d) < d);
-      return [tag, above.reduce((sum, other) => sum + index.get(other)! / levels[depth.get(other)!].length, 0) / Math.max(1, above.length)];
-    }));
-    level.sort((a, b) => weight.get(a)! - weight.get(b)! || (a < b ? -1 : a > b ? 1 : 0));
-    level.forEach((tag, i) => index.set(tag, i));
+  // Each root tree is laid out on its own, in sibling and level steps: leaves are numbered left to right in depth-first
+  // order, then every parent, deepest first, is centered over its children. Hanging under its deepest parent, a tag's
+  // depth in its tree is its level.
+  const local = new Map<string, { x: number; y: number }>();
+  const trees = roots.map(root => {
+    const members: string[] = [], next = [root], nextLevels = [0];
+    let leaves = 0, depth = 0;
+    while (next.length) {
+      const tag = next.pop()!, y = nextLevels.pop()!, kids = children.get(tag)!;
+      members.push(tag); depth = Math.max(depth, y);
+      if (!kids.length) local.set(tag, { x: leaves++, y });
+      for (let k = kids.length - 1; k >= 0; k--) { next.push(kids[k]); nextLevels.push(y + 1); }
+    }
+    for (let i = members.length - 1; i >= 0; i--) {
+      const kids = children.get(members[i])!, first = kids.length ? local.get(kids[0])! : undefined;
+      if (first) local.set(members[i], { x: (first.x + local.get(kids[kids.length - 1])!.x) / 2, y: first.y - 1 });
+    }
+    return { members, width: (leaves - 1) * SIBLING, height: depth * LEVEL };
+  });
+  // Add rows until the shape stops getting closer to a screen (turned, for a tree on its side): more rows only ever make
+  // the drawing narrower and taller, so the first step away is the best one.
+  const total = trees.reduce((sum, tree) => sum + tree.width + GAP, 0);
+  const arrange = (limit: number) => {
+    const at: { x: number; y: number }[] = [];
+    let x = 0, y = 0, rowHeight = 0, width = 0;
+    for (const tree of trees) {
+      if (x > 0 && x + tree.width > limit) { y += rowHeight + LEVEL; x = 0; rowHeight = 0; }
+      at.push({ x, y });
+      width = Math.max(width, x + tree.width); x += tree.width + GAP; rowHeight = Math.max(rowHeight, tree.height);
+    }
+    return { at, misfit: Math.abs(Math.log((width + GAP) / (y + rowHeight + LEVEL) / (horizontal ? 1 / SCREEN : SCREEN))) };
+  };
+  let best = arrange(total);
+  for (let rows = 2; rows <= trees.length; rows++) {
+    const next = arrange(total / rows);
+    if (next.misfit > best.misfit) break;
+    if (next.misfit < best.misfit) best = next;
   }
-  // Nodes are 14 wide (16 with their border), at least 14 apart; the box has 30 of padding.
-  const positions = new Map<string, { x: number; y: number }>(), rows = levels.length;
-  for (const [d, level] of levels.entries()) {
-    const n = level.length, step = Math.max(450 / rows, 14);
-    const dx = n === 1 ? 0 : Math.max((1200 - 60 - 16) / (n - 1), 14), dy = rows === 1 ? 0 : Math.max((900 - 60 - 16) / (rows - 1), 14);
-    const radius = d === 0 && n === 1 ? 1 : step * (d + 1) - (levels[0].length <= 3 ? step / 2 : 0);
-    level.forEach((tag, i) => positions.set(tag, circle
-      ? { x: radius * Math.cos(2 * Math.PI / n * i), y: radius * Math.sin(2 * Math.PI / n * i) }
-      : { x: (i + 1 - (n + 1) / 2) * dx, y: (d + 1 - (rows + 1) / 2) * dy }));
-  }
+  const positions = new Map<string, { x: number; y: number }>();
+  trees.forEach((tree, i) => {
+    for (const tag of tree.members) {
+      const p = local.get(tag)!, across = best.at[i].x + p.x * SIBLING, down = best.at[i].y + p.y * LEVEL;
+      positions.set(tag, horizontal ? { x: down, y: across } : { x: across, y: down });
+    }
+  });
   const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  for (const p of positions.values()) { p.x = cx + (p.x - cx) * 1.6; p.y = cy + (p.y - cy) * 1.6; }
+  const left = xs.length ? Math.max(...xs) + CORNER_GAP : 0, bottom = ys.length ? Math.max(...ys) : 0;
+  const columns = Math.ceil(Math.sqrt(outside.length)), rows = Math.ceil(outside.length / columns);
+  outside.forEach((id, i) => positions.set(id, { x: left + (i % columns) * CELL.x, y: bottom - (rows - 1 - Math.floor(i / columns)) * CELL.y }));
   return positions;
 }

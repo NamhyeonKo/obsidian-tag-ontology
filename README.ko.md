@@ -20,7 +20,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 - **접고 펼치는 태그 계층.** 사전 태그는 루트까지 접힌 상태로 시작하고, 각 노트는 보이는 가장 가까운 상위 태그에 연결됩니다. 태그를 클릭하면 한 단계 펼쳐지고, 노트가 더 구체적인 하위 태그로 옮겨 붙습니다.
 - **하위 포함 노트 수.** 태그마다 *직접* 달린 노트 수와, *하위 태그까지 포함한* 노트 수를 보여 줍니다. 노트에 여러 태그가 달렸거나 태그가 여러 부모를 가져도 같은 노트는 한 번만 셉니다.
 - **다중 부모와 연관 관계.** 실선 화살표는 상위에서 하위로 향하고, 점선은 연관 태그를 잇습니다.
-- **세 가지 배치.** Force, Tree, Radial.
+- **세 가지 배치.** Force, 세로 트리, 가로 트리.
 - **사이드바 탭.** 파일·검색 탭 옆의 탭에서 태그 이름이나 별칭으로 찾고, 태그 정보를 보고, 사전 대조를 합니다. 여기서 태그를 고르면 열린 그래프가 그 태그를 가운데로 옮깁니다.
 - **사전 대조.** vault에서 쓰이지만 사전에 없는 태그와, 사전에는 있지만 아직 아무 노트도 쓰지 않는 태그를 보여 줍니다. 보고만 하고 아무것도 바꾸지 않습니다.
 - **사용자 색상(선택).** 모든 태그를 한 가지 색으로 칠하고, 선택한 태그(원하면 그 하위 태그나 바로 연결된 태그까지)를 강조색으로 칠합니다. 선택한 태그를 마우스를 올린 것처럼 계속 강조해 둘 수도 있습니다.
@@ -29,10 +29,12 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 | 사이드바 탭 | 사전 대조 |
 | --- | --- |
 | ![상위·하위 태그와 노트 수가 표시된 사이드바 탭](assets/0.5.1/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 사이드바 탭에 보여 주는 사전 대조](assets/0.5.1/dictionary-check.png) |
-| **검색 추천** | **Tree 배치** |
-| ![이름과 별칭으로 태그를 추천하는 사이드바 검색창](assets/0.5.1/search-suggestions.png) | ![노트 없이 태그 계층만 보여 주는 Tree 배치](assets/0.5.1/tree.png) |
+| **세로 트리** | **가로 트리** |
+| ![세로 트리: 태그마다 가장 깊은 부모 밑에 놓이고 부모는 자식들 가운데에 놓임](assets/0.6.0/tree-vertical.png) | ![가로 트리: 같은 트리를 왼쪽에서 오른쪽으로 깊어지게 눕힌 모양](assets/0.6.0/tree-horizontal.png) |
 | **사용자 색상** | **선택한 태그 포커스 유지** |
 | ![모든 태그는 한 색, 선택한 태그와 연결된 태그는 강조색으로 칠한 그래프](assets/0.5.1/custom-colors.png) | ![선택한 태그와 연결선만 밝고 나머지는 흐려진 그래프](assets/0.5.1/focus.png) |
+| **검색 추천** | |
+| ![이름과 별칭으로 태그를 추천하는 사이드바 검색창](assets/0.5.1/search-suggestions.png) | |
 
 ## 동작 방식
 
@@ -139,9 +141,10 @@ UI는 영어로 표시됩니다.
 | `file-text` | Notes | 태그가 아닌 노드(노트, 첨부파일, 아직 없는 파일) 보이기/숨기기 |
 | `link` | Related | 점선 연관 관계 보이기/숨기기 |
 | `book-open-check` | Dictionary check | 사전에 없는 태그와 쓰이지 않는 태그를 사이드바 탭에 보기 |
-| `share-2` / `network` / `orbit` | Force / Tree / Radial | 배치 바꾸기. 현재 배치가 강조됨 |
+| `share-2` / `network` / `list-tree` | Force / Vertical tree / Horizontal tree | 배치 바꾸기. 현재 배치가 강조됨 |
 
-- **Tree**와 **Radial**에서는 태그 관계가 잘 보이도록 노트를 항상 숨깁니다. 이때 Notes 버튼은 비활성이 되고, Force로 돌아오면 원래 Notes 설정이 다시 적용됩니다.
+- **트리 배치**에서는 태그 관계가 잘 보이도록 노트를 항상 숨깁니다. 이때 Notes 버튼은 비활성이 되고, Force로 돌아오면 원래 Notes 설정이 다시 적용됩니다.
+- 트리에서 각 태그는 가장 깊은 부모보다 한 단계 아래, 그 부모 밑에 놓이고, 다른 부모에서 오는 화살표도 함께 그려집니다. 최상위 태그의 나무들은 화면에 맞게 여러 줄(가로 트리는 여러 열)로 나뉩니다. 사전에 없는 태그는 트리 오른쪽 아래 구석에 모여 있습니다. 태그를 드래그하면 그래프를 다시 그릴 때까지 놓은 자리에 머뭅니다.
 - 그래프에서 태그를 클릭하면 펼쳐지면서 사이드바 탭에 그 태그가 표시됩니다. 다른 탭을 보고 있었다면 이 탭이 앞으로 나옵니다. 이미 펼친 태그를 클릭하면 다시 보여 주기만 합니다. 접으려면 탭에서 제목 옆 아이콘을 누릅니다.
 - 나머지는 기본 동작을 따릅니다. 노트를 클릭하면 열리고(Cmd/Ctrl+클릭은 새 탭), 사전에 없는 태그를 클릭하면 검색이 열립니다.
 - 기본 그래프는 많이 축소하면 라벨과 화살표를 숨깁니다. 확대하면 보입니다.
@@ -158,7 +161,7 @@ UI는 영어로 표시됩니다.
 | 설정 | 설명 |
 | --- | --- |
 | Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. vault 설정 폴더(보통 `.obsidian/`)와 `.git/` 안의 경로는 쓸 수 없습니다. |
-| Layout | 그래프 배치. Force, Tree, Radial 중 하나를 고릅니다. |
+| Layout | 그래프 배치. Force, Vertical tree(세로 트리), Horizontal tree(가로 트리) 중 하나를 고릅니다. 저장된 Radial 배치(0.6.0에서 삭제)는 세로 트리로 열립니다. |
 | Keep the selected tag focused | 마우스를 올렸을 때처럼 선택한 태그와 그 연결선은 밝게 두고 나머지는 흐리게 유지합니다. 다른 노드에 마우스를 올리면 그 노드가 보입니다. 기본값은 꺼짐입니다. |
 | Custom colors | 기본값은 꺼짐이며, 이때는 그래프 본래 색을 그대로 씁니다. 켜면 아래 항목이 나타납니다. |
 | &nbsp;&nbsp;Tag color | 그래프의 모든 태그 색. 사전에 없는 태그와 색상 그룹에 속한 태그도 이 색이 됩니다. 기본값은 `#8b6cef`(Obsidian 기본 강조색)입니다. |
@@ -180,7 +183,7 @@ UI는 영어로 표시됩니다.
 - 기본 그래프 뷰의 **비공개 내부 구조**(렌더러, PIXI, 배치 Worker)에 연결합니다. 이후 Obsidian 업데이트에서 동작하지 않을 수 있습니다. 내부 구조가 예상과 다르면 플러그인은 연결을 해제하고 기본 그래프를 그대로 둡니다.
 - 계층은 기본 그래프의 **Tags** 필터가 켜져 있을 때만 보입니다.
 - 큰 vault에서 노트를 켠 채 모든 태그를 펼치면 노드와 링크 수천 개를 다시 그리므로 잠깐 멈출 수 있습니다.
-- 모든 태그를 펼치면 라벨이 빽빽해지고, 그 상태에서 Tree/Radial로 바꾸면 잠깐 지연이 있습니다.
+- 모든 태그를 펼치면 라벨이 빽빽해집니다. 특히 Force에서 그렇습니다.
 - 그래프 뷰를 고치는 다른 플러그인과 함께 쓰는 경우는 검증하지 않았습니다.
 
 ## 로드맵
@@ -213,7 +216,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (breadth-first levels)
+├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -227,7 +230,6 @@ scripts/deploy.mjs  # Copies the build into a local vault
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
-- Tree/Radial 배치는 [Cytoscape.js](https://js.cytoscape.org/)의 breadthfirst 배치 규칙을 의존성 없이 다시 구현한 것입니다.
 
 ## 라이선스
 
