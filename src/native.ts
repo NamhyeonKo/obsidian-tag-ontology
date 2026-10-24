@@ -31,7 +31,7 @@ interface Session {
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
-  tools: HTMLElement; status: HTMLElement;
+  overlay: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -73,11 +73,12 @@ export class NativeGraphs {
         this.failed.add(leaf);
         continue;
       }
-      const tools = view.contentEl.createDiv('tag-ontology-tools');
-      const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
+      // The toolbar and the status line share one column, so a status line that wraps pushes the buttons up instead of covering them.
+      const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
+      const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -467,7 +468,7 @@ export class NativeGraphs {
       if (link.line && original.texture) link.line.texture = original.texture;
     }
     s.texture?.destroy();
-    s.tools.remove(); s.status.remove(); s.view.contentEl.removeClass('tag-ontology-native');
+    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native');
     this.sessions.delete(id);
     if (redraw) {
       for (const node of s.renderer.nodes) { node.fx = null; node.fy = null; }

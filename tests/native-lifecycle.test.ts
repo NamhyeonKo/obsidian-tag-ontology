@@ -232,7 +232,7 @@ test('without tag nodes from the core graph the status explains how to show the 
   const t = await setup();
   t.controller.attach();
   t.renderer.setData({ numLinks: 0, nodes: { 'A.md': { type: '', links: {} } } });
-  const status = t.contentEl.children[1]! as unknown as { textContent: string };
+  const status = t.contentEl.all().find(el => el.attrs.role === 'status')! as unknown as { textContent: string };
   assert.equal(status.textContent, 'Turn on Tags in the graph filters to show the dictionary hierarchy.');
 });
 
