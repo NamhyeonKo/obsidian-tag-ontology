@@ -45,16 +45,13 @@ export function resolveTags(model: Ontology, data: NativeData, expanded: Readonl
 
 export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontology): NativeData {
   const { tagOf, idOf, range, visible } = resolved;
-  const memo = new Map<string, string[]>();
-  const nearest = (tag: string): string[] => {
-    if (visible.has(tag)) return [tag];
-    let found = memo.get(tag);
-    if (!found) {
-      found = [...new Set((model.entries.get(tag)!.broader ?? []).filter(parent => range.has(parent)).flatMap(nearest))];
-      memo.set(tag, found);
-    }
-    return found;
-  };
+  // Each tag's nearest visible tags, worked out parents first so every parent's answer is ready (no recursion, any depth).
+  const nearest = new Map<string, string[]>();
+  for (const tag of model.order) {
+    if (!range.has(tag)) continue;
+    nearest.set(tag, visible.has(tag) ? [tag]
+      : [...new Set((model.entries.get(tag)!.broader ?? []).filter(parent => range.has(parent)).flatMap(parent => nearest.get(parent)!))]);
+  }
   const nodes: NativeData['nodes'] = {};
   for (const [id, node] of Object.entries(data.nodes)) {
     const own = tagOf.get(id);
@@ -62,7 +59,7 @@ export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontol
     const links: Record<string, boolean> = {};
     for (const [target, value] of Object.entries(node.links)) {
       const hidden = tagOf.get(target);
-      if (hidden && !visible.has(hidden)) for (const tag of nearest(hidden)) links[idOf.get(tag)!] = true;
+      if (hidden && !visible.has(hidden)) for (const tag of nearest.get(hidden)!) links[idOf.get(tag)!] = true;
       else links[target] = value;
     }
     nodes[id] = { ...node, links };

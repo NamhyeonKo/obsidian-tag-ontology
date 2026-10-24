@@ -52,3 +52,9 @@ test('tags the hierarchy cannot place sit in a small grid in its bottom-right co
   }
   assert.ok(treePositions([], [], false, ['#a']).has('#a'), 'works with no tree at all');
 });
+
+test('a 10,000-level chain lays out one level per tag', () => {
+  const tags = Array.from({ length: 10000 }, (_, i) => `t${i}`);
+  const tree = treePositions(tags, tags.slice(1).map((tag, i) => [tags[i], tag] as [string, string]));
+  assert.equal(tree.get('t9999')!.y - tree.get('t0')!.y, 9999 * (tree.get('t1')!.y - tree.get('t0')!.y));
+});

@@ -3,7 +3,6 @@
 // Leaves sit side by side, each parent is centered over its children, and root trees wrap into rows to roughly fit a screen,
 // so a link to a parent in another root tree can point up from a lower row.
 // ponytail: leaves never share a column (no Reingold–Tilford contour packing); add it if shallow subtrees beside deep ones waste width.
-// ponytail: recursive, so a chain of a couple of thousand levels overflows the stack; tag dictionaries are a few levels deep.
 // Upright, siblings sit a label apart (Obsidian labels are about 90–130 wide) and levels leave room for the label under
 // each dot; on its side, siblings only need a label's height and levels a label's width.
 const SPACING = { upright: { sibling: 120, level: 160 }, sideways: { sibling: 40, level: 260 } }, SCREEN = 1.6;
@@ -14,27 +13,46 @@ export function treePositions(tags: string[], edges: [parent: string, child: str
   const { sibling: SIBLING, level: LEVEL } = horizontal ? SPACING.sideways : SPACING.upright, GAP = 2 * SIBLING;
   const parents = new Map(tags.map(tag => [tag, [] as string[]]));
   for (const [parent, child] of edges) parents.get(child)?.push(parent);
-  // The dictionary rejects broader cycles, so this ends.
-  const level = new Map<string, number>();
-  const levelOf = (tag: string): number => level.get(tag) ?? level.set(tag, Math.max(-1, ...parents.get(tag)!.map(levelOf)) + 1).get(tag)!;
+  // A tag's level is one below its deepest parent. It is only needed to pick the parent of a tag with several, and is
+  // worked out on demand from an explicit stack rather than by recursion, so any depth works; the dictionary rejects
+  // broader cycles, so the stack empties.
+  const level = new Map<string, number>(), stack: string[] = [];
+  const levelOf = (tag: string) => {
+    if (!level.has(tag)) stack.push(tag);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      let deepest = -1, waiting = false;
+      for (const parent of parents.get(top)!) {
+        const above = level.get(parent);
+        if (above === undefined) { stack.push(parent); waiting = true; } else deepest = Math.max(deepest, above);
+      }
+      if (!waiting) { level.set(top, deepest + 1); stack.pop(); }
+    }
+    return level.get(tag)!;
+  };
   const children = new Map(tags.map(tag => [tag, [] as string[]])), roots: string[] = [];
   for (const tag of tags) {
     const above = parents.get(tag)!;
     if (above.length) children.get(above.reduce((a, b) => levelOf(b) > levelOf(a) ? b : a))!.push(tag);
     else roots.push(tag);
   }
-  // Each root tree is laid out on its own, in sibling and level steps.
+  // Each root tree is laid out on its own, in sibling and level steps: leaves are numbered left to right in depth-first
+  // order, then every parent, deepest first, is centered over its children. Hanging under its deepest parent, a tag's
+  // depth in its tree is its level.
   const local = new Map<string, { x: number; y: number }>();
   const trees = roots.map(root => {
-    const members: string[] = [];
+    const members: string[] = [], levels: number[] = [], next = [root], nextLevels = [0];
     let leaves = 0, depth = 0;
-    const place = (tag: string, y: number): number => {
-      const xs = children.get(tag)!.map(child => place(child, y + 1));
-      const x = xs.length ? (xs[0] + xs.at(-1)!) / 2 : leaves++;
-      local.set(tag, { x, y }); members.push(tag); depth = Math.max(depth, y);
-      return x;
-    };
-    place(root, 0);
+    while (next.length) {
+      const tag = next.pop()!, y = nextLevels.pop()!, kids = children.get(tag)!;
+      members.push(tag); levels.push(y); depth = Math.max(depth, y);
+      if (!kids.length) local.set(tag, { x: leaves++, y });
+      for (let k = kids.length - 1; k >= 0; k--) { next.push(kids[k]); nextLevels.push(y + 1); }
+    }
+    for (let i = members.length - 1; i >= 0; i--) {
+      const kids = children.get(members[i])!;
+      if (kids.length) local.set(members[i], { x: (local.get(kids[0])!.x + local.get(kids[kids.length - 1])!.x) / 2, y: levels[i] });
+    }
     return { members, width: (leaves - 1) * SIBLING, height: depth * LEVEL };
   });
   // Add rows until the shape stops getting closer to a screen (turned, for a tree on its side): more rows only ever make
