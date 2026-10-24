@@ -38,3 +38,17 @@ test('the horizontal tree is the same tree on its side', () => {
   assert.equal(x.x, y.x); assert.ok(x.y < y.y, 'siblings stack top to bottom');
   assert.equal(root.y, (x.y + y.y) / 2);
 });
+
+test('tags the hierarchy cannot place sit in a small grid in its bottom-right corner', () => {
+  const edges: [string, string][] = [['root', 'x'], ['root', 'y'], ['x', 'leaf']];
+  const outside = ['#a', '#b', '#c', '#d', '#e'];
+  for (const horizontal of [false, true]) {
+    const all = treePositions(['root', 'x', 'y', 'leaf'], edges, horizontal, outside);
+    const tree = ['root', 'x', 'y', 'leaf'].map(tag => all.get(tag)!), corner = outside.map(id => all.get(id)!);
+    const right = Math.max(...tree.map(p => p.x)), bottom = Math.max(...tree.map(p => p.y));
+    assert.ok(corner.every(p => p.x > right), 'right of the tree');
+    assert.equal(Math.max(...corner.map(p => p.y)), bottom, 'level with its bottom');
+    assert.equal(new Set(corner.map(p => p.x)).size, 3, 'five tags make three columns');
+  }
+  assert.ok(treePositions([], [], false, ['#a']).has('#a'), 'works with no tree at all');
+});

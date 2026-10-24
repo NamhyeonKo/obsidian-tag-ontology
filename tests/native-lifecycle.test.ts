@@ -48,8 +48,9 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
-// The tree layout is stubbed with tags in one row, 400 apart.
+// The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
+const layoutOutside: string[][] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
@@ -63,7 +64,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { treePositions: inRow }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
@@ -338,13 +339,11 @@ test('tree hides notes without changing the saved setting', async () => {
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
 });
 
-test('tree pins every node and rings the tags outside the hierarchy around it', async () => {
+test('tree pins every node and hands the tags outside the hierarchy to the layout for its corner', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
   assert.ok(t.renderer.nodes.every(n => n.fx === n.x && n.fy === n.y));
-  // The fake layout puts the roots cs and sec at x 0 and 400, so the ring is 150 beyond half that width.
-  const outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
-  assert.deepEqual(outside.map(n => Math.round(Math.hypot(n.x - 200, n.y))), [350, 350]);
+  assert.deepEqual([...layoutOutside.at(-1)!].sort(), ['#loose', '#to-read']);
 });
 
 test('in a tree, a node released after a click or drag stays pinned where it is', async () => {

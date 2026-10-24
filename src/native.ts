@@ -262,23 +262,14 @@ export class NativeGraphs {
 
   private staticLayout(session: Session) {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
-    const tags = [...visible];
-    const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
-    const positions = new Map([...treePositions(tags, edges, this.owner.settings.layout === 'tree-horizontal')]
-      .map(([tag, position]) => [idOf.get(tag)!, position]));
+    const ids = [...visible].map(tag => idOf.get(tag)!), inTree = new Set(ids);
+    const edges = [...visible].flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent))
+      .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
+    // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
+    const positions = treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
     r.worker.postMessage({ run: false }); r.workerResults = null;
-    const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
-    const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
-    const ring = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 150 : 300;
-    // Notes are hidden here, so the only nodes outside the hierarchy are tags it doesn't place; they go on a ring around it.
-    const loose = r.nodes.filter(node => !positions.has(node.id)).length;
-    let ringIndex = 0;
     for (const node of r.nodes) {
-      let p = positions.get(node.id);
-      if (!p) {
-        const angle = ringIndex++ * 2 * Math.PI / Math.max(1, loose);
-        p = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
-      }
+      const p = positions.get(node.id)!;
       // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
       node.x = p.x + .01; node.y = p.y + .01;
       node.fx = node.x; node.fy = node.y;
