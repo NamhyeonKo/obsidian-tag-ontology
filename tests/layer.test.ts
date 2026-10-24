@@ -77,7 +77,7 @@ const withOverfitting = (): NativeData => {
 
 test('adds hierarchy edges between visible tags and one related edge per pair', () => {
   const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
-  const { data, kinds } = addEdges(applyCollapse(input, r, model), r, model, ['broader', 'related']);
+  const { data, kinds } = addEdges(applyCollapse(input, r, model), r, model, true);
   assert.ok(data.nodes['#cs']!.links['#ml'] && data.nodes['#ml']!.links['#DL'] && data.nodes['#sec']!.links['#crypto']);
   assert.equal(kinds.get(edgeKey('#ml', '#DL')), 'broader');
   assert.equal(kinds.get(edgeKey('#DL', '#overfitting')), 'related');
@@ -86,7 +86,7 @@ test('adds hierarchy edges between visible tags and one related edge per pair', 
 
 test('related edges are skipped when the kind is not requested', () => {
   const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
-  assert.ok(![...addEdges(applyCollapse(input, r, model), r, model, ['broader']).kinds.values()].includes('related'));
+  assert.ok(![...addEdges(applyCollapse(input, r, model), r, model, false).kinds.values()].includes('related'));
 });
 
 test('hideNotes keeps only tag nodes and their links among tags', () => {

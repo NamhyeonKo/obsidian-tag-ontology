@@ -76,7 +76,7 @@ export interface NodeColor { a: number; rgb: number }
 export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor }
 
 // Adds links to the given nodes in place: buildLayer passes the fresh copy from applyCollapse.
-export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, kinds: readonly EdgeKind[]) {
+export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, related: boolean) {
   const { idOf, visible } = resolved, { nodes } = data, edges = new Map<string, EdgeKind>();
   const link = (source: string, target: string, kind: EdgeKind) => {
     const from = idOf.get(source)!, to = idOf.get(target)!, key = edgeKey(from, to);
@@ -86,8 +86,8 @@ export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, 
   };
   for (const tag of visible) {
     const entry = model.entries.get(tag)!;
-    if (kinds.includes('broader')) for (const parent of entry.broader ?? []) if (visible.has(parent)) link(parent, tag, 'broader');
-    if (kinds.includes('related')) {
+    for (const parent of entry.broader ?? []) if (visible.has(parent)) link(parent, tag, 'broader');
+    if (related) {
       for (const other of entry.related ?? []) {
         if (!visible.has(other)) continue;
         const [source, target] = [tag, other].sort();
@@ -109,7 +109,7 @@ export function hideNotes(data: NativeData): NativeData {
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
   const resolved = resolveTags(model, data, state.expanded);
   const collapsed = applyCollapse(data, resolved, model);
-  const edges = addEdges(collapsed, resolved, model, state.showRelated ? ['broader', 'related'] : ['broader']);
+  const edges = addEdges(collapsed, resolved, model, state.showRelated);
   const layered = state.showNotes ? edges.data : hideNotes(edges.data);
   // Every node here is already a copy, so coloring tags leaves the core data alone.
   if (state.tagColor) for (const node of Object.values(layered.nodes)) if (node.type === 'tag') node.color = state.tagColor;
