@@ -230,9 +230,11 @@ export class NativeGraphs {
       if (session.links.has(link)) continue;
       const original = { render: link.render, texture: link.line?.texture };
       session.links.set(link, original);
+      // A link keeps its endpoints, so build the key once instead of on every frame.
+      const key = edgeKey(link.source.id, link.target.id);
       link.render = () => {
         if (!original.texture && link.line) original.texture = link.line.texture;
-        const kind = session.kinds.get(edgeKey(link.source.id, link.target.id));
+        const kind = session.kinds.get(key);
         if (link.line && kind === 'related') {
           if (!session.texture) {
             const canvas = createEl('canvas', { attr: { width: 256, height: 2 } });
