@@ -370,10 +370,11 @@ test('the sidebar lists the root tags until a tag is chosen', async () => {
   assert.deepEqual(tagLinks(t.sidebar), model.roots.map(tag => '#' + tag));
 });
 
-test('opening a graph creates the sidebar without bringing it forward', async () => {
+test('attaching to a graph never creates the sidebar tab on its own', async () => {
+  // After a plugin reload Obsidian restores the tab late; creating one here would duplicate it.
   const t = await setup();
   t.controller.attach();
-  assert.deepEqual(t.sideCalls, [{ type: 'tag-ontology-panel', side: 'left', reveal: false }]);
+  assert.deepEqual(t.sideCalls, []);
 });
 
 test('clicking a tag shows it in the sidebar and brings the sidebar forward', async () => {

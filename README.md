@@ -116,7 +116,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 ### Sidebar tab
 
-Opening a graph adds a **Tag dictionary** tab to the left sidebar, next to Files and Search, without switching to it. Drag the tab to the right sidebar if you prefer; it stays where you put it. If you close it, it comes back the next time a graph opens.
+**Open tag ontology** (the book ribbon icon or the **Open graph** command) adds a **Tag dictionary** tab to the left sidebar, next to Files and Search, without switching to it. Clicking a tag in the graph or **Dictionary check** opens it too and brings it forward, so a closed tab comes back. Drag the tab to the right sidebar if you prefer; it stays where you put it.
 
 - **Search tags or aliases** at the top of the tab: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag, show it in the tab and center it in the open graph. Search works with no graph open too: the expansion is saved for the next graph.
 - With no tag chosen, the tab lists the root tags.

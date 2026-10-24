@@ -84,6 +84,7 @@ export default class TagOntologyPlugin extends Plugin {
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type: 'graph', active: true });
       this.native.attach();
+      this.native.showPanel(false);
       await this.app.workspace.revealLeaf(leaf);
     } catch (error) { new Notice(`Could not open the graph: ${String(error)}`); }
   }

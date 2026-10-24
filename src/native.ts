@@ -121,7 +121,6 @@ export class NativeGraphs {
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
-      this.showPanel(false);
       // Obsidian ships with the Tags filter off; turn it on once for a fresh install, then leave it to the user.
       if (this.owner.firstRun && view.dataEngine) {
         this.owner.firstRun = false;
@@ -166,7 +165,9 @@ export class NativeGraphs {
   }
 
   // The panel is a sidebar tab the user can drag to either side; Obsidian reuses it wherever it is.
-  private showPanel(reveal: boolean) {
+  // Only user actions create it: after a plugin reload Obsidian restores the old tab late, so creating one
+  // while attaching would leave two.
+  showPanel(reveal: boolean) {
     void this.owner.app.workspace.ensureSideLeaf(PANEL_VIEW, 'left', { reveal });
   }
 
