@@ -9,11 +9,11 @@ import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 
 class Element {
-  children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
+  tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   createDiv() { return this.createEl('div'); }
-  createEl(_tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
-    const child = new Element(); child.text = options?.text ?? ''; this.children.push(child);
+  createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
+    const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
     for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
     Object.assign(child.attrs, options?.attr ?? {});
     return child;
@@ -27,7 +27,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(): void; destroy(): void };
+type Controller = { attach(): void; refresh(): void; destroy(): void; mount(el: Element): void };
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -47,7 +47,7 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
-  const notices: string[] = [];
+  const notices: string[] = [], sideCalls: object[] = [];
   const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
     performance, devicePixelRatio: 1, window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
@@ -96,13 +96,20 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
-    app: { workspace: { getLeavesOfType: () => leaves }, vault: { getAbstractFileByPath: () => null } },
+    app: { workspace: {
+      getLeavesOfType: () => leaves,
+      ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
+    }, vault: { getAbstractFileByPath: () => null } },
   };
   const controller = new NativeGraphs(owner);
+  // Obsidian restores the sidebar view on startup, so tests start with it mounted.
+  const sidebar = new Element();
+  controller.mount(sidebar);
+  const all = () => [...contentEl.all(), ...sidebar.all()];
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
-  const click = (label: string) => contentEl.all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!();
+  const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!();
   const search = (query: string) => {
-    const input = contentEl.all().find(el => el !== contentEl && el.events.has('keydown'))!;
+    const input = sidebar.all().find(el => el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
   };
   const addTab = () => {
@@ -111,7 +118,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests };
+  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -205,7 +212,7 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   t.suggests[0]!.onChoose('overfitting');
   assert.deepEqual(t.notices, ['Not in the current graph.']);
   assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
-  assert.ok(t.contentEl.all().some(el => el.text === 'overfitting'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#overfitting'));
 });
 
 test('rendering before any core data does nothing', async () => {
@@ -220,7 +227,7 @@ test('without tag nodes from the core graph the status explains how to show the 
   const t = await setup();
   t.controller.attach();
   t.renderer.setData({ numLinks: 0, nodes: { 'A.md': { type: '', links: {} } } });
-  const status = t.contentEl.children[2]! as unknown as { textContent: string };
+  const status = t.contentEl.children[1]! as unknown as { textContent: string };
   assert.equal(status.textContent, 'Turn on Tags in the graph filters to show the dictionary hierarchy.');
 });
 
@@ -238,7 +245,7 @@ test('the panel button reads the live expansion after Expand all', async () => {
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
   t.click('Collapse children and notes');
   t.click('Expand all');
-  assert.ok(t.contentEl.all().some(el => el.text === 'Collapse children and notes'), 'the label follows Expand all');
+  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse children and notes'), 'the label follows Expand all');
   t.click('Collapse children and notes');
   assert.equal(t.owner.settings.expanded.length, model.entries.size - 1, 'only cs collapses');
 });
@@ -252,15 +259,6 @@ test('notes toggles stay in sync across graph tabs', async () => {
   assert.equal(other.attrs['aria-pressed'], 'false'); assert.equal(other.attrs['aria-label'], 'Notes: hidden');
   other.events.get('click')!();
   assert.equal(t.owner.settings.showNotes, true, 'one click in the other tab turns notes back on');
-});
-
-test('a closed panel stays closed when the vault refreshes', async () => {
-  const t = await setup();
-  t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  t.click('Close');
-  t.controller.refresh();
-  assert.equal(t.contentEl.children[1]!.hidden, true);
 });
 
 test('a fresh install turns on the core Tags filter once', async () => {
@@ -347,7 +345,7 @@ test('Enter on a matching query reveals the first suggestion when the popover is
 test('Enter while an IME composition is active does not select a tag', async () => {
   const t = await setup();
   t.controller.attach();
-  const input = t.contentEl.all().find(el => el !== t.contentEl && el.events.has('keydown'))!;
+  const input = t.sidebar.all().find(el => el.events.has('keydown'))!;
   input.value = 'dl'; input.events.get('keydown')!({ key: 'Enter', isComposing: true });
   assert.deepEqual([...t.owner.settings.expanded], []);
   assert.equal(input.value, 'dl');
@@ -360,7 +358,53 @@ test('revealing a tag that left the dictionary shows a notice instead of throwin
   t.owner.model = new Ontology({ cs: { description: '', broader: [] } }, []);
   t.controller.refresh();
   assert.doesNotThrow(() => t.suggests[0]!.onChoose('dl'));
-  const staleUnused = t.contentEl.all().find(el => el.text === 'overfitting')!;
-  assert.doesNotThrow(() => staleUnused.events.get('click')!());
-  assert.deepEqual(t.notices, ['That tag is no longer in the dictionary.', 'That tag is no longer in the dictionary.']);
+  assert.deepEqual(t.notices, ['That tag is no longer in the dictionary.']);
+  assert.ok(!t.sidebar.all().some(el => el.text === '#overfitting'), 'the dictionary check is redrawn from the reloaded dictionary');
+});
+
+const tagLinks = (el: Element) => el.all().filter(child => child.classes.has('tag')).map(child => child.text);
+
+test('the sidebar lists the root tags until a tag is chosen', async () => {
+  const t = await setup();
+  assert.deepEqual(tagLinks(t.sidebar), model.roots.map(tag => '#' + tag));
+});
+
+test('opening a graph creates the sidebar without bringing it forward', async () => {
+  const t = await setup();
+  t.controller.attach();
+  assert.deepEqual(t.sideCalls, [{ type: 'tag-ontology-panel', side: 'left', reveal: false }]);
+});
+
+test('clicking a tag shows it in the sidebar and brings the sidebar forward', async () => {
+  const t = await setup();
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#cs'));
+  assert.deepEqual(t.sideCalls.at(-1), { type: 'tag-ontology-panel', side: 'left', reveal: true });
+});
+
+test('related tags in the panel are tag links with #', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.deepEqual(tagLinks(t.sidebar), ['#cs', '#dl', '#overfitting']);
+});
+
+test('the panel has no Close button and a rule between relations and notes', async () => {
+  const t = await setup();
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.ok(!t.all().some(el => el.text === 'Close'));
+  const kinds = t.sidebar.all().map(el => el.tag);
+  assert.ok(kinds.lastIndexOf('details') > kinds.indexOf('hr') && kinds.indexOf('hr') > kinds.indexOf('summary'));
+});
+
+test('the sidebar search expands a tag without an open graph', async () => {
+  const t = await setup();
+  t.leaves.length = 0;
+  t.controller.attach();
+  t.search('dl');
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
+  assert.deepEqual(t.notices, []);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#dl'));
 });

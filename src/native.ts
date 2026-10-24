@@ -3,6 +3,7 @@ import { hierarchyPositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
+import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -28,12 +29,12 @@ interface Session {
   leaf: WorkspaceLeaf; view: NativeView; renderer: NativeRenderer; active: boolean;
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
-  tools: HTMLElement; panel: HTMLElement; status: HTMLElement;
+  tools: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
   kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
-  selected?: string; texture?: Texture; layout?: string;
+  texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void;
 }
@@ -41,10 +42,13 @@ type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Tree'], ['radial', 'orbit', 'Radial']];
+export const PANEL_VIEW = 'tag-ontology-panel';
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   private failed = new WeakSet<WorkspaceLeaf>();
+  // One sidebar panel serves every graph tab: a tag's details, the dictionary check, or the root tags until either is chosen.
+  private panel?: HTMLElement; private selected?: string; private checking = false;
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   constructor(private owner: TagOntologyPlugin) {}
 
@@ -64,11 +68,10 @@ export class NativeGraphs {
         continue;
       }
       const tools = view.contentEl.createDiv('tag-ontology-tools');
-      const panel = view.contentEl.createDiv('tag-ontology-panel'); panel.hidden = true;
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, tools, panel, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, tools, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -87,24 +90,15 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.tagById.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
+        this.selected = tag; this.checking = false;
         // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
         if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
-        this.inspect(session, tag);
+        else this.renderPanel();
+        this.showPanel(true);
       };
-      const search = tools.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
-      new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(session, tag));
-      search.addEventListener('keydown', e => {
-        // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
-        // Enter that commits an IME composition (e.g. Korean) is not a submit; Obsidian's own suggest skips it too.
-        if (e.key !== 'Enter' || e.isComposing || !search.value.trim()) return;
-        const [first] = this.owner.model!.suggest(search.value);
-        if (!first) { new Notice('No matching dictionary tag.'); return; }
-        search.value = '';
-        this.reveal(session, first.tag);
-      });
-      // A column of round icon buttons under the search box keeps the core graph settings on the right uncovered.
+      // A column of round icon buttons keeps the core graph settings on the right uncovered.
       const buttons = tools.createDiv('tag-ontology-buttons');
-      this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => { panel.hidden = true; this.update({ expanded: [] }, 'roots'); });
+      this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
       this.iconButton(buttons, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
       this.iconButton(buttons, 'scan', 'Fit', () => this.fit(session));
       buttons.createDiv('tag-ontology-separator');
@@ -116,7 +110,7 @@ export class NativeGraphs {
         session.toggles[key].addClass('tag-ontology-toggle');
       }
       buttons.createDiv('tag-ontology-separator');
-      this.iconButton(buttons, 'book-open-check', 'Dictionary check', () => this.inventory(session));
+      this.iconButton(buttons, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
       buttons.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(buttons, icon, `Layout: ${name}`, () => {
@@ -127,6 +121,7 @@ export class NativeGraphs {
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
+      this.showPanel(false);
       // Obsidian ships with the Tags filter off; turn it on once for a fresh install, then leave it to the user.
       if (this.owner.firstRun && view.dataEngine) {
         this.owner.firstRun = false;
@@ -148,20 +143,39 @@ export class NativeGraphs {
     const model = this.owner.model!, settings = this.owner.settings;
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
-    for (const session of this.sessions.values()) {
-      this.render(session, 'refresh');
-      if (session.selected && !session.panel.hidden && model.entries.has(session.selected)) this.inspect(session, session.selected);
-    }
+    for (const session of this.sessions.values()) this.render(session, 'refresh');
+    this.renderPanel();
+  }
+
+  // Called by the sidebar view whenever Obsidian opens it.
+  mount(el: HTMLElement) {
+    el.empty(); el.addClass('tag-ontology-sidebar');
+    const search = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+    new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(tag));
+    search.addEventListener('keydown', e => {
+      // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
+      // Enter that commits an IME composition (e.g. Korean) is not a submit; Obsidian's own suggest skips it too.
+      if (e.key !== 'Enter' || e.isComposing || !search.value.trim()) return;
+      const [first] = this.owner.model?.suggest(search.value) ?? [];
+      if (!first) { new Notice('No matching dictionary tag.'); return; }
+      search.value = '';
+      this.reveal(first.tag);
+    });
+    this.panel = el.createDiv('tag-ontology-panel');
+    this.renderPanel();
+  }
+
+  // The panel is a sidebar tab the user can drag to either side; Obsidian reuses it wherever it is.
+  private showPanel(reveal: boolean) {
+    void this.owner.app.workspace.ensureSideLeaf(PANEL_VIEW, 'left', { reveal });
   }
 
   // Graph state is shared by every graph tab, like the core graph's own options.
   private update(patch: Partial<LayerSettings>, operation: string) {
     Object.assign(this.owner.settings, patch);
     void this.owner.saveState();
-    for (const session of this.sessions.values()) {
-      this.render(session, operation);
-      if (session.selected && !session.panel.hidden) this.inspect(session, session.selected);
-    }
+    for (const session of this.sessions.values()) this.render(session, operation);
+    this.renderPanel();
   }
 
   private render(session: Session, operation: string) {
@@ -267,10 +281,13 @@ export class NativeGraphs {
     r.changed();
   }
 
-  private reveal(session: Session, tag: string) {
-    // Suggestions and panel buttons can outlive a dictionary reload that removed the tag.
+  private reveal(tag: string) {
+    // Suggestions can outlive a dictionary reload that removed the tag.
     if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
-    if (!session.resolved?.range.has(tag)) { new Notice('Not in the current graph.'); this.inspect(session, tag); return; }
+    this.selected = tag; this.checking = false;
+    // Expansion is shared by every graph tab; with no graph open it is saved for the next one.
+    const sessions = [...this.sessions.values()];
+    if (sessions.length && !sessions.some(s => s.resolved?.range.has(tag))) { new Notice('Not in the current graph.'); this.renderPanel(); return; }
     // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
     const expanded = new Set(this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
     while (pending.length) {
@@ -279,28 +296,39 @@ export class NativeGraphs {
       seen.add(current); expanded.add(current);
       pending.push(...this.owner.model.entries.get(current)?.broader ?? []);
     }
-    this.update({ expanded: [...expanded] }, 'reveal'); this.inspect(session, tag);
+    this.update({ expanded: [...expanded] }, 'reveal');
   }
 
-  private inspect(session: Session, tag: string) {
-    const model = this.owner.model!, entry = model.entries.get(tag)!;
-    session.selected = tag;
-    const panel = session.panel; panel.empty(); panel.hidden = false;
-    this.button(panel, 'Close', () => { panel.hidden = true; });
-    panel.createEl('h3', { text: tag }); panel.createEl('p', { text: entry.description });
+  private renderPanel() {
+    const panel = this.panel, model = this.owner.model;
+    if (!panel || !model) return;
+    panel.empty();
+    if (this.checking) this.inventory(panel, model);
+    else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
+    else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
+  }
+
+  private inspect(panel: HTMLElement, model: Ontology, tag: string) {
+    const entry = model.entries.get(tag)!, expanded = this.owner.settings.expanded.includes(tag);
+    const header = panel.createDiv('tag-ontology-header');
+    header.createEl('h3', { text: '#' + tag });
+    const toggle = header.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': expanded ? 'Collapse children and notes' : 'Expand children and notes' } });
+    setIcon(toggle, expanded ? 'chevrons-down-up' : 'chevrons-up-down');
+    toggle.addEventListener('click', () => {
+      // Read the live state: Expand all or another tab may have changed it since this panel was built.
+      const live = this.owner.settings.expanded;
+      this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
+    });
+    panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
     const counts = model.counts(tag);
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
-    this.button(panel, this.owner.settings.expanded.includes(tag) ? 'Collapse children and notes' : 'Expand children and notes', () => {
-      // Read the live state: Expand all or another tab may have changed it since this panel was built.
-      const expanded = this.owner.settings.expanded;
-      this.update({ expanded: expanded.includes(tag) ? expanded.filter(t => t !== tag) : [...expanded, tag] }, 'expand:' + tag);
-    });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
       if (!tags.length) continue;
       const details = panel.createEl('details'); details.createEl('summary', { text: `${label} ${tags.length}` });
-      for (const other of tags) this.button(details, other, () => this.reveal(session, other));
+      this.tagLinks(details, tags);
     }
+    panel.createEl('hr');
     for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
       const details = panel.createEl('details'); details.open = !rollup;
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
@@ -308,19 +336,24 @@ export class NativeGraphs {
     }
   }
 
-  private inventory(session: Session) {
-    session.selected = undefined;
-    const model = this.owner.model!, panel = session.panel; panel.empty(); panel.hidden = false;
-    this.button(panel, 'Close', () => { panel.hidden = true; });
+  private inventory(panel: HTMLElement, model: Ontology) {
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.createEl('summary', { text: `${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const details = panel.createEl('details'); details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
       this.noteLinks(details, paths);
     }
     const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
-    for (const tag of model.unused) this.button(unused, tag, () => this.reveal(session, tag));
+    this.tagLinks(unused, model.unused);
+  }
+
+  // Obsidian's own tag style tells tags apart from buttons and note links.
+  private tagLinks(parent: HTMLElement, tags: readonly string[]) {
+    const list = parent.createDiv('tag-ontology-tags');
+    for (const tag of tags) {
+      list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' }).addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
+    }
   }
 
   private noteLinks(parent: HTMLElement, paths: string[]) {
@@ -329,9 +362,6 @@ export class NativeGraphs {
       const link = list.createEl('li').createEl('a', { href: '#', text: path.split('/').at(-1)!.slice(0, -3), attr: { title: path } });
       link.addEventListener('click', e => { e.preventDefault(); this.openNote(path); });
     }
-  }
-  private button(parent: HTMLElement, text: string, action: () => void) {
-    parent.createEl('button', { text }).addEventListener('click', action);
   }
   private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
@@ -390,7 +420,7 @@ export class NativeGraphs {
       if (link.line && original.texture) link.line.texture = original.texture;
     }
     s.texture?.destroy();
-    s.tools.remove(); s.panel.remove(); s.status.remove(); s.view.contentEl.removeClass('tag-ontology-native');
+    s.tools.remove(); s.status.remove(); s.view.contentEl.removeClass('tag-ontology-native');
     this.sessions.delete(id);
     if (redraw) {
       for (const node of s.renderer.nodes) { node.fx = null; node.fy = null; }

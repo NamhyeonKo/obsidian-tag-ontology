@@ -10,19 +10,20 @@
 .tag-ontology-icon.tag-ontology-toggle:not(.is-active) { color: var(--text-faint); }
 .tag-ontology-icon.is-disabled { opacity: .45; cursor: not-allowed; }
 .tag-ontology-separator { width: 20px; height: 1px; margin: 0 7px; background: var(--background-modifier-border); }
-.tag-ontology-tools input { width: 190px; background: var(--background-primary); box-shadow: none; font-size: var(--font-ui-small); opacity: .82; }
-.tag-ontology-tools input:focus { opacity: 1; }
-.tag-ontology-panel { position: absolute; right: 54px; top: 16px; bottom: 38px; width: min(310px, calc(100% - 75px)); z-index: 3; overflow: auto; padding: 16px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); font-size: var(--font-ui-small); }
+.tag-ontology-sidebar input[type="search"] { width: 100%; margin-bottom: 12px; }
+.tag-ontology-panel { font-size: var(--font-ui-small); }
+.tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }
+.tag-ontology-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tag-ontology-panel p { line-height: 1.6; }
 .tag-ontology-panel h4 { margin: 18px 0 12px; font-size: var(--font-ui-small); }
 .tag-ontology-panel summary { cursor: pointer; padding: 7px 0; }
+.tag-ontology-panel hr { margin: 12px 0; }
 .tag-ontology-panel ul { margin: 4px 0 12px; padding-left: 18px; }
 .tag-ontology-panel li { padding: 4px 0; overflow-wrap: anywhere; }
-.tag-ontology-panel a { cursor: pointer; text-decoration: none; color: var(--text-normal); }
-.tag-ontology-panel a:hover { color: var(--text-accent); text-decoration: underline; }
+.tag-ontology-panel li a { cursor: pointer; text-decoration: none; color: var(--text-normal); }
+.tag-ontology-panel li a:hover { color: var(--text-accent); text-decoration: underline; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }
 .tag-ontology-status { position: absolute; left: 16px; bottom: 12px; z-index: 2; font-size: var(--font-ui-smaller); pointer-events: none; max-width: calc(100% - 40px); }
-.tag-ontology-panel[hidden] { display: none; }
-.tag-ontology-native .tag-ontology-panel button { margin: 4px; }
 .tag-ontology-suggestion-tag { font-weight: var(--font-semibold); }
 .tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }

@@ -1,9 +1,11 @@
-import { Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type SettingDefinitionItem } from 'obsidian';
+import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type SettingDefinitionItem, type WorkspaceLeaf } from 'obsidian';
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
-import { NativeGraphs } from './native.ts';
+import { NativeGraphs, PANEL_VIEW } from './native.ts';
 
 export type { Settings } from './settings.ts';
+
+const ICON = 'book-open';
 
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -18,7 +20,8 @@ export default class TagOntologyPlugin extends Plugin {
     const saved: unknown = await this.loadData();
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
-    this.addRibbonIcon('book-open', 'Open tag ontology', () => { void this.openView(); });
+    this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
+    this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews();
@@ -99,6 +102,15 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.native.destroy();
   }
+}
+
+// The search box and tag details, in a sidebar tab the user can drag to either side.
+class DictionaryView extends ItemView {
+  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
+  getViewType(): string { return PANEL_VIEW; }
+  getDisplayText(): string { return 'Tag dictionary'; }
+  getIcon(): string { return ICON; }
+  onOpen(): Promise<void> { this.owner.native.mount(this.contentEl); return Promise.resolve(); }
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
