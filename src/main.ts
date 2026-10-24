@@ -18,7 +18,7 @@ export default class TagOntologyPlugin extends Plugin {
     const saved: unknown = await this.loadData();
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
-    this.addRibbonIcon('graph', 'Open tag ontology', () => { void this.openView(); });
+    this.addRibbonIcon('book-open', 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews();
