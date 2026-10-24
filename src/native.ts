@@ -40,7 +40,7 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
-  fitFrame?: number; stopFit: () => void;
+  fitFrame?: number; stopFit: () => void; repin: () => void;
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
@@ -78,10 +78,20 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
+      // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
+      // restarted its simulation, which would then carry the node off. The tree layouts keep it where it was released.
+      // ponytail: a release outside the graph pane is missed; listen on window if that matters.
+      session.repin = () => {
+        if (!session.active || this.owner.settings.layout === 'force') return;
+        const loose = r.nodes.filter(node => node.fx === null);
+        for (const node of loose) { node.fx = node.x; node.fy = node.y; }
+        if (loose.length) r.worker.postMessage({ run: false });
+      };
+      view.contentEl.addEventListener('pointerup', session.repin);
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
@@ -460,6 +470,7 @@ export class NativeGraphs {
     s.active = false;
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
+    s.view.contentEl.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;

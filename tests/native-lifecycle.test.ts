@@ -76,7 +76,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
-    fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
@@ -345,6 +345,21 @@ test('tree pins every node and rings the tags outside the hierarchy around it', 
   // The fake layout puts the roots cs and sec at x 0 and 400, so the ring is 150 beyond half that width.
   const outside = t.renderer.nodes.filter(n => n.id === '#loose' || n.id === '#to-read');
   assert.deepEqual(outside.map(n => Math.round(Math.hypot(n.x - 200, n.y))), [350, 350]);
+});
+
+test('in a tree, a node released after a click or drag stays pinned where it is', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!;
+  node.x = 50; node.y = 60; node.fx = null; node.fy = null;
+  t.contentEl.events.get('pointerup')!();
+  assert.deepEqual([node.fx, node.fy], [50, 60]);
+  assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
+  // Force leaves the core behavior alone.
+  t.click('Layout: Force');
+  node.fx = null; t.contentEl.events.get('pointerup')!();
+  assert.equal(node.fx, null);
 });
 
 test('the notes button is disabled in tree', async () => {
