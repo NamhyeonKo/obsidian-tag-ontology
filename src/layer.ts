@@ -31,7 +31,7 @@ export function resolveTags(model: Ontology, data: NativeData, expanded: Readonl
     range.add(tag);
     pending.push(...(model.entries.get(tag)!.broader ?? []).filter(parent => placed.has(parent)));
   }
-  for (const tag of range) if (!idOf.has(tag)) idOf.set(tag, '#' + tag);
+  for (const tag of range) if (!idOf.has(tag)) { idOf.set(tag, '#' + tag); tagOf.set('#' + tag, tag); }
   const visible = new Set(model.roots.filter(tag => range.has(tag)));
   const queue = [...visible];
   for (let index = 0; index < queue.length; index++) {

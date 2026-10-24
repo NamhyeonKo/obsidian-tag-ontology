@@ -33,7 +33,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
   tools: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
-  base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
+  base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
   data?: NativeData;
   kinds: Map<string, EdgeKind>;
@@ -77,7 +77,7 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -94,7 +94,7 @@ export class NativeGraphs {
       };
       r.setData = session.wrapped;
       session.ownClick = r.onNodeClick = (event, id, type) => {
-        const tag = session.active ? session.tagById.get(id) : undefined;
+        const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
         this.selected = tag; this.checking = false;
         // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
@@ -197,7 +197,6 @@ export class NativeGraphs {
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
-    session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
     const r = session.renderer, result = session.original.call(r, layer.data);
     session.data = layer.data; this.paint(session);
     this.styleLinks(session);

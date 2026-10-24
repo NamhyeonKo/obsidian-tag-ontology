@@ -20,7 +20,9 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 test('resolves placed dictionary tags case-insensitively and ranges them with their ancestors', () => {
   const r = resolveTags(model, core(), new Set());
-  assert.deepEqual([...r.tagOf], [['#DL', 'dl'], ['#crypto', 'crypto']]);
+  assert.equal(r.tagOf.get('#DL'), 'dl'); assert.equal(r.tagOf.get('#crypto'), 'crypto');
+  // Node clicks map ids back to tags, including tags the layer adds without a core node.
+  assert.deepEqual([...r.tagOf].sort(), [...r.idOf].map(([tag, id]) => [id, tag]).sort());
   assert.deepEqual([...r.range].sort(), ['crypto', 'cs', 'dl', 'ml', 'sec']);
   assert.deepEqual([...r.visible].sort(), ['cs', 'sec']);
   assert.equal(r.idOf.get('dl'), '#DL'); assert.equal(r.idOf.get('ml'), '#ml');
