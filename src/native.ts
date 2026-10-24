@@ -1,5 +1,5 @@
 import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
-import { hierarchyPositions, treePositions } from './layout.ts';
+import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
@@ -45,7 +45,7 @@ interface Session {
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree'], ['radial', 'orbit', 'Radial']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The renderer's color format.
 const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
@@ -192,7 +192,7 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
-    // Tree and Radial show the tag hierarchy alone; the saved Notes choice applies again in Force.
+    // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
@@ -254,9 +254,8 @@ export class NativeGraphs {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
     const tags = [...visible];
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
-    const placed = this.owner.settings.layout === 'radial'
-      ? hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), true) : treePositions(tags, edges, this.owner.settings.layout === 'tree-horizontal');
-    const positions = new Map([...placed].map(([tag, position]) => [idOf.get(tag)!, position]));
+    const positions = new Map([...treePositions(tags, edges, this.owner.settings.layout === 'tree-horizontal')]
+      .map(([tag, position]) => [idOf.get(tag)!, position]));
     r.worker.postMessage({ run: false }); r.workerResults = null;
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
     const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
@@ -419,7 +418,7 @@ export class NativeGraphs {
       const disabled = key === 'showNotes' && settings.layout !== 'force';
       button.toggleClass('is-active', settings[key] && !disabled); button.setAttribute('aria-pressed', String(settings[key] && !disabled));
       button.setAttribute('aria-disabled', String(disabled));
-      this.label(button, disabled ? 'Notes are hidden in Tree and Radial' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
+      this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout];

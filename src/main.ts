@@ -122,7 +122,7 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Horizontal tree', radial: 'Radial' };
+const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Horizontal tree' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its links bright and fade the rest, as when you hover it.' };
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };

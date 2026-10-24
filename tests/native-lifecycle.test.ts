@@ -48,7 +48,7 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
-// Both layouts are stubbed with tags in one row, 400 apart.
+// The tree layout is stubbed with tags in one row, 400 apart.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
@@ -63,7 +63,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { hierarchyPositions: inRow, treePositions: inRow }
+      : specifier === './layout.ts' ? { treePositions: inRow }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
@@ -182,10 +182,10 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a native graph update must not reset the zoom');
   t.controller.refresh();
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
-  t.owner.settings.layout = 'radial'; t.controller.refresh();
+  t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
-  const radial = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Radial')!;
-  assert.equal(radial.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
+  const horizontal = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Horizontal tree')!;
+  assert.equal(horizontal.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
 });
 
 test('notes and related toggles start from settings and persist', async () => {
@@ -309,8 +309,8 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'orbit']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: Radial']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']);
 });
 
 test('layout buttons switch the layout without rereading the dictionary and mark the current one', async () => {
@@ -352,7 +352,7 @@ test('the notes button is disabled in tree', async () => {
   t.controller.attach();
   const notes = t.contentEl.all().find(el => el.attrs.icon === 'file-text')!;
   assert.equal(notes.attrs['aria-disabled'], 'true');
-  assert.equal(notes.attrs.tooltip, 'Notes are hidden in Tree and Radial');
+  assert.equal(notes.attrs.tooltip, 'Notes are hidden in tree layouts');
   notes.events.get('click')!();
   assert.equal(t.owner.settings.showNotes, true); assert.equal(t.owner.saves, 0);
 });

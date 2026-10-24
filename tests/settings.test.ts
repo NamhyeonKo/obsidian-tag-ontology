@@ -18,7 +18,7 @@ test('sanitizes saved settings to the supported fields', () => {
   for (const raw of [null, [], 'text', { dictionaryPath: '../tags.json', layout: 'invalid', expanded: 'cs' }]) {
     assert.deepEqual(sanitizeSettings(raw, '.obsidian'), DEFAULT_SETTINGS);
   }
-  assert.deepEqual(sanitizeSettings({ layout: 'radial' }, '.obsidian'), { ...DEFAULT_SETTINGS, layout: 'radial' });
+  assert.equal(sanitizeSettings({ layout: 'radial' }, '.obsidian').layout, 'tree', 'Radial is gone; it opens as the vertical tree');
   assert.equal(sanitizeSettings({ layout: 'tree-horizontal' }, '.obsidian').layout, 'tree-horizontal');
 });
 
