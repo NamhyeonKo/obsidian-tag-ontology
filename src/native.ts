@@ -337,6 +337,7 @@ export class NativeGraphs {
     const panel = this.panel, model = this.owner.model;
     if (!panel || !model) return;
     panel.empty();
+    panel.setCssProps({ '--tag-ontology-color': this.owner.settings.highlightColor });
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
@@ -345,7 +346,8 @@ export class NativeGraphs {
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
     const entry = model.entries.get(tag)!, expanded = this.owner.settings.expanded.includes(tag);
     const header = panel.createDiv('tag-ontology-header');
-    header.createEl('h3', { text: tag });
+    const { customColors, titleAccent } = this.owner.settings;
+    header.createEl('h3', { text: tag, cls: customColors && titleAccent ? 'tag-ontology-accent' : undefined });
     const toggle = header.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': expanded ? 'Collapse children and notes' : 'Expand children and notes' } });
     setIcon(toggle, expanded ? 'chevrons-down-up' : 'chevrons-up-down');
     toggle.addEventListener('click', () => {

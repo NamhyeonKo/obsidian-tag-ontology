@@ -124,6 +124,7 @@ const HIGHLIGHTS = [
   { key: 'highlightDescendants', name: 'Highlight its descendants', desc: 'Every tag under the selected tag.' },
   { key: 'highlightConnected', name: 'Highlight its connected tags', desc: 'The parents, children and related tags of the selected tag.' },
 ] as const;
+const TITLE = { name: 'Tag title in the highlight color', desc: 'Show the selected tag\'s title in the sidebar in the highlight color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
@@ -142,6 +143,7 @@ class OntologySettingsTab extends PluginSettingTab {
         { ...TAG_COLOR, control: { type: 'color', key: 'tagColor', defaultValue: DEFAULT_SETTINGS.tagColor } },
         { ...HIGHLIGHT_COLOR, control: { type: 'color', key: 'highlightColor', defaultValue: DEFAULT_SETTINGS.highlightColor } },
         ...HIGHLIGHTS.map(({ key, name, desc }) => ({ name, desc, control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
+        { ...TITLE, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
       ] },
     ];
   }
@@ -184,6 +186,9 @@ class OntologySettingsTab extends PluginSettingTab {
     }));
     for (const { key, name, desc } of HIGHLIGHTS) custom.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
+    }));
+    custom.push(new Setting(containerEl).setName(TITLE.name).setDesc(TITLE.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));
     for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
   }

@@ -11,7 +11,9 @@ import type { NativeData } from '../src/layer.ts';
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  createDiv() { return this.createEl('div'); }
+  css: Record<string, string> = {};
+  setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
+  createDiv(cls?: string) { return this.createEl('div', { cls }); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
     const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
     for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
@@ -476,4 +478,16 @@ test('the highlight toggles add up: the tag itself, its descendants and its dire
   assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
   t.owner.settings.customColors = false; t.controller.refresh();
   assert.deepEqual(highlighted(), []);
+});
+
+test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
+  const t = await setup({ customColors: true });
+  const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
+  const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
+  t.suggests[0]!.onChoose('cs');
+  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#6d47eb');
+  t.owner.settings.titleAccent = false; t.controller.refresh();
+  assert.ok(!title().classes.has('tag-ontology-accent'));
+  Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
+  assert.ok(!title().classes.has('tag-ontology-accent'));
 });
