@@ -1,7 +1,7 @@
 {
   "id": "tag-ontology",
   "name": "Tag Ontology",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.7.2",
   "description": "Layer a tag hierarchy from a JSON dictionary onto the core graph view. Turn on the Tags filter in the graph settings to start.",
   "author": "NamhyeonKo",
