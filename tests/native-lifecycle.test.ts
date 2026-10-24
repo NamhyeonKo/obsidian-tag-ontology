@@ -212,7 +212,7 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   t.suggests[0]!.onChoose('overfitting');
   assert.deepEqual(t.notices, ['Not in the current graph.']);
   assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
-  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#overfitting'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'overfitting'));
 });
 
 test('rendering before any core data does nothing', async () => {
@@ -379,7 +379,7 @@ test('clicking a tag shows it in the sidebar and brings the sidebar forward', as
   const t = await setup();
   t.controller.attach();
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#cs'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
   assert.deepEqual(t.sideCalls.at(-1), { type: 'tag-ontology-panel', side: 'left', reveal: true });
 });
 
@@ -406,5 +406,5 @@ test('the sidebar search expands a tag without an open graph', async () => {
   t.search('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.deepEqual(t.notices, []);
-  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === '#dl'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'dl'));
 });

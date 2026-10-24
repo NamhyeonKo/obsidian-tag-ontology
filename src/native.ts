@@ -311,7 +311,7 @@ export class NativeGraphs {
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
     const entry = model.entries.get(tag)!, expanded = this.owner.settings.expanded.includes(tag);
     const header = panel.createDiv('tag-ontology-header');
-    header.createEl('h3', { text: '#' + tag });
+    header.createEl('h3', { text: tag });
     const toggle = header.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': expanded ? 'Collapse children and notes' : 'Expand children and notes' } });
     setIcon(toggle, expanded ? 'chevrons-down-up' : 'chevrons-up-down');
     toggle.addEventListener('click', () => {
