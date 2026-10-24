@@ -48,6 +48,9 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
 
+// Both layouts are stubbed with tags in one row, 400 apart.
+const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
+
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
   const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
@@ -60,7 +63,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { hierarchyPositions: (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }])) }
+      : specifier === './layout.ts' ? { hierarchyPositions: inRow, treePositions: inRow }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {

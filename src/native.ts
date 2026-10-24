@@ -1,5 +1,5 @@
 import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
-import { hierarchyPositions } from './layout.ts';
+import { hierarchyPositions, treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
@@ -254,8 +254,9 @@ export class NativeGraphs {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
     const tags = [...visible];
     const edges = tags.flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent)).map(parent => [parent, tag] as [string, string]));
-    const positions = new Map([...hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), this.owner.settings.layout === 'radial')]
-      .map(([tag, position]) => [idOf.get(tag)!, position]));
+    const placed = this.owner.settings.layout === 'radial'
+      ? hierarchyPositions(tags, edges, model.roots.filter(tag => visible.has(tag)), true) : treePositions(tags, edges);
+    const positions = new Map([...placed].map(([tag, position]) => [idOf.get(tag)!, position]));
     r.worker.postMessage({ run: false }); r.workerResults = null;
     const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
     const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0, cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
