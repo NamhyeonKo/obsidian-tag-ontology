@@ -21,7 +21,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 - **하위 포함 노트 수.** 태그마다 *직접* 달린 노트 수와, *하위 태그까지 포함한* 노트 수를 보여 줍니다. 노트에 여러 태그가 달렸거나 태그가 여러 부모를 가져도 같은 노트는 한 번만 셉니다.
 - **다중 부모와 연관 관계.** 실선 화살표는 상위에서 하위로 향하고, 점선은 연관 태그를 잇습니다.
 - **세 가지 배치.** Force, Tree, Radial.
-- **검색.** 태그 이름이나 별칭으로 찾습니다.
+- **사이드바 탭.** 파일·검색 탭 옆의 탭에서 태그 이름이나 별칭으로 찾고, 태그 정보를 보고, 사전 대조를 합니다. 여기서 태그를 고르면 열린 그래프가 그 태그를 가운데로 옮깁니다.
 - **사전 대조.** vault에서 쓰이지만 사전에 없는 태그와, 사전에는 있지만 아직 아무 노트도 쓰지 않는 태그를 보여 줍니다. 보고만 하고 아무것도 바꾸지 않습니다.
 - **보던 상태 기억.** 펼친 태그와 Notes·Related 토글이 저장되고, 기본 그래프 설정처럼 모든 그래프 탭이 같은 상태를 씁니다.
 
@@ -64,7 +64,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 1. Obsidian에서 **폴더를 vault로 열기**를 선택하고 `examples/sample-vault`를 고릅니다.
 2. 위 방법 중 하나로 그 vault에 플러그인을 설치합니다.
-3. 리본의 **graph** 아이콘을 누르거나, 명령 팔레트에서 **Tag Ontology: Open graph**를 실행합니다.
+3. 리본의 **Open tag ontology** 아이콘(책 모양)을 누르거나, 명령 팔레트에서 **Tag Ontology: Open graph**를 실행합니다.
 4. 처음에는 플러그인이 **필터 → Tags**를 켜 줍니다. 태그가 보이지 않으면 그래프 설정(톱니바퀴 아이콘)에서 켭니다.
 
 루트 `computer-science`와 `security`에 노트 6개가 연결되어 있고, 미등록 태그 `#to-read`가 보이면 정상입니다. `computer-science`, `machine-learning`을 차례로 클릭하면 `Dropout` 노트가 `deep-learning`으로 옮겨 붙습니다. `cryptography`와 `ai-security`는 부모가 둘입니다.
@@ -114,12 +114,19 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 ## 사용법
 
-### 도구 모음과 태그 패널
-
 UI는 영어로 표시됩니다.
 
-- **Search tags or aliases**: 태그 이름이나 별칭의 일부를 입력하면 아래에 후보가 뜹니다. 별칭으로 맞은 후보는 태그 아래에 그 별칭이 함께 보여서, `convolution`이나 `합성곱`으로도 `cnn`을 찾을 수 있습니다. 클릭하거나 Enter로 고르면 그 태그까지 펼치고 패널을 엽니다.
-- 검색창 아래의 동그란 버튼은 커서를 올리면 이름이 보입니다.
+### 사이드바 탭
+
+**Open tag ontology**(리본의 책 아이콘 또는 **Open graph** 명령)를 실행하면 왼쪽 사이드바의 파일·검색 탭 옆에 **Tag dictionary** 탭이 생깁니다. 이때 보던 탭은 그대로 둡니다. 그래프에서 태그를 클릭하거나 **Dictionary check**를 눌러도 이 탭이 열리고 앞으로 나오므로, 닫은 탭도 다시 생깁니다. 탭을 오른쪽 사이드바로 끌어다 놓아도 되고, 옮긴 자리가 유지됩니다.
+
+- 탭 맨 위의 **Search tags or aliases**: 태그 이름이나 별칭의 일부를 입력하면 아래에 후보가 뜹니다. 별칭으로 맞은 후보는 태그 아래에 그 별칭이 함께 보여서, `convolution`이나 `합성곱`으로도 `cnn`을 찾을 수 있습니다. 클릭하거나 Enter로 고르면 그 태그까지 펼치고, 탭에 그 태그를 보여 주고, 열린 그래프가 그 태그를 가운데로 옮깁니다. 그래프가 열려 있지 않아도 검색할 수 있고, 펼친 상태는 다음 그래프에 적용됩니다.
+- 아무 태그도 고르지 않았으면 최상위 태그 목록이 보입니다.
+- 태그를 고르면 정의, 별칭, 노트 수(직접 / 하위 포함), 상위·하위·연관 태그(`#태그` 링크), 그리고 구분선 아래에 노트 목록이 표시됩니다. `#태그`를 누르면 그 태그로 이동합니다. 제목 옆 아이콘으로 그 태그를 펼치거나 접습니다.
+
+### 그래프 도구 모음
+
+그래프 왼쪽의 동그란 버튼은 커서를 올리면 이름이 보입니다.
 
 | 아이콘 | 버튼 | 하는 일 |
 | --- | --- | --- |
@@ -128,11 +135,11 @@ UI는 영어로 표시됩니다.
 | `scan` | Fit | 그래프를 화면에 맞추기 |
 | `file-text` | Notes | 태그가 아닌 노드(노트, 첨부파일, 아직 없는 파일) 보이기/숨기기 |
 | `link` | Related | 점선 연관 관계 보이기/숨기기 |
-| `book-open-check` | Dictionary check | 사전에 없는 태그와 쓰이지 않는 태그 보기 |
+| `book-open-check` | Dictionary check | 사전에 없는 태그와 쓰이지 않는 태그를 사이드바 탭에 보기 |
 | `share-2` / `network` / `orbit` | Force / Tree / Radial | 배치 바꾸기. 현재 배치가 강조됨 |
 
 - **Tree**와 **Radial**에서는 태그 관계가 잘 보이도록 노트를 항상 숨깁니다. 이때 Notes 버튼은 비활성이 되고, Force로 돌아오면 원래 Notes 설정이 다시 적용됩니다.
-- 태그를 클릭하면 펼쳐지면서 정보 패널이 열립니다. 정의, 별칭, 노트 수(직접 / 하위 포함), 상위·하위·연관 태그, 노트 목록이 표시됩니다. 이미 펼친 태그를 클릭하면 패널만 다시 열립니다. 접으려면 패널의 **Collapse children and notes**를 누릅니다.
+- 그래프에서 태그를 클릭하면 펼쳐지면서 사이드바 탭에 그 태그가 표시됩니다. 다른 탭을 보고 있었다면 이 탭이 앞으로 나옵니다. 이미 펼친 태그를 클릭하면 다시 보여 주기만 합니다. 접으려면 탭에서 제목 옆 아이콘을 누릅니다.
 - 나머지는 기본 동작을 따릅니다. 노트를 클릭하면 열리고(Cmd/Ctrl+클릭은 새 탭), 사전에 없는 태그를 클릭하면 검색이 열립니다.
 - 기본 그래프는 많이 축소하면 라벨과 화살표를 숨깁니다. 확대하면 보입니다.
 
@@ -193,7 +200,7 @@ npm run deploy -- "/path/to/vault"   # main.js, manifest.json, styles.css를 vau
 src/
 ├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
-├── native.ts       # Hooks the core Graph view renderer (toolbar, panel, clicks, layouts)
+├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Tree/Radial positions (headless Cytoscape)
 └── settings.ts     # Settings shape and path validation
