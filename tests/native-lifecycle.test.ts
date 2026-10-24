@@ -29,7 +29,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(): void; destroy(): void; mount(el: Element): void };
+type Controller = { attach(): void; refresh(redraw?: boolean): void; destroy(): void; mount(el: Element): void };
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -507,4 +507,15 @@ test('focus keeps the selected tag looking hovered until something else is hover
   assert.equal(t.renderer.getHighlightNode(), null);
   t.controller.destroy();
   assert.equal(t.renderer.getHighlightNode, t.original.getHighlightNode);
+});
+
+test('a note-only refresh updates the panel without redrawing the graph', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.suggests[0]!.onChoose('cs');
+  const sent = t.forwarded.length;
+  t.owner.model = new Ontology({ cs: { description: 'reloaded', broader: [] } }, []);
+  t.controller.refresh(false);
+  assert.equal(t.forwarded.length, sent, 'the core graph re-sends its own data for note edits');
+  assert.ok(t.sidebar.all().some(el => el.text === 'reloaded'));
 });

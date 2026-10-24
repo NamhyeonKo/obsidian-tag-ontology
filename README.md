@@ -12,7 +12,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on once for you; after that the plugin never changes it, so if you turn it off, turn it back on to see the hierarchy.
 
-![Tag Ontology demo](assets/0.3.0/demo.gif)
+![Tag Ontology demo](assets/0.5.1/demo.gif)
 
 ## Features
 
@@ -26,11 +26,13 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab, like the core graph's own options.
 
-| Tag panel | Dictionary check |
+| Sidebar tab | Dictionary check |
 | --- | --- |
-| ![Tag panel with parents, children and note counts](assets/0.3.0/tag-panel.png) | ![Dictionary check listing unregistered and unused tags](assets/0.3.0/dictionary-check.png) |
+| ![Sidebar tab showing a tag with its parents, children and note counts](assets/0.5.1/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.5.1/dictionary-check.png) |
 | **Search suggestions** | **Tree layout** |
-| ![Search box suggesting tags while typing](assets/0.3.0/search-suggestions.png) | ![Tree layout showing the tag hierarchy without notes](assets/0.3.0/tree.png) |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | ![Tree layout showing the tag hierarchy without notes](assets/0.5.1/tree.png) |
+| **Custom colors** | **Keep the selected tag focused** |
+| ![Every tag in one color, the selected tag and its connected tags in the highlight color](assets/0.5.1/custom-colors.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.5.1/focus.png) |
 
 ## How it works
 
@@ -210,7 +212,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── layout.ts       # Tree/Radial positions (breadth-first levels)
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -224,7 +226,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
-- [Cytoscape.js](https://js.cytoscape.org/) computes the Tree/Radial layouts.
+- The Tree/Radial layouts follow the breadthfirst layout rules of [Cytoscape.js](https://js.cytoscape.org/), reimplemented without the dependency.
 
 ## License
 

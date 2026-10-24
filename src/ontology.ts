@@ -29,6 +29,8 @@ export class Ontology {
   entries = new Map<string, Entry>();
   children = new Map<string, string[]>();
   roots: string[] = [];
+  // Tags reachable from a root. Unplaced entries (no broader key) have no position in the hierarchy.
+  placed = new Set<string>();
   direct = new Map<string, string[]>();
   unregistered = new Map<string, string[]>();
   unused: string[] = [];
@@ -76,6 +78,7 @@ export class Ontology {
     if (queue.length !== this.entries.size) {
       throw new Error(`Cycle in broader relations: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
     }
+    this.placed = new Set(this.roots.flatMap(root => [root, ...this.descendants(root)]));
     const paths = new Map<string, Set<string>>();
     // The core graph merges tag case variants, so index note tags against dictionary keys the same way.
     const byLower = new Map([...this.entries.keys()].map(key => [key.toLowerCase(), key]));

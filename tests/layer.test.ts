@@ -20,7 +20,9 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 
 test('resolves placed dictionary tags case-insensitively and ranges them with their ancestors', () => {
   const r = resolveTags(model, core(), new Set());
-  assert.deepEqual([...r.tagOf], [['#DL', 'dl'], ['#crypto', 'crypto']]);
+  assert.equal(r.tagOf.get('#DL'), 'dl'); assert.equal(r.tagOf.get('#crypto'), 'crypto');
+  // Node clicks map ids back to tags, including tags the layer adds without a core node.
+  assert.deepEqual([...r.tagOf].sort(), [...r.idOf].map(([tag, id]) => [id, tag]).sort());
   assert.deepEqual([...r.range].sort(), ['crypto', 'cs', 'dl', 'ml', 'sec']);
   assert.deepEqual([...r.visible].sort(), ['cs', 'sec']);
   assert.equal(r.idOf.get('dl'), '#DL'); assert.equal(r.idOf.get('ml'), '#ml');
@@ -57,6 +59,13 @@ test('a tag color paints every tag node, dictionary or not, and no note', () => 
   assert.deepEqual(input, before, 'the core data keeps its own colors');
 });
 
+test('buildLayer never mutates the core data it layers', () => {
+  // Every render layers the same core data again, so adding edges in place must only touch copies.
+  const input = withOverfitting(), before = structuredClone(input);
+  buildLayer(input, model, { expanded: new Set(['cs', 'ml']), showNotes: true, showRelated: true });
+  assert.deepEqual(input, before);
+});
+
 test('applyCollapse never mutates its input', () => {
   const input = core(); applyCollapse(input, resolveTags(model, input, new Set()), model);
   assert.deepEqual(input, core());
@@ -68,7 +77,7 @@ const withOverfitting = (): NativeData => {
 
 test('adds hierarchy edges between visible tags and one related edge per pair', () => {
   const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
-  const { data, kinds } = addEdges(applyCollapse(input, r, model), r, model, ['broader', 'related']);
+  const { data, kinds } = addEdges(applyCollapse(input, r, model), r, model, true);
   assert.ok(data.nodes['#cs']!.links['#ml'] && data.nodes['#ml']!.links['#DL'] && data.nodes['#sec']!.links['#crypto']);
   assert.equal(kinds.get(edgeKey('#ml', '#DL')), 'broader');
   assert.equal(kinds.get(edgeKey('#DL', '#overfitting')), 'related');
@@ -77,7 +86,7 @@ test('adds hierarchy edges between visible tags and one related edge per pair', 
 
 test('related edges are skipped when the kind is not requested', () => {
   const input = withOverfitting(), r = resolveTags(model, input, new Set(['cs', 'ml']));
-  assert.ok(![...addEdges(applyCollapse(input, r, model), r, model, ['broader']).kinds.values()].includes('related'));
+  assert.ok(![...addEdges(applyCollapse(input, r, model), r, model, false).kinds.values()].includes('related'));
 });
 
 test('hideNotes keeps only tag nodes and their links among tags', () => {

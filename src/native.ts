@@ -33,7 +33,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
   tools: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
-  base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
+  base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
   data?: NativeData;
   kinds: Map<string, EdgeKind>;
@@ -77,7 +77,7 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -94,7 +94,7 @@ export class NativeGraphs {
       };
       r.setData = session.wrapped;
       session.ownClick = r.onNodeClick = (event, id, type) => {
-        const tag = session.active ? session.tagById.get(id) : undefined;
+        const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
         this.selected = tag; this.checking = false;
         // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
@@ -105,23 +105,22 @@ export class NativeGraphs {
       // Node and link drawing fade everything not linked to this node; with focus on, the selected tag counts as hovered when nothing else is.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || session.focus || null;
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
-      const buttons = tools.createDiv('tag-ontology-buttons');
-      this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
-      this.iconButton(buttons, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
-      this.iconButton(buttons, 'scan', 'Fit', () => this.fit(session));
-      buttons.createDiv('tag-ontology-separator');
+      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
+      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
+      this.iconButton(tools, 'scan', 'Fit', () => this.fit(session));
+      tools.createDiv('tag-ontology-separator');
       for (const [key, icon, name] of TOGGLES) {
-        session.toggles[key] = this.iconButton(buttons, icon, name, () => {
+        session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && this.owner.settings.layout !== 'force') return;
           this.update({ [key]: !this.owner.settings[key] }, 'filter');
         });
         session.toggles[key].addClass('tag-ontology-toggle');
       }
-      buttons.createDiv('tag-ontology-separator');
-      this.iconButton(buttons, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
-      buttons.createDiv('tag-ontology-separator');
+      tools.createDiv('tag-ontology-separator');
+      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
+      tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
-        session.layoutButtons[layout] = this.iconButton(buttons, icon, `Layout: ${name}`, () => {
+        session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
           this.owner.settings.layout = layout;
           void this.owner.saveSettings();
         });
@@ -145,12 +144,13 @@ export class NativeGraphs {
     }
   }
 
-  refresh() {
+  // Note edits only change counts and note lists; the core graph re-sends its own data for them, so only redraw for the dictionary or settings.
+  refresh(redraw = true) {
     this.attach();
     const model = this.owner.model!, settings = this.owner.settings;
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
-    for (const session of this.sessions.values()) this.render(session, 'refresh');
+    if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
     this.renderPanel();
   }
 
@@ -196,7 +196,6 @@ export class NativeGraphs {
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
     session.resolved = layer.resolved; session.kinds = layer.kinds;
-    session.tagById = new Map([...layer.resolved.idOf].map(([tag, id]) => [id, tag]));
     const r = session.renderer, result = session.original.call(r, layer.data);
     session.data = layer.data; this.paint(session);
     this.styleLinks(session);
@@ -211,12 +210,11 @@ export class NativeGraphs {
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
-    const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)])).size;
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
     session.status.textContent = tagsShown
-      ? `${layer.resolved.visible.size} / ${placed} tags · ${notes} notes · ${model.roots.length} roots`
+      ? `${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`
       : 'Turn on Tags in the graph filters to show the dictionary hierarchy.';
     this.metrics.push({ operation, ms: performance.now() - start, nodes: Object.keys(layer.data.nodes).length, visible: document.visibilityState === 'visible' });
     this.metrics = this.metrics.slice(-50);
@@ -230,9 +228,11 @@ export class NativeGraphs {
       if (session.links.has(link)) continue;
       const original = { render: link.render, texture: link.line?.texture };
       session.links.set(link, original);
+      // A link keeps its endpoints, so build the key once instead of on every frame.
+      const key = edgeKey(link.source.id, link.target.id);
       link.render = () => {
         if (!original.texture && link.line) original.texture = link.line.texture;
-        const kind = session.kinds.get(edgeKey(link.source.id, link.target.id));
+        const kind = session.kinds.get(key);
         if (link.line && kind === 'related') {
           if (!session.texture) {
             const canvas = createEl('canvas', { attr: { width: 256, height: 2 } });

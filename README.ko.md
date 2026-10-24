@@ -12,7 +12,7 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 
 > **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 한 번 자동으로 켜 드리고, 그 뒤로는 플러그인이 이 설정을 바꾸지 않습니다. 직접 껐다면 다시 켜야 계층이 보입니다.
 
-![Tag Ontology 데모](assets/0.3.0/demo.gif)
+![Tag Ontology 데모](assets/0.5.1/demo.gif)
 
 ## 기능
 
@@ -26,11 +26,13 @@ Tag Ontology는 Obsidian 기본 **그래프 뷰**에 **태그 계층**을 더해
 - **사용자 색상(선택).** 모든 태그를 한 가지 색으로 칠하고, 선택한 태그(원하면 그 하위 태그나 바로 연결된 태그까지)를 강조색으로 칠합니다. 선택한 태그를 마우스를 올린 것처럼 계속 강조해 둘 수도 있습니다.
 - **보던 상태 기억.** 펼친 태그와 Notes·Related 토글이 저장되고, 기본 그래프 설정처럼 모든 그래프 탭이 같은 상태를 씁니다.
 
-| 태그 패널 | 사전 대조 |
+| 사이드바 탭 | 사전 대조 |
 | --- | --- |
-| ![상위·하위 태그와 노트 수가 표시된 태그 패널](assets/0.3.0/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 보여 주는 사전 대조](assets/0.3.0/dictionary-check.png) |
+| ![상위·하위 태그와 노트 수가 표시된 사이드바 탭](assets/0.5.1/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 사이드바 탭에 보여 주는 사전 대조](assets/0.5.1/dictionary-check.png) |
 | **검색 추천** | **Tree 배치** |
-| ![입력하는 동안 태그를 추천하는 검색창](assets/0.3.0/search-suggestions.png) | ![노트 없이 태그 계층만 보여 주는 Tree 배치](assets/0.3.0/tree.png) |
+| ![이름과 별칭으로 태그를 추천하는 사이드바 검색창](assets/0.5.1/search-suggestions.png) | ![노트 없이 태그 계층만 보여 주는 Tree 배치](assets/0.5.1/tree.png) |
+| **사용자 색상** | **선택한 태그 포커스 유지** |
+| ![모든 태그는 한 색, 선택한 태그와 연결된 태그는 강조색으로 칠한 그래프](assets/0.5.1/custom-colors.png) | ![선택한 태그와 연결선만 밝고 나머지는 흐려진 그래프](assets/0.5.1/focus.png) |
 
 ## 동작 방식
 
@@ -211,7 +213,7 @@ src/
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Tree/Radial positions (headless Cytoscape)
+├── layout.ts       # Tree/Radial positions (breadth-first levels)
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 examples/           # Sample vault with a Tag-Dictionary.json
@@ -225,7 +227,7 @@ scripts/deploy.mjs  # Copies the build into a local vault
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
-- Tree/Radial 배치 계산에 [Cytoscape.js](https://js.cytoscape.org/)를 사용합니다.
+- Tree/Radial 배치는 [Cytoscape.js](https://js.cytoscape.org/)의 breadthfirst 배치 규칙을 의존성 없이 다시 구현한 것입니다.
 
 ## 라이선스
 

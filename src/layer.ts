@@ -15,8 +15,8 @@ export interface Resolved {
 }
 
 export function resolveTags(model: Ontology, data: NativeData, expanded: ReadonlySet<string>): Resolved {
-  // Unplaced entries (no broader key) have no position in the hierarchy, so they stay ordinary tags.
-  const placed = new Set(model.roots.flatMap(root => [root, ...model.descendants(root)]));
+  // Unplaced entries have no position in the hierarchy, so they stay ordinary tags.
+  const { placed } = model;
   // The core graph merges tag case variants into one node, so match dictionary keys the same way.
   const byLower = new Map([...placed].map(tag => [tag.toLowerCase(), tag]));
   const tagOf = new Map<string, string>(), idOf = new Map<string, string>(), range = new Set<string>();
@@ -31,7 +31,7 @@ export function resolveTags(model: Ontology, data: NativeData, expanded: Readonl
     range.add(tag);
     pending.push(...(model.entries.get(tag)!.broader ?? []).filter(parent => placed.has(parent)));
   }
-  for (const tag of range) if (!idOf.has(tag)) idOf.set(tag, '#' + tag);
+  for (const tag of range) if (!idOf.has(tag)) { idOf.set(tag, '#' + tag); tagOf.set('#' + tag, tag); }
   const visible = new Set(model.roots.filter(tag => range.has(tag)));
   const queue = [...visible];
   for (let index = 0; index < queue.length; index++) {
@@ -75,11 +75,9 @@ export type EdgeKind = 'broader' | 'related';
 export interface NodeColor { a: number; rgb: number }
 export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor }
 
-const copyNodes = (data: NativeData): NativeData['nodes'] =>
-  Object.fromEntries(Object.entries(data.nodes).map(([id, node]) => [id, { ...node, links: { ...node.links } }]));
-
-export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, kinds: readonly EdgeKind[]) {
-  const { idOf, visible } = resolved, nodes = copyNodes(data), edges = new Map<string, EdgeKind>();
+// Adds links to the given nodes in place: buildLayer passes the fresh copy from applyCollapse.
+export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, related: boolean) {
+  const { idOf, visible } = resolved, { nodes } = data, edges = new Map<string, EdgeKind>();
   const link = (source: string, target: string, kind: EdgeKind) => {
     const from = idOf.get(source)!, to = idOf.get(target)!, key = edgeKey(from, to);
     if (edges.get(key) === 'broader') return;
@@ -88,8 +86,8 @@ export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, 
   };
   for (const tag of visible) {
     const entry = model.entries.get(tag)!;
-    if (kinds.includes('broader')) for (const parent of entry.broader ?? []) if (visible.has(parent)) link(parent, tag, 'broader');
-    if (kinds.includes('related')) {
+    for (const parent of entry.broader ?? []) if (visible.has(parent)) link(parent, tag, 'broader');
+    if (related) {
       for (const other of entry.related ?? []) {
         if (!visible.has(other)) continue;
         const [source, target] = [tag, other].sort();
@@ -97,7 +95,7 @@ export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, 
       }
     }
   }
-  return { data: { ...data, nodes }, kinds: edges };
+  return { data, kinds: edges };
 }
 
 export function hideNotes(data: NativeData): NativeData {
@@ -111,7 +109,7 @@ export function hideNotes(data: NativeData): NativeData {
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
   const resolved = resolveTags(model, data, state.expanded);
   const collapsed = applyCollapse(data, resolved, model);
-  const edges = addEdges(collapsed, resolved, model, state.showRelated ? ['broader', 'related'] : ['broader']);
+  const edges = addEdges(collapsed, resolved, model, state.showRelated);
   const layered = state.showNotes ? edges.data : hideNotes(edges.data);
   // Every node here is already a copy, so coloring tags leaves the core data alone.
   if (state.tagColor) for (const node of Object.values(layered.nodes)) if (node.type === 'tag') node.color = state.tagColor;
