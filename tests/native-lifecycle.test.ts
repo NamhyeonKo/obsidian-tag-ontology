@@ -75,6 +75,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
     fShowArrow: true, worker: { postMessage() {} }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
+    highlightNode: null as unknown, dragNode: null as unknown,
+    getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
     changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
@@ -87,7 +89,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       }));
     },
   };
-  const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick };
+  const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick, getHighlightNode: renderer.getHighlightNode };
   const contentEl = new Element();
   const graphOptions = { showTags, showOrphans: true }, optionWrites: object[] = [];
   const dataEngine = {
@@ -490,4 +492,19 @@ test('with custom colors the sidebar title takes the highlight color unless that
   assert.ok(!title().classes.has('tag-ontology-accent'));
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent'));
+});
+
+test('focus keeps the selected tag looking hovered until something else is hovered or it is turned off', async () => {
+  const t = await setup({ focus: true });
+  t.controller.attach();
+  const node = (id: string) => t.renderer.nodes.find(n => n.id === id);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(t.renderer.getHighlightNode(), node('#cs'));
+  t.renderer.highlightNode = node('#sec');
+  assert.equal(t.renderer.getHighlightNode(), node('#sec'), 'hovering another node still wins');
+  t.renderer.highlightNode = null;
+  t.owner.settings.focus = false; t.controller.refresh();
+  assert.equal(t.renderer.getHighlightNode(), null);
+  t.controller.destroy();
+  assert.equal(t.renderer.getHighlightNode, t.original.getHighlightNode);
 });

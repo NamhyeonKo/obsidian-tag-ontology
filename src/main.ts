@@ -116,6 +116,7 @@ class DictionaryView extends ItemView {
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
 const LAYOUTS = { force: 'Force', tree: 'Tree', radial: 'Radial' };
+const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its links bright and fade the rest, as when you hover it.' };
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };
 const HIGHLIGHT_COLOR = { name: 'Highlight color', desc: 'Highlighted tags take this color.' };
@@ -137,6 +138,7 @@ class OntologySettingsTab extends PluginSettingTab {
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
       { name: 'Layout', control: { type: 'dropdown', key: 'layout', options: LAYOUTS, defaultValue: DEFAULT_SETTINGS.layout } },
+      { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
       // The color options only show while custom colors are on.
       { type: 'group', visible: () => this.owner.settings.customColors, items: [
@@ -170,6 +172,9 @@ class OntologySettingsTab extends PluginSettingTab {
           this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout }, this.app.vault.configDir);
           await this.owner.saveSettings();
         });
+    });
+    new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.focus).onChange(value => this.setControlValue('focus', value));
     });
     const custom: Setting[] = [];
     new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {

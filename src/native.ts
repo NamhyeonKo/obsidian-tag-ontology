@@ -18,6 +18,7 @@ interface NativeRenderer {
   width: number; height: number; scale: number; targetScale: number;
   setScale(scale: number): void; setPan(x: number, y: number): void;
   fShowArrow: boolean;
+  getHighlightNode: () => unknown;
   worker: Worker;
   workerResults: unknown;
   nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[];
@@ -29,6 +30,7 @@ interface Session {
   leaf: WorkspaceLeaf; view: NativeView; renderer: NativeRenderer; active: boolean;
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
+  hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
   tools: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved; tagById: Map<string, string>;
@@ -75,7 +77,7 @@ export class NativeGraphs {
       const status = view.contentEl.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, tools, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
+        click: r.onNodeClick, hovered: r.getHighlightNode, tools, status, tagById: new Map(), kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {},
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -100,6 +102,8 @@ export class NativeGraphs {
         else this.showSelection();
         this.showPanel(true);
       };
+      // Node and link drawing fade everything not linked to this node; with focus on, the selected tag counts as hovered when nothing else is.
+      session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || session.focus || null;
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
       const buttons = tools.createDiv('tag-ontology-buttons');
       this.iconButton(buttons, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
@@ -330,6 +334,8 @@ export class NativeGraphs {
     const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor);
     const ids = new Set(this.highlighted().flatMap(tag => session.resolved?.idOf.get(tag) ?? []));
     for (const node of r.nodes) node.color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
+    const focused = this.owner.settings.focus && this.selected ? session.resolved?.idOf.get(this.selected) : undefined;
+    session.focus = focused && r.nodes.find(n => n.id === focused);
     r.changed();
   }
 
@@ -463,6 +469,7 @@ export class NativeGraphs {
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
+    if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
     for (const [link, original] of s.links) {
       link.render = original.render;
       if (link.line && original.texture) link.line.texture = original.texture;
