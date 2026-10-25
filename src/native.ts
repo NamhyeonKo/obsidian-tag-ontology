@@ -455,16 +455,8 @@ export class NativeGraphs {
     const counts = model.counts(tag);
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', model.related(tag)]] as const) {
-      // Children always shows, so a child can be added to a leaf.
-      if (!tags.length && label !== 'Children') continue;
-      const details = panel.createEl('details'); details.open = true;
-      const summary = details.createEl('summary', { text: `${label} ${tags.length}` });
-      if (label === 'Children') {
-        const add = summary.createEl('button', { cls: 'clickable-icon tag-ontology-add-child', attr: { 'aria-label': 'Add a child' } });
-        setIcon(add, 'plus');
-        // Without preventDefault the click would also open or close the list.
-        add.addEventListener('click', e => { e.preventDefault(); this.leave(() => this.startNew([tag])); });
-      }
+      if (!tags.length) continue;
+      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `${label} ${tags.length}` });
       this.tagLinks(details, tags);
     }
     panel.createEl('hr');
@@ -549,11 +541,11 @@ export class NativeGraphs {
     } finally { this.saving = false; this.syncForm(); }
   }
 
-  private startNew(parents: string[] = []) {
+  private startNew() {
     const raw = this.owner.raw;
     if (!raw) return;
     const base = structuredClone(raw);
-    this.mode = { kind: 'new', base, draft: emptyDraft(parents) };
+    this.mode = { kind: 'new', base, draft: emptyDraft() };
     this.drawForm();
   }
 

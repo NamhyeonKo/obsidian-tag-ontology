@@ -740,14 +740,6 @@ test('Add sends an add change with no parent and shows the new tag', async () =>
   assert.equal(heading(t), 'book'); assert.equal(t.owner.reloads, 1);
 });
 
-test('Add a child opens the form with the parent filled in', async () => {
-  const t = await setup();
-  t.search('dl');
-  t.click('Add a child');
-  assert.equal(heading(t), 'New tag');
-  assert.deepEqual(tagLinks(t.sidebar), ['#dl']);
-});
-
 test('Add is disabled until the name is new, ignoring case', async () => {
   const t = await setup();
   t.click('New tag');
@@ -900,4 +892,11 @@ test('the pickers do not take Object properties such as constructor for dictiona
   t.owner.model = new Ontology({ ...raw, constructor: { description: '', broader: [] } }, []);
   const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
   assert.deepEqual([...picker.source('constructor')], []);
+});
+
+test('a tag has no Add a child button, and a tag without children shows no Children list', async () => {
+  const t = await setup();
+  t.search('dl');
+  assert.equal(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Add a child'), false);
+  assert.equal(t.sidebar.all().some(el => el.tag === 'summary' && el.text.startsWith('Children')), false);
 });
