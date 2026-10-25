@@ -7,6 +7,8 @@ export type RawDictionary = Record<string, RawEntry>;
 export interface Draft { name: string; description: string; aliases: string[]; parents: string[]; children: string[]; related: string[] }
 export type Change = { kind: 'add'; draft: Draft } | { kind: 'edit'; tag: string; draft: Draft } | { kind: 'delete'; tag: string };
 
+// Tag names come from users, and `next[name] = …` with "__proto__" would set the prototype instead of adding an entry.
+const put = (dict: RawDictionary, key: string, entry: RawEntry) => Object.defineProperty(dict, key, { value: entry, enumerable: true, writable: true, configurable: true });
 const without = (list: string[], items: string[]) => list.filter(item => !items.includes(item));
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(item => b.includes(item));
 // Empty aliases and related are left out of the entries a change writes; an empty broader still marks a root.
@@ -29,7 +31,7 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   const next = structuredClone(dict);
   if (change.kind === 'add') {
     const { name, description, aliases, parents } = change.draft;
-    next[name] = { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] };
+    put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] });
     return next;
   }
   if (change.kind === 'delete') {
@@ -44,7 +46,7 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   }
   const { tag, draft } = change, { name } = draft, before = draftOf(dict, tag);
   if (name !== tag) {
-    next[name] = next[tag]!; delete next[tag];
+    put(next, name, next[tag]); delete next[tag];
     for (const entry of Object.values(next)) {
       for (const key of ['broader', 'related'] as const) if (entry[key]?.includes(tag)) entry[key] = entry[key].map(item => item === tag ? name : item);
     }
@@ -112,7 +114,7 @@ export function conflicts(base: RawDictionary, latest: RawDictionary, change: Ch
   else {
     const { tag, draft } = change, before = draftOf(base, tag), renamed = draft.name !== tag;
     // Entries that gained a link to the tag since the edit began would otherwise lose it without a conflict.
-    const now = latest[tag] ? draftOf(latest, tag) : undefined;
+    const now = Object.hasOwn(latest, tag) ? draftOf(latest, tag) : undefined;
     touched = [tag, ...before.children, ...draft.children, ...before.related, ...draft.related,
       ...now?.children ?? [], ...now?.related ?? [], ...renamed ? naming(tag) : []];
     if (renamed) name = draft.name;

@@ -504,7 +504,7 @@ export class NativeGraphs {
   }
   private startEdit() {
     const tag = this.selected, raw = this.owner.raw;
-    if (!tag || !raw?.[tag]) return;
+    if (!tag || !raw || !Object.hasOwn(raw, tag)) return;
     const base = structuredClone(raw);
     this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag) };
     this.drawForm();
@@ -646,7 +646,7 @@ export class NativeGraphs {
     new TagSuggest(this.owner.app, input, query => {
       const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
       // The model can already hold tags added to the file after the form opened; the draft only knows the base.
-      return (this.owner.model?.suggest(query, 50) ?? []).filter(s => s.tag in mode.base && !skip.has(s.tag)).slice(0, 10);
+      return (this.owner.model?.suggest(query, 50) ?? []).filter(s => Object.hasOwn(mode.base, s.tag) && !skip.has(s.tag)).slice(0, 10);
     }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; this.drawForm(); });
   }
 

@@ -893,3 +893,11 @@ test('the panel comes back when the dictionary file returns', async () => {
   t.owner.missing = false; t.controller.refresh(false);
   assert.equal(heading(t), 'Root tags (2)'); assert.equal(navButton(t, 'New tag').disabled, false);
 });
+
+test('the pickers do not take Object properties such as constructor for dictionary tags', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.owner.model = new Ontology({ ...raw, constructor: { description: '', broader: [] } }, []);
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
+  assert.deepEqual([...picker.source('constructor')], []);
+});

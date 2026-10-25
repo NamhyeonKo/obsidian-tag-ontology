@@ -129,3 +129,10 @@ test('a child or reverse related added elsewhere conflicts', () => {
 test('names with combining marks are allowed', () => {
   assert.equal(nameError('हिन्दी', raw), undefined); assert.equal(nameError('ภาษาไทย', raw), undefined);
 });
+
+test('a tag can be renamed to or added as __proto__ without losing it', () => {
+  const renamed = apply(raw, { kind: 'edit', tag: 'loose', draft: { ...draftOf(raw, 'loose'), name: '__proto__' } });
+  assert.ok(Object.hasOwn(renamed, '__proto__')); assert.equal(Object.hasOwn(renamed, 'loose'), false);
+  assert.ok(serialize(renamed).includes('"__proto__": {"description": ""}'));
+  assert.ok(Object.hasOwn(apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: '__proto__' } }), '__proto__'));
+});
