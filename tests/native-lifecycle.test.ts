@@ -14,7 +14,7 @@ class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   css: Record<string, string> = {}; disabled = false;
-  setText(text: string) { this.text = text; }
+  setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
   createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
@@ -695,6 +695,7 @@ test('renaming updates the expanded list and the history', async () => {
 test('the parent picker leaves out the tag, its parents and its descendants', async () => {
   const t = await setup();
   t.search('ml'); t.click('Edit tag');
+  t.click('Add a parent');
   const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a parent').at(-1)!;
   const tags = (query: string) => picker.source(query).map(s => s.tag);
   assert.deepEqual([tags('ml'), tags('cs'), tags('dl'), tags('crypto')], [[], [], [], ['crypto']]);
@@ -857,6 +858,7 @@ test('the pickers only offer tags that were in the dictionary when the form open
   const t = await setup();
   t.search('ml'); t.click('Edit tag');
   t.owner.model = new Ontology({ ...raw, later: { description: '', broader: [] } }, []);
+  t.click('Add a child');
   const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
   assert.deepEqual([...picker.source('later')], []);
 });
@@ -864,6 +866,7 @@ test('the pickers only offer tags that were in the dictionary when the form open
 test('an alias typed without Enter counts as a change and is saved', async () => {
   const t = await setup();
   t.search('ml'); t.click('Edit tag');
+  t.click('Add an alias');
   type(t.sidebar.all().find(el => el.attrs.placeholder === 'Add an alias')!, 'Machine learning ');
   assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
   t.click('Save'); await settle();
@@ -890,6 +893,7 @@ test('the pickers do not take Object properties such as constructor for dictiona
   const t = await setup();
   t.search('ml'); t.click('Edit tag');
   t.owner.model = new Ontology({ ...raw, constructor: { description: '', broader: [] } }, []);
+  t.click('Add a child');
   const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
   assert.deepEqual([...picker.source('constructor')], []);
 });
@@ -911,4 +915,28 @@ test('the search box hides while a form is open', async () => {
   assert.equal(search().hidden, false);
   t.click('New tag');
   assert.equal(search().hidden, true);
+});
+
+test('the + next to a field opens its input, which stays open while adding and closes on a second press', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const input = (placeholder: string) => t.sidebar.all().find(el => el.tag === 'input' && el.attrs.placeholder === placeholder);
+  for (const placeholder of ['Add an alias', 'Add a parent', 'Add a child', 'Add a related tag']) assert.equal(input(placeholder), undefined, placeholder);
+  t.click('Add an alias');
+  assert.ok(input('Add an alias')!.focused); assert.ok(navButton(t, 'Add an alias').classes.has('is-active'));
+  input('Add an alias')!.value = 'ML'; input('Add an alias')!.events.get('keydown')!({ key: 'Enter' });
+  assert.deepEqual(t.sidebar.all().filter(el => el.classes.has('tag-ontology-chip')).map(el => el.text).slice(0, 1), ['ML']);
+  assert.ok(input('Add an alias')!.focused);
+  t.click('Add a related tag');
+  assert.equal(input('Add an alias'), undefined); assert.ok(input('Add a related tag'));
+  t.click('Add a related tag');
+  assert.equal(input('Add a related tag'), undefined);
+});
+
+test('the new tag form opens its parent and alias inputs with + too', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.equal(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'), false);
+  t.click('Add a parent');
+  assert.ok(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'));
 });

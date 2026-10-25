@@ -43,6 +43,9 @@
 .tag-ontology-remove { width: auto; height: auto; padding: 1px; }
 .tag-ontology-remove svg { width: 12px; height: 12px; }
 .tag-ontology-form h3 { margin: 0 0 12px; }
+.tag-ontology-add { display: inline-flex; width: auto; height: auto; margin-left: 4px; padding: 2px; vertical-align: middle; }
+.tag-ontology-add svg { width: 14px; height: 14px; }
+.tag-ontology-add.is-active { color: var(--interactive-accent); }
 .tag-ontology-count { margin-top: 14px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .tag-ontology-footer { display: flex; gap: 6px; margin-top: 6px; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); }
 .tag-ontology-suggestion-tag { font-weight: var(--font-semibold); }
