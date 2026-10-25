@@ -622,7 +622,8 @@ export class NativeGraphs {
     const input = parent.createEl('input', { type: 'text', attr: { placeholder } });
     new TagSuggest(this.owner.app, input, query => {
       const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
-      return (this.owner.model?.suggest(query, 50) ?? []).filter(s => !skip.has(s.tag)).slice(0, 10);
+      // The model can already hold tags added to the file after the form opened; the draft only knows the base.
+      return (this.owner.model?.suggest(query, 50) ?? []).filter(s => s.tag in mode.base && !skip.has(s.tag)).slice(0, 10);
     }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; this.drawForm(); });
   }
 

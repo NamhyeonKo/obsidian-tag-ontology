@@ -859,3 +859,11 @@ test('reopening the sidebar tab while editing shows the form again', async () =>
   t.controller.mount(reopened);
   assert.equal(reopened.all().find(el => el.attrs['aria-label'] === 'Description')!.value, 'typed');
 });
+
+test('the pickers only offer tags that were in the dictionary when the form opened', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.owner.model = new Ontology({ ...raw, later: { description: '', broader: [] } }, []);
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
+  assert.deepEqual([...picker.source('later')], []);
+});
