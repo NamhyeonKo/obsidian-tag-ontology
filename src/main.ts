@@ -35,7 +35,7 @@ export default class TagOntologyPlugin extends Plugin {
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
-    this.app.workspace.onLayoutReady(() => { void this.refreshViews(); });
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews()); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -66,6 +66,21 @@ export default class TagOntologyPlugin extends Plugin {
     this.raw = raw as RawDictionary;
     this.model = model;
     return model;
+  }
+
+  // A fresh install starts with an empty dictionary to add tags to. Only at startup: the settings field saves on every
+  // keystroke, so creating there would leave a file for each half-typed path. An existing file is never touched.
+  private async ensureDictionary(): Promise<void> {
+    const { vault } = this.app, path = this.settings.dictionaryPath;
+    try {
+      if (!isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
+      const parts = path.split('/').slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) {
+        const folder = parts.slice(0, i).join('/');
+        if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
+      }
+      await vault.create(path, '{\n}\n');
+    } catch (error) { console.error('Tag Ontology:', error); }
   }
 
   private notes(): Note[] {

@@ -42,6 +42,10 @@ async function setup(saved?: Promise<unknown>) {
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
     text: dictionary, writes: [] as string[],
+    existing: new Set(['Tag-Dictionary.json']), created: [] as string[],
+    adapter: { exists: async (path: string) => vault.existing.has(path) },
+    async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
+    async create(path: string, data: string) { vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
     async cachedRead() { reads++; return vault.text; },
     // Like Obsidian, a throwing callback rejects without writing.
     async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
@@ -99,6 +103,8 @@ for (const action of ['refresh', 'open'] as const) {
     const t = await setup(), read = deferred<string>();
     t.vault.cachedRead = () => read.promise;
     const pending = action === 'open' ? t.plugin.openView() : t.ready();
+    // A refresh reads the dictionary only after checking that the file exists.
+    if (action === 'refresh') await settle();
     t.plugin.onunload();
     read.resolve(dictionary);
     await pending; await settle();
@@ -252,4 +258,24 @@ test('saveChange writes nothing over a broken file', async () => {
   assert.equal(await t.plugin.saveChange(describe('New'), base), false);
   assert.deepEqual(t.vault.writes, []);
   assert.match(t.notices.at(-1)!, /^Could not save the dictionary:/);
+});
+
+test('a missing dictionary is created empty, with its folder, once the layout is ready', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Dicts/Tags.json' }));
+  await t.loaded; t.vault.existing.clear();
+  t.ready(); await settle();
+  assert.deepEqual(t.vault.created, ['folder:Dicts', 'file:Dicts/Tags.json:{\n}\n']);
+});
+
+test('an existing dictionary is never overwritten, even when broken', async () => {
+  const t = await setup();
+  t.vault.text = '{ broken'; t.ready(); await settle();
+  assert.deepEqual(t.vault.created, []);
+});
+
+test('changing the dictionary path in settings does not create a file', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  t.plugin.settings.dictionaryPath = 'New.json'; await t.plugin.saveSettings(); await settle();
+  assert.deepEqual(t.vault.created, []);
 });
