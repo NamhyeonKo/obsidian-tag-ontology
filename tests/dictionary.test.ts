@@ -104,20 +104,25 @@ test('deletion preview names where children go', () => {
   assert.deepEqual(deletionPreview(raw, 'cs').roots, ['ml', 'py']);
 });
 
-test('only outside changes to touched entries conflict', () => {
+test('only outside changes to the tag, its links or the tags it names conflict', () => {
   const edit: Change = { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), description: 'new' } };
   assert.deepEqual(conflicts(raw, { ...raw, sec: { description: 'changed', broader: [] } }, edit), []);
-  assert.deepEqual(conflicts(raw, { ...raw, py: { ...raw.py!, description: 'changed' } }, edit), ['py']);
+  // A related tag's own description is kept by the save, so it is no conflict; losing its link to the tag is.
+  assert.deepEqual(conflicts(raw, { ...raw, py: { ...raw.py!, description: 'changed' } }, edit), []);
+  assert.deepEqual(conflicts(raw, { ...raw, py: { description: '', broader: ['cs'] } }, edit), ['py']);
+  const noLoose = { ...raw }; delete noLoose.loose;
+  assert.deepEqual(conflicts(raw, noLoose, { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), children: ['ai-sec', 'dl', 'loose'] } }), ['loose']);
   assert.deepEqual(conflicts(raw, { ...raw, Book: { description: '' } }, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }), ['book']);
   const gone = { ...raw }; delete gone.ml;
   assert.deepEqual(conflicts(raw, gone, edit), ['ml']);
 });
 
-test('a rename conflicts with an outside change to any entry naming the tag, or a new entry under the new name', () => {
+test('a rename conflicts with a new entry under the new name, a delete with changed links', () => {
   const rename: Change = { kind: 'edit', tag: 'loose', draft: { ...draftOf(raw, 'loose'), name: 'free' } };
   assert.deepEqual(conflicts(raw, { ...raw, Free: { description: '' } }, rename), ['free']);
   assert.deepEqual(conflicts(raw, { ...raw, ml: { ...raw.ml!, description: 'changed' } }, { kind: 'edit', tag: 'dl', draft: { ...draftOf(raw, 'dl'), name: 'deep' } }), []);
   assert.deepEqual(conflicts(raw, { ...raw, 'ai-sec': { description: 'changed' } }, { kind: 'delete', tag: 'ml' }), ['ai-sec']);
+  assert.deepEqual(conflicts(raw, { ...raw, dl: { ...raw.dl!, description: 'changed' } }, { kind: 'delete', tag: 'ml' }), []);
 });
 
 test('a child or reverse related added elsewhere conflicts', () => {

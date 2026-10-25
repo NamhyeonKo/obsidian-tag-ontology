@@ -105,24 +105,22 @@ export function deletionPreview(dict: RawDictionary, tag: string): { parents: st
   return { parents, children, roots: children.filter(child => next[child].broader?.length === 0), related };
 }
 
-// Entries the change rewrites that someone else changed since the edit began, and a new name someone else already used.
+// What changed elsewhere since the form opened that the change would overwrite or be wrong about: the tag's own entry,
+// which tags link to it (the change is computed against those links), the tags the draft names, and a new name taken meanwhile.
+// Other fields of linked tags are kept by apply, so they are no conflict.
 export function conflicts(base: RawDictionary, latest: RawDictionary, change: Change): string[] {
-  const naming = (tag: string) => Object.keys(base).filter(key => base[key].broader?.includes(tag) || base[key].related?.includes(tag));
-  let touched: string[] = [], name: string | undefined;
-  if (change.kind === 'add') name = change.draft.name;
-  else if (change.kind === 'delete') touched = [change.tag, ...naming(change.tag)];
-  else {
-    const { tag, draft } = change, before = draftOf(base, tag), renamed = draft.name !== tag;
-    // Entries that gained a link to the tag since the edit began would otherwise lose it without a conflict.
-    const now = Object.hasOwn(latest, tag) ? draftOf(latest, tag) : undefined;
-    touched = [tag, ...before.children, ...draft.children, ...before.related, ...draft.related,
-      ...now?.children ?? [], ...now?.related ?? [], ...renamed ? naming(tag) : []];
-    if (renamed) name = draft.name;
+  const taken = (name: string, own?: string) => Object.keys(latest).some(key => key !== own && key.toLowerCase() === name.toLowerCase());
+  if (change.kind === 'add') return taken(change.draft.name) ? [change.draft.name] : [];
+  const { tag } = change;
+  if (!Object.hasOwn(latest, tag) || JSON.stringify(base[tag]) !== JSON.stringify(latest[tag])) return [tag];
+  const was = draftOf(base, tag), now = draftOf(latest, tag);
+  const hit = (['children', 'related'] as const).flatMap(key => [...without(was[key], now[key]), ...without(now[key], was[key])]);
+  if (change.kind === 'edit') {
+    const { draft } = change;
+    hit.push(...[...draft.parents, ...draft.children, ...draft.related].filter(item => !Object.hasOwn(latest, item)));
+    if (draft.name !== tag && taken(draft.name, tag)) hit.push(draft.name);
   }
-  const hit = [...new Set(touched)].filter(key => JSON.stringify(base[key]) !== JSON.stringify(latest[key]));
-  const own = change.kind === 'edit' ? change.tag : undefined;
-  if (name !== undefined && Object.keys(latest).some(key => key !== own && key.toLowerCase() === name.toLowerCase())) hit.push(name);
-  return hit;
+  return [...new Set(hit)];
 }
 
 const inline = (value: unknown): string => Array.isArray(value) ? `[${value.map(inline).join(', ')}]`

@@ -247,10 +247,11 @@ test('saveChange refuses when a touched entry changed outside, and writes nothin
 
 test('saveChange refuses a change that would break the dictionary', async () => {
   const t = await withBase();
-  const change: Change = { kind: 'edit', tag: 'child', draft: { ...draftOf(base, 'child'), parents: ['missing'] } };
+  // The pickers leave cycles out; the check before writing still refuses one.
+  const change: Change = { kind: 'edit', tag: 'root', draft: { ...draftOf(base, 'root'), parents: ['child'] } };
   assert.equal(await t.plugin.saveChange(change, base), false);
   assert.deepEqual(t.vault.writes, []);
-  assert.match(t.notices.at(-1)!, /^Could not save the dictionary: .*unknown tag missing/);
+  assert.match(t.notices.at(-1)!, /^Could not save the dictionary: .*Cycle/);
 });
 
 test('saveChange writes nothing over a broken file', async () => {
