@@ -256,6 +256,17 @@ test('rendering before any core data does nothing', async () => {
   t.renderer.setData(core());
   assert.ok(t.ids().includes('#cs'));
 });
+test('a graph tab restored in the background attaches once Obsidian loads it', async () => {
+  const t = await setup();
+  const leaf = t.leaves[0] as { view: object; isDeferred?: boolean }, loaded = leaf.view;
+  // Obsidian restores a background tab as a placeholder: it reports the graph type but has no renderer yet.
+  leaf.view = { contentEl: new Element() }; leaf.isDeferred = true;
+  t.controller.attach();
+  assert.deepEqual(t.notices, []);
+  leaf.view = loaded; leaf.isDeferred = false;
+  t.controller.attach();
+  assert.ok(t.ids().includes('#cs'));
+});
 
 test('without tag nodes from the core graph the status explains how to show the hierarchy', async () => {
   const t = await setup();
