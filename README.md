@@ -8,7 +8,7 @@
 
 Tag Ontology adds your **tag hierarchy** to Obsidian's core **Graph view**. You describe your tags in a JSON dictionary (definition, aliases, parents, related tags). The plugin layers that hierarchy on top of the graph you already use, and keeps everything else the core graph does: notes, links between notes, filters, color groups and display settings.
 
-It is **read-only**. It never edits your notes or your dictionary.
+It never edits your notes. It changes the dictionary file only when you add, edit or delete a tag in the sidebar tab.
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on once for you; after that the plugin never changes it, so if you turn it off, turn it back on to see the hierarchy.
 
@@ -22,6 +22,7 @@ It is **read-only**. It never edits your notes or your dictionary.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
+- **Edit the dictionary in the sidebar.** Add tags your notes already use (most used first) or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving checks the file first and never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab, like the core graph's own options.
@@ -33,8 +34,10 @@ It is **read-only**. It never edits your notes or your dictionary.
 | ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.6.0/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.6.0/tree-horizontal.png) |
 | **Custom colors** | **Keep the selected tag focused** |
 | ![Every tag in one color, the selected tag and its connected tags in the highlight color](assets/0.5.1/custom-colors.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.5.1/focus.png) |
-| **Search suggestions** | |
-| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | |
+| **Edit a tag** | **New tag** |
+| ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.7.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.7.0/new-tag.png) |
+| **Search suggestions** | **Delete a tag** |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.7.0/delete-tag.png) |
 
 ## How it works
 
@@ -76,7 +79,7 @@ You should see two roots, `computer-science` and `security`, with the six notes 
 
 ## Tag dictionary format
 
-By default the plugin reads `Tag-Dictionary.json` at the vault root. You can change the path in the plugin settings.
+By default the plugin reads `Tag-Dictionary.json` at the vault root. You can change the path in the plugin settings. If no file is there when the plugin starts, it creates an empty dictionary (`{}`) to add tags to. It never replaces an existing file.
 
 The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
 
@@ -123,9 +126,18 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 **Open tag ontology** (the book ribbon icon or the **Open graph** command) adds a **Tag dictionary** tab to the left sidebar, next to Files and Search, without switching to it. Clicking a tag in the graph or **Dictionary check** opens it too and brings it forward, so a closed tab comes back. Drag the tab to the right sidebar if you prefer; it stays where you put it.
 
-- **Search tags or aliases** at the top of the tab: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag, show it in the tab and center it in the open graph. Search works with no graph open too: the expansion is saved for the next graph.
+- **The bar at the top**: back, forward and home (the root tags) on the left; **New tag**, **Edit tag** and the graph expand button on the right. The expand button shows `waypoints` while the tag is expanded in the graph and `circle-small` while it is collapsed.
+- **Search tags or aliases** below the bar: type part of a tag name or alias; suggestions appear below (an alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`). Choose one with a click or Enter to expand down to that tag, show it in the tab and center it in the open graph. Search works with no graph open too: the expansion is saved for the next graph.
 - With no tag chosen, the tab lists the root tags.
-- A tag shows its description, aliases, note counts (direct and including descendants), its parents, children and related tags as `#tag` links, and below a rule its note lists. Click a `#tag` to move to it. The icon next to the title expands or collapses the tag.
+- A tag shows its description, aliases, note counts (direct and including descendants), its parents, children and related tags as `#tag` links, and below a rule its note lists. Click a `#tag` to move to it.
+
+### Editing the dictionary
+
+- **New tag** (`+` in the bar, or `+` next to a tag's Children to add a child): pick a tag your notes use but the dictionary lacks, listed by how many notes use it, or type a new name. With no parent it becomes a root tag. Description and aliases are optional.
+- **Edit tag** (the pencil): change the name, description, aliases, parents, children and related tags. Parents, children and related tags must already be in the dictionary, and tags that would make a cycle are left out of the suggestions. Related tags are saved on both sides. Renaming a tag does not change the notes that use it: they keep the old tag, which then shows as not in the dictionary.
+- **Delete** (in the edit form) asks first and shows what happens: the tag's children move under its parents (a deleted root's children become roots), it leaves the related lists, and notes keep their tags.
+- Changes stay in the form until you press **Save**. Leaving with unsaved changes asks whether to keep editing, discard or save. Editing notes meanwhile doesn't reset the form.
+- Saving reads the latest file and writes only if the tags you changed weren't changed elsewhere in the meantime; otherwise it says so and keeps your edits. The file is written one tag per line in key order, so a save changes only the lines of the tags involved. The first save reformats a dictionary written in another layout.
 
 ### Graph toolbar
 
@@ -143,7 +155,7 @@ The round buttons on the left of the graph show their name when you hover them:
 
 - The **tree layouts** always hide notes so the tag relations stay readable. The Notes button is disabled there, and your Notes choice applies again in Force.
 - In a tree, each tag sits one level below its deepest parent and hangs under it; arrows from its other parents are drawn too. Root trees wrap into rows (or columns) to fit the screen. Tags that are not in the dictionary sit together in the tree's bottom-right corner. Drag a tag and it springs back to its place when you let go.
-- Click a tag in the graph to expand it and show it in the sidebar tab, which comes forward if another tab was showing. Clicking an expanded tag only shows it again. Collapse it with the icon next to its title in the tab.
+- Click a tag in the graph to expand it and show it in the sidebar tab, which comes forward if another tab was showing. Clicking an expanded tag only shows it again. Collapse it with the expand button at the top of the tab.
 - Everything else keeps the core behavior: clicking a note opens it (Cmd/Ctrl-click for a new tab), and clicking a tag that is not in the dictionary opens search.
 
 ### Commands
@@ -174,7 +186,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds the settings above, the expanded tags and the Notes/Related toggles.
+- Writes its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds the settings above, the expanded tags and the Notes/Related toggles. It writes the dictionary file only when you save a change in the sidebar, or to create an empty one at first start.
 
 ## Compatibility and known limitations
 
@@ -213,6 +225,8 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 src/
 ├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
 ├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
+├── dictionary.ts   # Pure functions that apply sidebar edits to the dictionary JSON and write it
+├── search.ts       # Suggestion popover for the search box and the edit forms
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Vertical and horizontal tree positions
