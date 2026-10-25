@@ -121,7 +121,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   controller.mount(sidebar);
   const all = () => [...contentEl.all(), ...sidebar.all()];
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
-  const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!();
+  const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!({ preventDefault() {} });
   const search = (query: string) => {
     const input = sidebar.all().find(el => el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
@@ -257,10 +257,10 @@ test('the panel button reads the live expansion after Expand all', async () => {
   const t = await setup();
   t.controller.attach();
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  t.click('Collapse children and notes');
+  t.click('Collapse in graph');
   t.click('Expand all');
-  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse children and notes'), 'the label follows Expand all');
-  t.click('Collapse children and notes');
+  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the label follows Expand all');
+  t.click('Collapse in graph');
   assert.equal(t.owner.settings.expanded.length, model.entries.size - 1, 'only cs collapses');
 });
 
@@ -558,4 +558,49 @@ test('a note-only refresh updates the panel without redrawing the graph', async 
   t.controller.refresh(false);
   assert.equal(t.forwarded.length, sent, 'the core graph re-sends its own data for note edits');
   assert.ok(t.sidebar.all().some(el => el.text === 'reloaded'));
+});
+
+const heading = (t: { sidebar: Element }) => t.sidebar.all().find(el => el.tag === 'h3' || el.tag === 'h4')!.text;
+const navButton = (t: { sidebar: Element }, label: string) => t.sidebar.all().find(el => el.attrs['aria-label'] === label)!;
+const expandButton = (t: { sidebar: Element }) => t.sidebar.all().find(el => el.classes.has('tag-ontology-expand'))!;
+
+test('back, forward and home move through the tags shown and disable at the ends', async () => {
+  const t = await setup();
+  assert.equal(navButton(t, 'Back').attrs['aria-disabled'], 'true'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'true');
+  t.click('#cs'); t.click('#ml');
+  assert.equal(heading(t), 'ml');
+  t.click('Back');
+  assert.equal(heading(t), 'cs'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'false');
+  t.click('Forward');
+  assert.equal(heading(t), 'ml'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'true');
+  t.click('Home');
+  assert.equal(heading(t), 'Root tags (2)');
+  t.click('Back');
+  assert.equal(heading(t), 'ml');
+});
+
+test('the expand button in the bar shows the state with waypoints or circle-small and stays highlighted', async () => {
+  const t = await setup();
+  t.click('#cs');
+  assert.equal(expandButton(t).attrs.icon, 'waypoints'); assert.equal(expandButton(t).attrs['aria-label'], 'Collapse in graph');
+  assert.ok(expandButton(t).classes.has('is-active'));
+  t.click('Collapse in graph');
+  assert.equal(expandButton(t).attrs.icon, 'circle-small'); assert.equal(expandButton(t).attrs['aria-label'], 'Expand in graph');
+  assert.ok(expandButton(t).classes.has('is-active'));
+  assert.deepEqual([...t.owner.settings.expanded], []);
+});
+
+test('the expand button is disabled on the root list and the title has no button', async () => {
+  const t = await setup();
+  assert.equal(expandButton(t).attrs['aria-disabled'], 'true'); assert.ok(!expandButton(t).classes.has('is-active'));
+  t.click('#cs');
+  const header = t.sidebar.all().find(el => el.classes.has('tag-ontology-header'))!;
+  assert.deepEqual(header.all().filter(el => el.tag === 'button'), []);
+});
+
+test('related lists both directions', async () => {
+  const t = await setup();
+  t.search('dl');
+  const texts = t.sidebar.all().map(el => el.text);
+  assert.ok(texts.includes('Related 1')); assert.ok(texts.includes('#overfitting'));
 });

@@ -46,6 +46,8 @@ interface Session {
 }
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
+// What the sidebar shows; the back and forward buttons move through these.
+type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
@@ -56,9 +58,23 @@ export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   private failed = new WeakSet<WorkspaceLeaf>();
   // One sidebar panel serves every graph tab: a tag's details, the dictionary check, or the root tags until either is chosen.
-  private panel?: HTMLElement; private selected?: string; private checking = false;
+  private panel?: HTMLElement;
+  private history: PanelView[] = [{ kind: 'roots' }]; private at = 0;
+  private nav: Partial<Record<'back' | 'forward' | 'home' | 'expand', HTMLButtonElement>> = {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   constructor(private owner: TagOntologyPlugin) {}
+
+  private get selected() { const view = this.history[this.at]; return view.kind === 'tag' ? view.tag : undefined; }
+  private get checking() { return this.history[this.at].kind === 'check'; }
+  // Like a browser: a new view drops the forward entries.
+  private go(view: PanelView) {
+    if (JSON.stringify(view) === JSON.stringify(this.history[this.at])) return;
+    this.history = [...this.history.slice(0, this.at + 1), view]; this.at = this.history.length - 1;
+  }
+  private step(by: number) {
+    this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1);
+    this.showSelection();
+  }
 
   attach() {
     const leaves = this.owner.app.workspace.getLeavesOfType('graph');
@@ -119,7 +135,7 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        this.selected = tag; this.checking = false;
+        this.go({ kind: 'tag', tag });
         // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
         if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
         else this.showSelection();
@@ -140,7 +156,7 @@ export class NativeGraphs {
         session.toggles[key].addClass('tag-ontology-toggle');
       }
       tools.createDiv('tag-ontology-separator');
-      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => { this.checking = true; this.renderPanel(); this.showPanel(true); });
+      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); });
       tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
@@ -179,6 +195,19 @@ export class NativeGraphs {
   // Called by the sidebar view whenever Obsidian opens it.
   mount(el: HTMLElement) {
     el.empty(); el.addClass('tag-ontology-sidebar');
+    const bar = el.createDiv('tag-ontology-nav');
+    this.nav.back = this.navButton(bar, 'arrow-left', 'Back', () => this.step(-1));
+    this.nav.forward = this.navButton(bar, 'arrow-right', 'Forward', () => this.step(1));
+    this.nav.home = this.navButton(bar, 'home', 'Home', () => { this.go({ kind: 'roots' }); this.showSelection(); });
+    bar.createDiv('tag-ontology-spacer');
+    this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
+      const tag = this.selected;
+      if (!tag) return;
+      // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
+      const live = this.owner.settings.expanded;
+      this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
+    });
+    this.nav.expand.addClass('tag-ontology-expand');
     const search = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
     new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(tag));
     search.addEventListener('keydown', e => {
@@ -292,7 +321,7 @@ export class NativeGraphs {
   private reveal(tag: string) {
     // Suggestions can outlive a dictionary reload that removed the tag.
     if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
-    this.selected = tag; this.checking = false;
+    this.go({ kind: 'tag', tag });
     // Expansion is shared by every graph tab; with no graph open it is saved for the next one.
     const sessions = [...this.sessions.values()];
     if (sessions.length && !sessions.some(s => s.resolved?.range.has(tag))) { new Notice('Not in the current graph.'); this.showSelection(); return; }
@@ -330,7 +359,7 @@ export class NativeGraphs {
     return [
       ...settings.highlightSelected ? [tag] : [],
       ...settings.highlightDescendants ? model.descendants(tag) : [],
-      ...settings.highlightConnected ? [...entry.broader ?? [], ...model.children.get(tag) ?? [], ...entry.related ?? []] : [],
+      ...settings.highlightConnected ? [...entry.broader ?? [], ...model.children.get(tag) ?? [], ...model.related(tag)] : [],
     ];
   }
 
@@ -346,6 +375,7 @@ export class NativeGraphs {
   }
 
   private renderPanel() {
+    this.syncNav();
     const panel = this.panel, model = this.owner.model;
     if (!panel || !model) return;
     panel.empty();
@@ -356,22 +386,15 @@ export class NativeGraphs {
   }
 
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
-    const entry = model.entries.get(tag)!, expanded = this.owner.settings.expanded.includes(tag);
+    const entry = model.entries.get(tag)!;
     const header = panel.createDiv('tag-ontology-header');
     const { customColors, titleAccent } = this.owner.settings;
     header.createEl('h3', { text: tag, cls: customColors && titleAccent ? 'tag-ontology-accent' : undefined });
-    const toggle = header.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': expanded ? 'Collapse children and notes' : 'Expand children and notes' } });
-    setIcon(toggle, expanded ? 'chevrons-down-up' : 'chevrons-up-down');
-    toggle.addEventListener('click', () => {
-      // Read the live state: Expand all or another tab may have changed it since this panel was built.
-      const live = this.owner.settings.expanded;
-      this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
-    });
     panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
     const counts = model.counts(tag);
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
-    for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', entry.related ?? []]] as const) {
+    for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', model.related(tag)]] as const) {
       if (!tags.length) continue;
       const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `${label} ${tags.length}` });
       this.tagLinks(details, tags);
@@ -410,6 +433,25 @@ export class NativeGraphs {
       const link = list.createEl('li').createEl('a', { href: '#', text: path.split('/').at(-1)!.slice(0, -3), attr: { title: path } });
       link.addEventListener('click', e => { e.preventDefault(); this.openNote(path); });
     }
+  }
+  private navButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
+    const button = parent.createEl('button', { cls: 'clickable-icon' });
+    setIcon(button, icon);
+    setTooltip(button, label, { placement: 'bottom' });
+    button.addEventListener('click', () => { if (!button.disabled) action(); });
+    return button;
+  }
+  private syncNav() {
+    const { back, forward, expand } = this.nav;
+    if (!back || !forward || !expand) return;
+    const disable = (button: HTMLButtonElement, off: boolean) => { button.disabled = off; button.setAttribute('aria-disabled', String(off)); };
+    disable(back, this.at === 0); disable(forward, this.at === this.history.length - 1);
+    const tag = this.selected && this.owner.model?.entries.has(this.selected) ? this.selected : undefined;
+    const expanded = tag !== undefined && this.owner.settings.expanded.includes(tag);
+    // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
+    disable(expand, !tag); expand.toggleClass('is-active', !!tag);
+    setIcon(expand, expanded ? 'waypoints' : 'circle-small');
+    setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
   private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });

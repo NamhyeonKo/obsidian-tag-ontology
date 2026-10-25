@@ -128,6 +128,12 @@ export class Ontology {
       .slice(0, limit).map(r => r.suggestion);
   }
 
+  // Related is two-way: the tags this one lists and the tags that list it.
+  related(tag: string): string[] {
+    const listing = [...this.entries].filter(([, entry]) => entry.related?.includes(tag)).map(([key]) => key);
+    return [...new Set([...this.entries.get(tag)?.related ?? [], ...listing])];
+  }
+
   notesFor(tag: string, rollup: boolean): string[] {
     const tags = rollup ? [tag, ...this.descendants(tag)] : [tag];
     return [...new Set(tags.flatMap((item) => this.direct.get(item) ?? []))].sort();
