@@ -86,7 +86,7 @@ export class NativeGraphs {
   private panel?: HTMLElement;
   private history: PanelView[] = [{ kind: 'roots' }]; private at = 0;
   private nav: Partial<Record<'back' | 'forward' | 'home' | 'add' | 'edit' | 'expand', HTMLButtonElement>> = {};
-  private mode?: Mode; private saving = false;
+  private mode?: Mode; private saving = false; private searchBox?: HTMLInputElement;
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
@@ -250,7 +250,7 @@ export class NativeGraphs {
       this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
     });
     this.nav.expand.addClass('tag-ontology-expand');
-    const search = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+    const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
     new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(tag));
     search.addEventListener('keydown', e => {
       // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
@@ -676,6 +676,8 @@ export class NativeGraphs {
   private syncNav() {
     const { back, forward, add, edit, expand } = this.nav;
     if (!back || !forward || !add || !edit || !expand) return;
+    // Searching would only leave the form, so the box steps aside while one is open.
+    if (this.searchBox) this.searchBox.hidden = !!this.mode;
     const disable = (button: HTMLButtonElement, off: boolean) => { button.disabled = off; button.setAttribute('aria-disabled', String(off)); };
     disable(back, this.at === 0); disable(forward, this.at === this.history.length - 1);
     const tag = this.selected && this.owner.model?.entries.has(this.selected) ? this.selected : undefined;

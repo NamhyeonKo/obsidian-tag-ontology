@@ -14,6 +14,7 @@
 .tag-ontology-spacer { flex: 1; }
 .tag-ontology-nav .clickable-icon.is-active { color: var(--interactive-accent); box-shadow: inset 0 0 0 1.5px var(--interactive-accent); }
 .tag-ontology-sidebar input[type="search"] { width: 100%; margin-bottom: 12px; }
+.tag-ontology-sidebar input[type="search"][hidden] { display: none; }
 .tag-ontology-panel { font-size: var(--font-ui-small); }
 .tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }

@@ -900,3 +900,15 @@ test('a tag has no Add a child button, and a tag without children shows no Child
   assert.equal(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Add a child'), false);
   assert.equal(t.sidebar.all().some(el => el.tag === 'summary' && el.text.startsWith('Children')), false);
 });
+
+test('the search box hides while a form is open', async () => {
+  const t = await setup();
+  const search = () => t.sidebar.all().find(el => el.attrs['aria-label'] === 'Search tags or aliases')!;
+  assert.equal(search().hidden, false);
+  t.search('ml'); t.click('Edit tag');
+  assert.equal(search().hidden, true);
+  t.click('Cancel');
+  assert.equal(search().hidden, false);
+  t.click('New tag');
+  assert.equal(search().hidden, true);
+});
