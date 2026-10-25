@@ -62,9 +62,10 @@ Confirm this with the checkbox in the pull request template. Pull requests witho
 
 ## Pull requests
 
-1. Work on a branch, not `main`.
-2. Open a PR. CI runs lint, tests and build.
-3. Fill in the pull request template: what changed, how you tested it in Obsidian, and the checklist (including the contributor license agreement).
+1. Work on a branch, not `main`. Keep one feature or fix per branch and PR, so each can be reviewed and reverted on its own.
+2. Leave the version alone. It changes only when a maintainer releases (see [Releasing](#releasing)).
+3. Open a PR. CI runs lint, tests and build.
+4. Fill in the pull request template: what changed, how you tested it in Obsidian, and the checklist (including the contributor license agreement).
 
 ## Testing in Obsidian
 
@@ -89,6 +90,10 @@ Confirm this with the checkbox in the pull request template. Pull requests witho
 Merge pull requests into `main` with a merge commit (`gh pr merge --merge`, or `git merge --no-ff` locally) so the branch history stays. Don't fast-forward, squash or rebase.
 
 ### Releasing
+
+Merged PRs collect on `main` until a release; merging doesn't release anything. Release when the merged changes are worth shipping together, or right away for a fix users need. Every published version goes through the community review and reaches users as an update, so don't publish each small change on its own.
+
+Pick the version when you release: a minor version (`0.x.0`) when the release adds features, a patch version (`0.x.y`) when it only fixes things. List what goes into the notes with `git log --merges --oneline <last tag>..main`.
 
 1. Merge the release-ready changes into `main` through a PR with passing CI.
 2. Bump the version:
