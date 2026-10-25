@@ -7,13 +7,17 @@ import { Ontology } from '../src/ontology.ts';
 import * as layer from '../src/layer.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
+import * as dictionaryModule from '../src/dictionary.ts';
+import { apply, type Change, type RawDictionary } from '../src/dictionary.ts';
 
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  css: Record<string, string> = {};
+  css: Record<string, string> = {}; disabled = false;
+  setText(text: string) { this.text = text; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   createDiv(cls?: string) { return this.createEl('div', { cls }); }
+  createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
     const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
     for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
@@ -31,13 +35,15 @@ class Element {
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; destroy(): void; mount(el: Element): void };
 
-const model = new Ontology({
+const raw: RawDictionary = {
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
   ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['ml'] },
   crypto: { description: '', broader: ['cs', 'sec'] },
   overfitting: { description: '', broader: ['ml'], related: ['dl'] },
   loose: { description: '' },
-}, []);
+};
+const model = new Ontology(raw, []);
+const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 const core = (): NativeData => ({ numLinks: 5, nodes: {
   'A.md': { type: '', links: { '#DL': true, 'B.md': true } },
   'B.md': { type: '', links: { '#crypto': true, '#loose': true, '#to-read': true } },
@@ -58,9 +64,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const frames = new Map<number, () => void>();
   let frameId = 0, clock = 0;
   const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
-  const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
+  const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
-    performance: { now: () => clock }, devicePixelRatio: 1,
+    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone,
     window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
@@ -70,7 +76,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
-      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
+      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
+      : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -110,6 +117,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
+    raw, changes: [] as Change[], reloads: 0,
+    async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
+    async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
       ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
@@ -603,4 +614,97 @@ test('related lists both directions', async () => {
   t.search('dl');
   const texts = t.sidebar.all().map(el => el.text);
   assert.ok(texts.includes('Related 1')); assert.ok(texts.includes('#overfitting'));
+});
+
+const field = (t: { sidebar: Element }, label: string) => t.sidebar.all().find(el => el.attrs['aria-label'] === label && el.tag !== 'button')!;
+const button = (t: { sidebar: Element }, text: string) => t.sidebar.all().find(el => el.tag === 'button' && el.text === text)!;
+const type = (el: Element, value: string) => { el.value = value; el.events.get('input')!(); };
+const byClass = (t: { sidebar: Element }, cls: string) => t.sidebar.all().find(el => el.classes.has(cls));
+
+test('Edit opens a labeled form with the tag\'s values and no note lists', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Parents', 'Children', 'Related']);
+  assert.equal(field(t, 'Name').value, 'cs');
+  assert.deepEqual(tagLinks(t.sidebar), ['#crypto', '#ml']);
+  assert.ok(!t.sidebar.all().some(el => el.tag === 'summary'));
+  assert.ok(navButton(t, 'Edit tag').classes.has('is-active'));
+  assert.equal(button(t, 'Save').disabled, true);
+});
+
+test('Save sends the draft as an edit change and returns to the tag view', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'Learning');
+  assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
+  t.click('Save'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'edit', tag: 'ml', draft: { name: 'ml', description: 'Learning', aliases: [], parents: ['cs'], children: ['dl', 'overfitting'], related: [] } }]);
+  assert.equal(heading(t), 'ml'); assert.equal(t.owner.reloads, 1);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'p' && el.text === 'Learning'));
+});
+
+test('a refresh while editing keeps the form and the typed text', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const description = field(t, 'Description');
+  type(description, 'typed');
+  t.controller.refresh(false);
+  assert.equal(field(t, 'Description'), description); assert.equal(description.value, 'typed');
+});
+
+test('a second Save click while saving writes once', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  t.click('Save'); t.click('Save');
+  finish(false); await settle();
+  assert.equal(t.owner.changes.length, 1);
+});
+
+test('a failed save keeps the form and the draft', async () => {
+  const t = await setup();
+  t.owner.saveChange = async () => false;
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'kept');
+  t.click('Save'); await settle();
+  assert.equal(field(t, 'Description').value, 'kept'); assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('renaming updates the expanded list and the history', async () => {
+  const t = await setup({ expanded: ['cs', 'ml'] });
+  t.click('#cs'); t.click('#ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  t.click('Save'); await settle();
+  assert.deepEqual([...t.owner.settings.expanded], ['cs', 'machine-learning']);
+  assert.equal(heading(t), 'machine-learning');
+  t.click('Back'); assert.equal(heading(t), 'cs');
+  t.click('Forward'); assert.equal(heading(t), 'machine-learning');
+});
+
+test('the parent picker leaves out the tag, its parents and its descendants', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a parent').at(-1)!;
+  const tags = (query: string) => picker.source(query).map(s => s.tag);
+  assert.deepEqual([tags('ml'), tags('cs'), tags('dl'), tags('crypto')], [[], [], [], ['crypto']]);
+  picker.onChoose('crypto');
+  assert.deepEqual(tagLinks(t.sidebar).slice(0, 2), ['#cs', '#crypto']);
+});
+
+test('a name error disables Save and shows the message', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'CS');
+  assert.equal(byClass(t, 'tag-ontology-error')!.text, '#cs is already in the dictionary.');
+  assert.equal(button(t, 'Save').disabled, true);
+});
+
+test('a rename warns when notes use the old name', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  assert.equal(byClass(t, 'tag-ontology-hint')!.text, '1 note uses #ml. It keeps it and it will show as not in the dictionary.');
 });

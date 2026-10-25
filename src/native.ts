@@ -5,6 +5,7 @@ import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, ty
 import type { Settings } from './settings.ts';
 import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
+import { changedFields, draftOf, excluded, nameError, normalizeName, type Draft, type RawDictionary } from './dictionary.ts';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
@@ -48,6 +49,9 @@ type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | '
 type ToggleKey = 'showNotes' | 'showRelated';
 // What the sidebar shows; the back and forward buttons move through these.
 type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
+// An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
+type Mode = { kind: 'edit'; tag: string; base: RawDictionary; draft: Draft };
+type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
@@ -60,7 +64,10 @@ export class NativeGraphs {
   // One sidebar panel serves every graph tab: a tag's details, the dictionary check, or the root tags until either is chosen.
   private panel?: HTMLElement;
   private history: PanelView[] = [{ kind: 'roots' }]; private at = 0;
-  private nav: Partial<Record<'back' | 'forward' | 'home' | 'expand', HTMLButtonElement>> = {};
+  private nav: Partial<Record<'back' | 'forward' | 'home' | 'edit' | 'expand', HTMLButtonElement>> = {};
+  private mode?: Mode; private saving = false;
+  // Updates the open form's count line and Save button in place.
+  private syncForm = () => {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   constructor(private owner: TagOntologyPlugin) {}
 
@@ -72,8 +79,12 @@ export class NativeGraphs {
     this.history = [...this.history.slice(0, this.at + 1), view]; this.at = this.history.length - 1;
   }
   private step(by: number) {
-    this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1);
-    this.showSelection();
+    this.leave(() => { this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1); this.showSelection(); });
+  }
+  // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
+  private leave(next: () => void) {
+    this.mode = undefined;
+    next();
   }
 
   attach() {
@@ -135,11 +146,13 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        this.go({ kind: 'tag', tag });
-        // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
-        if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
-        else this.showSelection();
-        this.showPanel(true);
+        this.leave(() => {
+          this.go({ kind: 'tag', tag });
+          // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
+          if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
+          else this.showSelection();
+          this.showPanel(true);
+        });
       };
       // Node and link drawing fade everything not linked to this node; with focus on, the selected tag counts as hovered when nothing else is.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || session.focus || null;
@@ -156,7 +169,7 @@ export class NativeGraphs {
         session.toggles[key].addClass('tag-ontology-toggle');
       }
       tools.createDiv('tag-ontology-separator');
-      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); });
+      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }));
       tools.createDiv('tag-ontology-separator');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
@@ -198,8 +211,9 @@ export class NativeGraphs {
     const bar = el.createDiv('tag-ontology-nav');
     this.nav.back = this.navButton(bar, 'arrow-left', 'Back', () => this.step(-1));
     this.nav.forward = this.navButton(bar, 'arrow-right', 'Forward', () => this.step(1));
-    this.nav.home = this.navButton(bar, 'home', 'Home', () => { this.go({ kind: 'roots' }); this.showSelection(); });
+    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => { this.go({ kind: 'roots' }); this.showSelection(); }));
     bar.createDiv('tag-ontology-spacer');
+    this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode ? this.cancel() : this.startEdit());
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
       const tag = this.selected;
       if (!tag) return;
@@ -319,6 +333,7 @@ export class NativeGraphs {
   }
 
   private reveal(tag: string) {
+    if (this.mode) { this.leave(() => this.reveal(tag)); return; }
     // Suggestions can outlive a dictionary reload that removed the tag.
     if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
     this.go({ kind: 'tag', tag });
@@ -376,6 +391,8 @@ export class NativeGraphs {
 
   private renderPanel() {
     this.syncNav();
+    // An open form is never rebuilt here: refreshes come with every note edit and would drop what is being typed.
+    if (this.mode) return;
     const panel = this.panel, model = this.owner.model;
     if (!panel || !model) return;
     panel.empty();
@@ -434,6 +451,104 @@ export class NativeGraphs {
       link.addEventListener('click', e => { e.preventDefault(); this.openNote(path); });
     }
   }
+  private startEdit() {
+    const tag = this.selected, raw = this.owner.raw;
+    if (!tag || !raw?.[tag]) return;
+    const base = structuredClone(raw);
+    this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag) };
+    this.drawForm();
+  }
+
+  private cancel() {
+    this.mode = undefined;
+    this.showSelection();
+  }
+
+  private drawForm() {
+    const panel = this.panel, mode = this.mode, model = this.owner.model;
+    if (!panel || !mode || !model) return;
+    panel.empty(); this.syncNav();
+    const { tag, base, draft } = mode, form = panel.createDiv('tag-ontology-form');
+    form.createEl('label', { text: 'Name' });
+    const name = form.createEl('input', { type: 'text', attr: { 'aria-label': 'Name' } });
+    name.value = draft.name;
+    const note = form.createDiv();
+    name.addEventListener('input', () => { draft.name = normalizeName(name.value); this.syncForm(); });
+    form.createEl('label', { text: 'Description' });
+    const description = form.createEl('textarea', { attr: { 'aria-label': 'Description', rows: '3' } });
+    description.value = draft.description;
+    description.addEventListener('input', () => { draft.description = description.value; this.syncForm(); });
+    form.createEl('label', { text: 'Aliases' });
+    this.chips(form, draft.aliases, alias => alias, alias => { draft.aliases = draft.aliases.filter(a => a !== alias); });
+    const alias = form.createEl('input', { type: 'text', attr: { placeholder: 'Add an alias' } });
+    alias.addEventListener('keydown', e => {
+      const value = alias.value.trim();
+      if (e.key !== 'Enter' || e.isComposing || !value) return;
+      if (!draft.aliases.includes(value)) draft.aliases = [...draft.aliases, value];
+      this.drawForm();
+    });
+    for (const [kind, label, placeholder] of [['parents', 'Parents', 'Add a parent'], ['children', 'Children', 'Add a child'], ['related', 'Related', 'Add a related tag']] as const) {
+      form.createEl('label', { text: label });
+      this.picker(form, kind, placeholder);
+    }
+    const count = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
+    footer.createDiv('tag-ontology-spacer');
+    footer.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.cancel());
+    const save = footer.createEl('button', { text: 'Save', cls: 'mod-cta' });
+    save.addEventListener('click', () => { void this.save(); });
+    const notes = model.counts(tag).direct;
+    this.syncForm = () => {
+      const changes = changedFields(base, tag, draft), error = nameError(draft.name, base, tag);
+      note.toggleClass('tag-ontology-error', !!error); note.toggleClass('tag-ontology-hint', !error);
+      note.setText(error ?? (draft.name !== tag && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : ''));
+      count.setText(`${changes} change${changes === 1 ? '' : 's'} not saved`); count.hidden = !changes;
+      save.disabled = !changes || !!error || this.saving;
+    };
+    this.syncForm();
+  }
+
+  // Tags use Obsidian's tag style, which it gives to links only.
+  private chips(parent: HTMLElement, items: string[], text: (item: string) => string, remove: (item: string) => void, asTag = false) {
+    const list = parent.createDiv('tag-ontology-tags');
+    for (const item of items) {
+      const chip = asTag ? list.createEl('a', { text: text(item), cls: 'tag tag-ontology-chip' }) : list.createSpan({ text: text(item), cls: 'tag-ontology-chip' });
+      const button = chip.createEl('button', { cls: 'clickable-icon tag-ontology-remove', attr: { 'aria-label': `Remove ${text(item)}` } });
+      setIcon(button, 'x');
+      button.addEventListener('click', () => { remove(item); this.drawForm(); });
+    }
+  }
+
+  // Only dictionary tags can be linked, and never one that would make a cycle.
+  private picker(parent: HTMLElement, kind: ListKey, placeholder: string) {
+    const mode = this.mode!;
+    this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
+    const input = parent.createEl('input', { type: 'text', attr: { placeholder } });
+    new TagSuggest(this.owner.app, input, query => {
+      const skip = excluded(mode.base, mode.tag, mode.draft, kind);
+      return (this.owner.model?.suggest(query, 50) ?? []).filter(s => !skip.has(s.tag)).slice(0, 10);
+    }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; this.drawForm(); });
+  }
+
+  // Saves the open form; false leaves it open with the draft for another try.
+  private async save(): Promise<boolean> {
+    const mode = this.mode;
+    if (!mode || this.saving) return false;
+    this.saving = true; this.syncForm();
+    try {
+      const { tag, draft, base } = mode, name = draft.name;
+      if (!await this.owner.saveChange({ kind: 'edit', tag, draft }, base)) return false;
+      if (name !== tag) {
+        this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
+        this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name } : view);
+      }
+      this.mode = undefined;
+      this.go({ kind: 'tag', tag: name });
+      this.showSelection();
+      await this.owner.reload();
+      return true;
+    } finally { this.saving = false; this.syncForm(); }
+  }
+
   private navButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon' });
     setIcon(button, icon);
@@ -442,14 +557,15 @@ export class NativeGraphs {
     return button;
   }
   private syncNav() {
-    const { back, forward, expand } = this.nav;
-    if (!back || !forward || !expand) return;
+    const { back, forward, edit, expand } = this.nav;
+    if (!back || !forward || !edit || !expand) return;
     const disable = (button: HTMLButtonElement, off: boolean) => { button.disabled = off; button.setAttribute('aria-disabled', String(off)); };
     disable(back, this.at === 0); disable(forward, this.at === this.history.length - 1);
     const tag = this.selected && this.owner.model?.entries.has(this.selected) ? this.selected : undefined;
     const expanded = tag !== undefined && this.owner.settings.expanded.includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
     disable(expand, !tag); expand.toggleClass('is-active', !!tag);
+    disable(edit, !tag && !this.mode); edit.toggleClass('is-active', !!this.mode);
     setIcon(expand, expanded ? 'waypoints' : 'circle-small');
     setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }

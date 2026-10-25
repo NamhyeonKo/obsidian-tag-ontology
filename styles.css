@@ -29,5 +29,20 @@
 .tag-ontology-panel li a:hover { color: var(--text-accent); text-decoration: underline; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }
 .tag-ontology-status { font-size: var(--font-ui-smaller); }
+.tag-ontology-form label { display: block; margin: 14px 0 4px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }
+.tag-ontology-form label:first-child { margin-top: 0; }
+.tag-ontology-form input[type="text"], .tag-ontology-form textarea { width: 100%; }
+.tag-ontology-form textarea { resize: vertical; }
+.tag-ontology-form .tag-ontology-tags:empty { display: none; }
+.tag-ontology-hint, .tag-ontology-error { margin-top: 4px; font-size: var(--font-ui-smaller); }
+.tag-ontology-hint { color: var(--text-faint); }
+.tag-ontology-error { color: var(--text-error); }
+.tag-ontology-chip { display: inline-flex; align-items: center; gap: 2px; }
+.tag-ontology-chip:not(.tag) { padding: 0 2px 0 8px; border-radius: var(--radius-s); background: var(--background-modifier-hover); }
+.tag-ontology-remove { width: auto; height: auto; padding: 1px; }
+.tag-ontology-remove svg { width: 12px; height: 12px; }
+.tag-ontology-count { margin-top: 14px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+/* The buttons stay in view at the bottom of the sidebar while a long form scrolls. */
+.tag-ontology-footer { position: sticky; bottom: 0; display: flex; gap: 6px; margin-top: 6px; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
 .tag-ontology-suggestion-tag { font-weight: var(--font-semibold); }
 .tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }
