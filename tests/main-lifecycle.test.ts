@@ -279,3 +279,11 @@ test('changing the dictionary path in settings does not create a file', async ()
   t.plugin.settings.dictionaryPath = 'New.json'; await t.plugin.saveSettings(); await settle();
   assert.deepEqual(t.vault.created, []);
 });
+
+test('saveChange writes nothing when the dictionary file is gone', async () => {
+  const t = await withBase();
+  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.equal(t.notices.at(-1), 'Tag dictionary not found: Tag-Dictionary.json');
+});
