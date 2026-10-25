@@ -423,12 +423,26 @@ export class NativeGraphs {
     // An open form is never rebuilt here: refreshes come with every note edit and would drop what is being typed.
     if (this.mode) return;
     const panel = this.panel, model = this.owner.model;
-    if (!panel || !model) return;
+    if (!panel) return;
+    if (this.missing()) { panel.empty(); this.notFound(panel); return; }
+    if (!model) return;
     panel.empty();
     panel.setCssProps({ '--tag-ontology-color': this.owner.settings.highlightColor });
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
+  }
+
+  private missing() {
+    return !(this.owner.app.vault.getAbstractFileByPath(this.owner.settings.dictionaryPath) instanceof TFile);
+  }
+
+  // Creating is left to the user: a file that is still syncing looks missing too, and it shows up here on its own when it arrives.
+  private notFound(panel: HTMLElement) {
+    panel.createEl('h4', { text: 'Tag dictionary not found' });
+    panel.createEl('p', { text: `${this.owner.settings.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.` });
+    const create = panel.createEl('button', { text: 'Create empty dictionary', cls: 'mod-cta' });
+    create.addEventListener('click', () => { create.disabled = true; void this.owner.createDictionary().finally(() => { create.disabled = false; }); });
   }
 
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
@@ -676,8 +690,9 @@ export class NativeGraphs {
     const expanded = tag !== undefined && this.owner.settings.expanded.includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
     disable(expand, !tag); expand.toggleClass('is-active', !!tag);
-    disable(add, !this.owner.model); add.toggleClass('is-active', this.mode?.kind === 'new');
-    disable(edit, !tag); edit.toggleClass('is-active', this.mode?.kind === 'edit');
+    const missing = this.missing();
+    disable(add, !this.owner.model || missing); add.toggleClass('is-active', this.mode?.kind === 'new');
+    disable(edit, !tag || missing); edit.toggleClass('is-active', this.mode?.kind === 'edit');
     setIcon(expand, expanded ? 'waypoints' : 'circle-small');
     setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
