@@ -14,7 +14,8 @@ export class TagSuggest extends AbstractInputSuggest<Suggestion> {
 
   renderSuggestion(value: Suggestion, el: HTMLElement): void {
     el.createDiv({ text: value.tag, cls: 'tag-ontology-suggestion-tag' });
-    if (value.alias) el.createDiv({ text: value.alias, cls: 'tag-ontology-suggestion-alias' });
+    const detail = value.alias ?? (value.notes === undefined ? undefined : `${value.notes} note${value.notes === 1 ? '' : 's'}`);
+    if (detail) el.createDiv({ text: detail, cls: 'tag-ontology-suggestion-alias' });
   }
 
   selectSuggestion(value: Suggestion): void {

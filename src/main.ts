@@ -2,14 +2,18 @@ import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags,
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
+import { apply, conflicts, serialize, type Change, type RawDictionary } from './dictionary.ts';
 
 export type { Settings } from './settings.ts';
 
 const ICON = 'book-open';
+export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
 
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   model?: Ontology;
+  // The parsed dictionary the model was built from; editors start from a copy of it.
+  raw?: RawDictionary;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
   // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
@@ -31,7 +35,7 @@ export default class TagOntologyPlugin extends Plugin {
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
-    this.app.workspace.onLayoutReady(() => { void this.refreshViews(); });
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews()); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -53,21 +57,75 @@ export default class TagOntologyPlugin extends Plugin {
     catch (error) { throw new Error(`Could not read the tag dictionary: ${String(error)}`); }
     const dictionaryMs = performance.now() - start;
     const indexStart = performance.now();
-    const files = this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path));
-    const notes: Note[] = files.map((note) => {
-      const cache = this.app.metadataCache.getFileCache(note);
-      if (!cache) throw new Error(`The metadata cache is not ready yet: ${note.path}`);
-      const tags = [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))];
-      return { path: note.path, tags };
-    });
+    const notes = this.notes();
     const model = new Ontology(raw, notes);
     this.loadMetrics = {
       dictionaryMs, indexMs: performance.now() - indexStart,
-      noteCount: files.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
+      noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
     };
+    this.raw = raw as RawDictionary;
     this.model = model;
     return model;
   }
+
+  // Only a fresh install gets an empty dictionary on its own. Later a missing file is never recreated by itself: a sync that
+  // hasn't caught up or an iCloud file moved off the disk looks missing too, so the sidebar offers a button instead.
+  // Not on settings changes either: the path field saves on every keystroke.
+  private async ensureDictionary(): Promise<void> {
+    const { vault } = this.app, path = this.settings.dictionaryPath;
+    try {
+      if (!this.firstRun || !isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
+      await this.writeEmpty(path);
+    } catch (error) { console.error('Tag Ontology:', error); }
+  }
+
+  async createDictionary(): Promise<boolean> {
+    try { await this.writeEmpty(this.settings.dictionaryPath); }
+    catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
+    await this.reload();
+    return true;
+  }
+
+  // vault.create refuses an existing path, so this never replaces a dictionary.
+  private async writeEmpty(path: string): Promise<void> {
+    const { vault } = this.app, parts = path.split('/').slice(0, -1);
+    for (let i = 1; i <= parts.length; i++) {
+      const folder = parts.slice(0, i).join('/');
+      if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
+    }
+    await vault.create(path, '{\n}\n');
+  }
+
+  private notes(): Note[] {
+    return this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path)).map((note) => {
+      const cache = this.app.metadataCache.getFileCache(note);
+      if (!cache) throw new Error(`The metadata cache is not ready yet: ${note.path}`);
+      return { path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] };
+    });
+  }
+
+  // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
+  // and only if the result is still a valid dictionary. Nothing is written otherwise.
+  async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
+    if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${this.settings.dictionaryPath}`); return false; }
+    try {
+      await this.app.vault.process(file, (text) => {
+        const latest = JSON.parse(text) as RawDictionary;
+        if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
+        const next = apply(latest, change);
+        // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
+        new Ontology(next, []);
+        return serialize(next);
+      });
+      return true;
+    } catch (error) {
+      new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
+      return false;
+    }
+  }
+
+  reload(): Promise<void> { return this.refreshViews({ notify: true }); }
 
   // Persists graph state (expansion, toggles) without reloading the dictionary or redrawing views.
   async saveState(): Promise<void> {

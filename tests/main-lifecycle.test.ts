@@ -5,6 +5,8 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology, isIncludedNote } from '../src/ontology.ts';
 import * as settings from '../src/settings.ts';
+import * as dictionaryModule from '../src/dictionary.ts';
+import { apply, draftOf, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -24,7 +26,8 @@ class NativeGraphs {
 }
 
 interface Main {
-  native: NativeGraphs; model?: Ontology; settings: settings.Settings;
+  native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary;
+  saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
 }
 
@@ -38,7 +41,15 @@ async function setup(saved?: Promise<unknown>) {
   const leaf = { async setViewState() { ui.push('create'); } };
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
-    async cachedRead() { reads++; return dictionary; },
+    text: dictionary, writes: [] as string[],
+    existing: new Set(['Tag-Dictionary.json']), created: [] as string[],
+    adapter: { exists: async (path: string) => vault.existing.has(path) },
+    async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
+    // Like Obsidian, create refuses a path that already exists.
+    async create(path: string, data: string) { if (vault.existing.has(path)) throw new Error('File already exists.'); vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
+    async cachedRead() { reads++; return vault.text; },
+    // Like Obsidian, a throwing callback rejects without writing.
+    async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
     on(name: string, callback: (file: { path: string }) => void) { events.set(name, callback); },
   };
   const workspace = {
@@ -66,6 +77,7 @@ async function setup(saved?: Promise<unknown>) {
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './ontology.ts' ? { Ontology, isIncludedNote }
       : specifier === './settings.ts' ? { ...settings }
+      : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { NativeGraphs, PANEL_VIEW: 'tag-ontology-panel' };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -92,6 +104,8 @@ for (const action of ['refresh', 'open'] as const) {
     const t = await setup(), read = deferred<string>();
     t.vault.cachedRead = () => read.promise;
     const pending = action === 'open' ? t.plugin.openView() : t.ready();
+    // A refresh reads the dictionary only after checking that the file exists.
+    if (action === 'refresh') await settle();
     t.plugin.onunload();
     read.resolve(dictionary);
     await pending; await settle();
@@ -201,4 +215,105 @@ test('a successful manual reload updates the model and graph without an error no
   assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
   assert.deepEqual(t.notices, []);
   assert.deepEqual(t.errors, []);
+});
+
+const base: RawDictionary = { root: { description: 'Root', broader: [] }, child: { description: 'Child', broader: ['root'] } };
+const describe = (description: string): Change => ({ kind: 'edit', tag: 'child', draft: { ...draftOf(base, 'child'), description } });
+async function withBase() {
+  const t = await setup();
+  t.vault.text = serialize(base); t.ready(); await settle();
+  return t;
+}
+
+test('loadModel keeps the parsed dictionary as raw', async () => {
+  const t = await withBase();
+  // Parsed inside the module's realm, so compare plain copies.
+  assert.deepEqual(JSON.parse(JSON.stringify(t.plugin.raw)), base);
+});
+
+test('saveChange writes the applied change in the one-entry-per-line format', async () => {
+  const t = await withBase();
+  assert.equal(await t.plugin.saveChange(describe('New'), t.plugin.raw!), true);
+  assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
+});
+
+test('saveChange refuses when a touched entry changed outside, and writes nothing', async () => {
+  const t = await withBase();
+  t.vault.text = serialize({ ...base, child: { description: 'Outside', broader: ['root'] } });
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.equal(t.notices.at(-1), 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.');
+});
+
+test('saveChange refuses a change that would break the dictionary', async () => {
+  const t = await withBase();
+  // The pickers leave cycles out; the check before writing still refuses one.
+  const change: Change = { kind: 'edit', tag: 'root', draft: { ...draftOf(base, 'root'), parents: ['child'] } };
+  assert.equal(await t.plugin.saveChange(change, base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.match(t.notices.at(-1)!, /^Could not save the dictionary: .*Cycle/);
+});
+
+test('saveChange writes nothing over a broken file', async () => {
+  const t = await withBase();
+  t.vault.text = '{ broken';
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.match(t.notices.at(-1)!, /^Could not save the dictionary:/);
+});
+
+test('a fresh install creates an empty dictionary once the layout is ready', async () => {
+  const t = await setup(Promise.resolve(null));
+  await t.loaded; t.vault.existing.clear();
+  t.ready(); await settle();
+  assert.deepEqual(t.vault.created, ['file:Tag-Dictionary.json:{\n}\n']);
+});
+
+test('after the first install a missing dictionary is not created on its own', async () => {
+  const t = await setup();
+  t.vault.existing.clear(); t.ready(); await settle();
+  assert.deepEqual(t.vault.created, []);
+});
+
+test('an existing dictionary is never overwritten, even when broken', async () => {
+  const t = await setup(Promise.resolve(null));
+  await t.loaded; t.vault.text = '{ broken'; t.ready(); await settle();
+  assert.deepEqual(t.vault.created, []);
+});
+
+test('createDictionary makes the folder and an empty file, then reloads', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Dicts/Tags.json' }));
+  await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.createDictionary(), true);
+  assert.deepEqual(t.vault.created, ['folder:Dicts', 'file:Dicts/Tags.json:{\n}\n']);
+  assert.ok(t.plugin.model);
+});
+
+test('createDictionary never replaces a file that appeared meanwhile', async () => {
+  const t = await setup();
+  assert.equal(await t.plugin.createDictionary(), false);
+  assert.deepEqual(t.vault.created, []);
+  assert.match(t.notices.at(-1)!, /^Could not create the dictionary:/);
+});
+
+test('changing the dictionary path in settings does not create a file', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  t.plugin.settings.dictionaryPath = 'New.json'; await t.plugin.saveSettings(); await settle();
+  assert.deepEqual(t.vault.created, []);
+});
+
+test('saveChange writes nothing when the dictionary file is gone', async () => {
+  const t = await withBase();
+  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.equal(t.notices.at(-1), 'Tag dictionary not found: Tag-Dictionary.json');
+});
+
+test('saveChange does not wait for the note index', async () => {
+  const t = await withBase();
+  // A note whose metadata isn't cached yet: building the note index would throw.
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }];
+  assert.equal(await t.plugin.saveChange(describe('New'), base), true);
 });

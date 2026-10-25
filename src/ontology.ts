@@ -7,7 +7,8 @@ export interface Entry {
 }
 
 export interface Note { path: string; tags: string[] }
-export interface Suggestion { tag: string; alias?: string }
+// alias: the alias that matched; notes: how many notes use a tag that is not in the dictionary yet.
+export interface Suggestion { tag: string; alias?: string; notes?: number }
 
 export function isIncludedNote(path: string): boolean {
   return path.endsWith('.md')
@@ -126,6 +127,12 @@ export class Ontology {
     }
     return ranked.sort((a, b) => a.rank - b.rank || a.suggestion.tag.localeCompare(b.suggestion.tag))
       .slice(0, limit).map(r => r.suggestion);
+  }
+
+  // Related is two-way: the tags this one lists and the tags that list it.
+  related(tag: string): string[] {
+    const listing = [...this.entries].filter(([, entry]) => entry.related?.includes(tag)).map(([key]) => key);
+    return [...new Set([...this.entries.get(tag)?.related ?? [], ...listing])];
   }
 
   notesFor(tag: string, rollup: boolean): string[] {

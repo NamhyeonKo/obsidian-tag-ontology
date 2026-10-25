@@ -7,13 +7,17 @@ import { Ontology } from '../src/ontology.ts';
 import * as layer from '../src/layer.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
+import * as dictionaryModule from '../src/dictionary.ts';
+import { apply, type Change, type RawDictionary } from '../src/dictionary.ts';
 
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  css: Record<string, string> = {};
+  css: Record<string, string> = {}; disabled = false;
+  setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
-  createDiv(cls?: string) { return this.createEl('div', { cls }); }
+  createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
+  createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
     const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
     for (const cls of options?.cls?.split(' ') ?? []) if (cls) child.classes.add(cls);
@@ -31,13 +35,15 @@ class Element {
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; destroy(): void; mount(el: Element): void };
 
-const model = new Ontology({
+const raw: RawDictionary = {
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
   ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['ml'] },
   crypto: { description: '', broader: ['cs', 'sec'] },
   overfitting: { description: '', broader: ['ml'], related: ['dl'] },
   loose: { description: '' },
-}, []);
+};
+const model = new Ontology(raw, []);
+const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 const core = (): NativeData => ({ numLinks: 5, nodes: {
   'A.md': { type: '', links: { '#DL': true, 'B.md': true } },
   'B.md': { type: '', links: { '#crypto': true, '#loose': true, '#to-read': true } },
@@ -54,23 +60,32 @@ const layoutOutside: string[][] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
+  // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
+  const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
+  class Modal {
+    titleEl = new Element(); contentEl = new Element(); closed = false;
+    onOpen() {} onClose() {}
+    open() { modals.push(this); this.onOpen(); }
+    close() { this.closed = true; this.onClose(); }
+  }
   // Animation frames wait until a test advances the fake clock with tick().
   const frames = new Map<number, () => void>();
   let frameId = 0, clock = 0;
   const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
-  const suggests: { source: (query: string) => unknown[]; onChoose: (tag: string) => void }[] = [];
+  const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
   const context = createContext({
-    performance: { now: () => clock }, devicePixelRatio: 1,
+    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone,
     window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
-      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, _input: unknown, source: (query: string) => unknown[], onChoose: (tag: string) => void) { suggests.push({ source, onChoose }); } } }
+      : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
+      : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -110,10 +125,15 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
+    raw, changes: [] as Change[], reloads: 0, missing: false, created: 0,
+    async createDictionary() { owner.created++; return true; },
+    async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
+    async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
       ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
-    }, vault: { getAbstractFileByPath: () => null } },
+    }, vault: { getAbstractFileByPath: (path: string) => path === owner.settings.dictionaryPath && !owner.missing ? new File() : null } },
   };
   const controller = new NativeGraphs(owner);
   // Obsidian restores the sidebar view on startup, so tests start with it mounted.
@@ -121,7 +141,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   controller.mount(sidebar);
   const all = () => [...contentEl.all(), ...sidebar.all()];
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
-  const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!();
+  const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!({ preventDefault() {} });
   const search = (query: string) => {
     const input = sidebar.all().find(el => el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
@@ -132,7 +152,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick };
+  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -257,10 +277,10 @@ test('the panel button reads the live expansion after Expand all', async () => {
   const t = await setup();
   t.controller.attach();
   (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  t.click('Collapse children and notes');
+  t.click('Collapse in graph');
   t.click('Expand all');
-  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse children and notes'), 'the label follows Expand all');
-  t.click('Collapse children and notes');
+  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the label follows Expand all');
+  t.click('Collapse in graph');
   assert.equal(t.owner.settings.expanded.length, model.entries.size - 1, 'only cs collapses');
 });
 
@@ -558,4 +578,369 @@ test('a note-only refresh updates the panel without redrawing the graph', async 
   t.controller.refresh(false);
   assert.equal(t.forwarded.length, sent, 'the core graph re-sends its own data for note edits');
   assert.ok(t.sidebar.all().some(el => el.text === 'reloaded'));
+});
+
+const heading = (t: { sidebar: Element }) => t.sidebar.all().find(el => el.tag === 'h3' || el.tag === 'h4')!.text;
+const navButton = (t: { sidebar: Element }, label: string) => t.sidebar.all().find(el => el.attrs['aria-label'] === label)!;
+const expandButton = (t: { sidebar: Element }) => t.sidebar.all().find(el => el.classes.has('tag-ontology-expand'))!;
+
+test('back, forward and home move through the tags shown and disable at the ends', async () => {
+  const t = await setup();
+  assert.equal(navButton(t, 'Back').attrs['aria-disabled'], 'true'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'true');
+  t.click('#cs'); t.click('#ml');
+  assert.equal(heading(t), 'ml');
+  t.click('Back');
+  assert.equal(heading(t), 'cs'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'false');
+  t.click('Forward');
+  assert.equal(heading(t), 'ml'); assert.equal(navButton(t, 'Forward').attrs['aria-disabled'], 'true');
+  t.click('Home');
+  assert.equal(heading(t), 'Root tags (2)');
+  t.click('Back');
+  assert.equal(heading(t), 'ml');
+});
+
+test('the expand button in the bar shows the state with waypoints or circle-small and stays highlighted', async () => {
+  const t = await setup();
+  t.click('#cs');
+  assert.equal(expandButton(t).attrs.icon, 'waypoints'); assert.equal(expandButton(t).attrs['aria-label'], 'Collapse in graph');
+  assert.ok(expandButton(t).classes.has('is-active'));
+  t.click('Collapse in graph');
+  assert.equal(expandButton(t).attrs.icon, 'circle-small'); assert.equal(expandButton(t).attrs['aria-label'], 'Expand in graph');
+  assert.ok(expandButton(t).classes.has('is-active'));
+  assert.deepEqual([...t.owner.settings.expanded], []);
+});
+
+test('the expand button is disabled on the root list and the title has no button', async () => {
+  const t = await setup();
+  assert.equal(expandButton(t).attrs['aria-disabled'], 'true'); assert.ok(!expandButton(t).classes.has('is-active'));
+  t.click('#cs');
+  const header = t.sidebar.all().find(el => el.classes.has('tag-ontology-header'))!;
+  assert.deepEqual(header.all().filter(el => el.tag === 'button'), []);
+});
+
+test('related lists both directions', async () => {
+  const t = await setup();
+  t.search('dl');
+  const texts = t.sidebar.all().map(el => el.text);
+  assert.ok(texts.includes('Related 1')); assert.ok(texts.includes('#overfitting'));
+});
+
+const field = (t: { sidebar: Element }, label: string) => t.sidebar.all().find(el => el.attrs['aria-label'] === label && el.tag !== 'button')!;
+const button = (t: { sidebar: Element }, text: string) => t.sidebar.all().find(el => el.tag === 'button' && el.text === text)!;
+const type = (el: Element, value: string) => { el.value = value; el.events.get('input')!(); };
+const byClass = (t: { sidebar: Element }, cls: string) => t.sidebar.all().find(el => el.classes.has(cls));
+
+test('Edit opens a labeled form with the tag\'s values and no note lists', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Parents', 'Children', 'Related']);
+  assert.equal(field(t, 'Name').value, 'cs');
+  assert.deepEqual(tagLinks(t.sidebar), ['#crypto', '#ml']);
+  assert.ok(!t.sidebar.all().some(el => el.tag === 'summary'));
+  assert.ok(navButton(t, 'Edit tag').classes.has('is-active'));
+  assert.equal(button(t, 'Save').disabled, true);
+});
+
+test('Save sends the draft as an edit change and returns to the tag view', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'Learning');
+  assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
+  t.click('Save'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'edit', tag: 'ml', draft: { name: 'ml', description: 'Learning', aliases: [], parents: ['cs'], children: ['dl', 'overfitting'], related: [] } }]);
+  assert.equal(heading(t), 'ml'); assert.equal(t.owner.reloads, 1);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'p' && el.text === 'Learning'));
+});
+
+test('a refresh while editing keeps the form and the typed text', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const description = field(t, 'Description');
+  type(description, 'typed');
+  t.controller.refresh(false);
+  assert.equal(field(t, 'Description'), description); assert.equal(description.value, 'typed');
+});
+
+test('a second Save click while saving writes once', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  t.click('Save'); t.click('Save');
+  finish(false); await settle();
+  assert.equal(t.owner.changes.length, 1);
+});
+
+test('a failed save keeps the form and the draft', async () => {
+  const t = await setup();
+  t.owner.saveChange = async () => false;
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'kept');
+  t.click('Save'); await settle();
+  assert.equal(field(t, 'Description').value, 'kept'); assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('renaming updates the expanded list and the history', async () => {
+  const t = await setup({ expanded: ['cs', 'ml'] });
+  t.click('#cs'); t.click('#ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  t.click('Save'); await settle();
+  assert.deepEqual([...t.owner.settings.expanded], ['cs', 'machine-learning']);
+  assert.equal(heading(t), 'machine-learning');
+  t.click('Back'); assert.equal(heading(t), 'cs');
+  t.click('Forward'); assert.equal(heading(t), 'machine-learning');
+});
+
+test('the parent picker leaves out the tag, its parents and its descendants', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.click('Add a parent');
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a parent').at(-1)!;
+  const tags = (query: string) => picker.source(query).map(s => s.tag);
+  assert.deepEqual([tags('ml'), tags('cs'), tags('dl'), tags('crypto')], [[], [], [], ['crypto']]);
+  picker.onChoose('crypto');
+  assert.deepEqual(tagLinks(t.sidebar).slice(0, 2), ['#cs', '#crypto']);
+});
+
+test('a name error disables Save and shows the message', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'CS');
+  assert.equal(byClass(t, 'tag-ontology-error')!.text, '#cs is already in the dictionary.');
+  assert.equal(button(t, 'Save').disabled, true);
+});
+
+test('a rename warns when notes use the old name', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  assert.equal(byClass(t, 'tag-ontology-hint')!.text, '1 note uses #ml. It keeps it and it will show as not in the dictionary.');
+});
+
+test('the name suggestions are unregistered tags by note count', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['to-read', 'book'] }, { path: 'B.md', tags: ['book'] }]);
+  t.click('New tag');
+  const name = t.suggests.filter(s => s.input.attrs['aria-label'] === 'Name').at(-1)!;
+  assert.deepEqual(JSON.parse(JSON.stringify(name.source(''))), [{ tag: 'book', notes: 2 }, { tag: 'to-read', notes: 1 }]);
+  assert.deepEqual([...name.source('READ').map(s => s.tag)], ['to-read']);
+  name.onChoose('book');
+  assert.equal(field(t, 'Name').value, 'book'); assert.equal(button(t, 'Add').disabled, false);
+});
+
+test('Add sends an add change with no parent and shows the new tag', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.ok(navButton(t, 'New tag').classes.has('is-active'));
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Description', 'Aliases']);
+  type(field(t, 'Name'), '#book');
+  t.click('Add'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'book', description: '', aliases: [], parents: [], children: [], related: [] } }]);
+  assert.equal(heading(t), 'book'); assert.equal(t.owner.reloads, 1);
+});
+
+test('Add is disabled until the name is new, ignoring case', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.equal(button(t, 'Add').disabled, true);
+  assert.equal(byClass(t, 'tag-ontology-hint')!.text, 'Pick one, or type a new name.');
+  type(field(t, 'Name'), 'ML');
+  assert.equal(byClass(t, 'tag-ontology-error')!.text, '#ml is already in the dictionary.');
+  assert.equal(button(t, 'Add').disabled, true);
+});
+
+test('Cancel on the new tag form goes back to the tag that was shown', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('New tag'); t.click('Cancel');
+  assert.equal(heading(t), 'ml');
+});
+
+const press = (modal: { contentEl: Element }, text: string) => modal.contentEl.all().find(el => el.tag === 'button' && el.text === text)!.events.get('click')!();
+
+test('Delete shows where children go and deletes on confirm', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag'); t.click('Delete');
+  const modal = t.modals.at(-1)!;
+  assert.equal(modal.titleEl.text, 'Delete #ml?');
+  assert.deepEqual(modal.contentEl.all().filter(el => el.tag === 'li').map(el => el.text), ['2 children move under #cs']);
+  press(modal, 'Delete'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'delete', tag: 'ml' }]);
+  assert.equal(heading(t), 'cs');
+});
+
+test('the delete dialog lists related tags, notes and children that become roots', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['dl'] }]);
+  t.search('dl'); t.click('Edit tag'); t.click('Delete');
+  assert.deepEqual(t.modals.at(-1)!.contentEl.all().filter(el => el.tag === 'li').map(el => el.text),
+    ['Removed from related of #overfitting', '1 note keeps #dl; it will show as not in the dictionary.']);
+  press(t.modals.at(-1)!, 'Cancel');
+  t.search('sec'); t.click('Edit tag'); t.click('Delete');
+  assert.deepEqual(t.modals.at(-1)!.contentEl.all().filter(el => el.tag === 'li').map(el => el.text), []);
+});
+
+test('Cancel in the delete dialog writes nothing', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag'); t.click('Delete');
+  press(t.modals.at(-1)!, 'Cancel');
+  assert.deepEqual(t.owner.changes, []);
+  assert.equal(field(t, 'Name').value, 'ml');
+});
+
+test('clicking a graph tag with unsaved changes asks first and Keep editing stays', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  const expanded = [...t.owner.settings.expanded];
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(t.modals.at(-1)!.titleEl.text, '1 change to #ml is not saved');
+  press(t.modals.at(-1)!, 'Keep editing');
+  assert.equal(field(t, 'Description').value, 'typed');
+  assert.deepEqual([...t.owner.settings.expanded], expanded);
+});
+
+test('Discard drops the draft and follows the navigation', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.click('Home');
+  press(t.modals.at(-1)!, 'Discard');
+  assert.equal(heading(t), 'Root tags (2)'); assert.deepEqual(t.owner.changes, []);
+});
+
+test('Save in the dialog follows the navigation only after a successful save', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.owner.saveChange = async () => false;
+  t.click('Home'); press(t.modals.at(-1)!, 'Save'); await settle();
+  assert.equal(field(t, 'Description').value, 'typed');
+  t.owner.saveChange = async (change: Change) => { t.owner.changes.push(change); t.owner.raw = apply(t.owner.raw, change); return true; };
+  t.click('Home'); press(t.modals.at(-1)!, 'Save'); await settle();
+  assert.equal(t.owner.changes.length, 1); assert.equal(heading(t), 'Root tags (2)');
+});
+
+test('Cancel with changes asks too, and without changes navigation leaves the form without asking', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.click('Cancel');
+  assert.equal(t.modals.length, 1);
+  press(t.modals.at(-1)!, 'Discard');
+  assert.equal(heading(t), 'ml');
+  t.click('Edit tag'); t.click('Home');
+  assert.equal(t.modals.length, 1); assert.equal(heading(t), 'Root tags (2)');
+});
+
+test('a tag whose key breaks the name rules can still be edited when the name stays', async () => {
+  const t = await setup();
+  t.owner.raw = { ...raw, 'v1.0': { description: '', broader: [] } }; t.owner.model = new Ontology(t.owner.raw, []);
+  t.search('v1.0'); t.click('Edit tag');
+  type(field(t, 'Description'), 'version');
+  assert.equal(byClass(t, 'tag-ontology-error'), undefined); assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  assert.equal(t.owner.changes.length, 1);
+});
+
+test('reopening the sidebar tab while editing shows the form again', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  const reopened = new Element();
+  t.controller.mount(reopened);
+  assert.equal(reopened.all().find(el => el.attrs['aria-label'] === 'Description')!.value, 'typed');
+});
+
+test('the pickers only offer tags that were in the dictionary when the form opened', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.owner.model = new Ontology({ ...raw, later: { description: '', broader: [] } }, []);
+  t.click('Add a child');
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
+  assert.deepEqual([...picker.source('later')], []);
+});
+
+test('an alias typed without Enter counts as a change and is saved', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.click('Add an alias');
+  type(t.sidebar.all().find(el => el.attrs.placeholder === 'Add an alias')!, 'Machine learning ');
+  assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
+  t.click('Save'); await settle();
+  assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
+});
+
+test('a missing dictionary file shows how to create one and turns off New tag and Edit', async () => {
+  const t = await setup();
+  t.owner.missing = true; t.controller.refresh(false);
+  assert.equal(heading(t), 'Tag dictionary not found');
+  assert.equal(navButton(t, 'New tag').disabled, true); assert.equal(navButton(t, 'Edit tag').disabled, true);
+  t.click('Create empty dictionary'); await settle();
+  assert.equal(t.owner.created, 1);
+});
+
+test('the panel comes back when the dictionary file returns', async () => {
+  const t = await setup();
+  t.owner.missing = true; t.controller.refresh(false);
+  t.owner.missing = false; t.controller.refresh(false);
+  assert.equal(heading(t), 'Root tags (2)'); assert.equal(navButton(t, 'New tag').disabled, false);
+});
+
+test('the pickers do not take Object properties such as constructor for dictionary tags', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  t.owner.model = new Ontology({ ...raw, constructor: { description: '', broader: [] } }, []);
+  t.click('Add a child');
+  const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
+  assert.deepEqual([...picker.source('constructor')], []);
+});
+
+test('a tag has no Add a child button, and a tag without children shows no Children list', async () => {
+  const t = await setup();
+  t.search('dl');
+  assert.equal(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Add a child'), false);
+  assert.equal(t.sidebar.all().some(el => el.tag === 'summary' && el.text.startsWith('Children')), false);
+});
+
+test('the search box hides while a form is open', async () => {
+  const t = await setup();
+  const search = () => t.sidebar.all().find(el => el.attrs['aria-label'] === 'Search tags or aliases')!;
+  assert.equal(search().hidden, false);
+  t.search('ml'); t.click('Edit tag');
+  assert.equal(search().hidden, true);
+  t.click('Cancel');
+  assert.equal(search().hidden, false);
+  t.click('New tag');
+  assert.equal(search().hidden, true);
+});
+
+test('the + next to a field opens its input, which stays open while adding and closes on a second press', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const input = (placeholder: string) => t.sidebar.all().find(el => el.tag === 'input' && el.attrs.placeholder === placeholder);
+  for (const placeholder of ['Add an alias', 'Add a parent', 'Add a child', 'Add a related tag']) assert.equal(input(placeholder), undefined, placeholder);
+  // The + follows the last item of its field, not the field's name.
+  assert.ok(t.sidebar.all().filter(el => el.tag === 'label').every(label => !label.children.length));
+  const row = t.sidebar.all().find(el => el.classes.has('tag-ontology-tags') && el.children.some(child => child.attrs['aria-label'] === 'Add a child'))!;
+  assert.deepEqual(row.children.slice(-2).map(child => child.text || child.attrs['aria-label']), ['#overfitting', 'Add a child']);
+  t.click('Add an alias');
+  assert.ok(input('Add an alias')!.focused); assert.ok(navButton(t, 'Add an alias').classes.has('is-active'));
+  input('Add an alias')!.value = 'ML'; input('Add an alias')!.events.get('keydown')!({ key: 'Enter' });
+  assert.deepEqual(t.sidebar.all().filter(el => el.classes.has('tag-ontology-chip')).map(el => el.text).slice(0, 1), ['ML']);
+  assert.ok(input('Add an alias')!.focused);
+  t.click('Add a related tag');
+  assert.equal(input('Add an alias'), undefined); assert.ok(input('Add a related tag'));
+  t.click('Add a related tag');
+  assert.equal(input('Add a related tag'), undefined);
+});
+
+test('the new tag form opens its parent and alias inputs with + too', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.equal(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'), false);
+  t.click('Add a parent');
+  assert.ok(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'));
 });
