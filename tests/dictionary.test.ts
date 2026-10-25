@@ -119,3 +119,9 @@ test('a rename conflicts with an outside change to any entry naming the tag, or 
   assert.deepEqual(conflicts(raw, { ...raw, ml: { ...raw.ml!, description: 'changed' } }, { kind: 'edit', tag: 'dl', draft: { ...draftOf(raw, 'dl'), name: 'deep' } }), []);
   assert.deepEqual(conflicts(raw, { ...raw, 'ai-sec': { description: 'changed' } }, { kind: 'delete', tag: 'ml' }), ['ai-sec']);
 });
+
+test('a child or reverse related added elsewhere conflicts', () => {
+  const edit: Change = { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), description: 'new' } };
+  assert.deepEqual(conflicts(raw, { ...raw, rl: { description: '', broader: ['ml'] } }, edit), ['rl']);
+  assert.deepEqual(conflicts(raw, { ...raw, sec: { ...raw.sec!, related: ['ml'] } }, edit), ['sec']);
+});

@@ -110,7 +110,10 @@ export function conflicts(base: RawDictionary, latest: RawDictionary, change: Ch
   else if (change.kind === 'delete') touched = [change.tag, ...naming(change.tag)];
   else {
     const { tag, draft } = change, before = draftOf(base, tag), renamed = draft.name !== tag;
-    touched = [tag, ...before.children, ...draft.children, ...before.related, ...draft.related, ...renamed ? naming(tag) : []];
+    // Entries that gained a link to the tag since the edit began would otherwise lose it without a conflict.
+    const now = latest[tag] ? draftOf(latest, tag) : undefined;
+    touched = [tag, ...before.children, ...draft.children, ...before.related, ...draft.related,
+      ...now?.children ?? [], ...now?.related ?? [], ...renamed ? naming(tag) : []];
     if (renamed) name = draft.name;
   }
   const hit = [...new Set(touched)].filter(key => JSON.stringify(base[key]) !== JSON.stringify(latest[key]));
