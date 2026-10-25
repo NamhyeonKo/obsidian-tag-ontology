@@ -121,7 +121,8 @@ export class NativeGraphs {
     }
     if (!this.owner.model) return;
     for (const leaf of leaves) {
-      if (this.sessions.has(leaf) || this.failed.has(leaf)) continue;
+      // A background tab is restored as a placeholder with no renderer yet; the layout change that loads it attaches it.
+      if (this.sessions.has(leaf) || this.failed.has(leaf) || leaf.isDeferred) continue;
       const view = leaf.view as unknown as NativeView, r = view.renderer;
       if (!r || typeof r.setData !== 'function' || typeof r.onNodeClick !== 'function'
         || !r.worker || !Array.isArray(r.nodes) || !Array.isArray(r.links)) {
