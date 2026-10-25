@@ -68,19 +68,32 @@ export default class TagOntologyPlugin extends Plugin {
     return model;
   }
 
-  // A fresh install starts with an empty dictionary to add tags to. Only at startup: the settings field saves on every
-  // keystroke, so creating there would leave a file for each half-typed path. An existing file is never touched.
+  // Only a fresh install gets an empty dictionary on its own. Later a missing file is never recreated by itself: a sync that
+  // hasn't caught up or an iCloud file moved off the disk looks missing too, so the sidebar offers a button instead.
+  // Not on settings changes either: the path field saves on every keystroke.
   private async ensureDictionary(): Promise<void> {
     const { vault } = this.app, path = this.settings.dictionaryPath;
     try {
-      if (!isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
-      const parts = path.split('/').slice(0, -1);
-      for (let i = 1; i <= parts.length; i++) {
-        const folder = parts.slice(0, i).join('/');
-        if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
-      }
-      await vault.create(path, '{\n}\n');
+      if (!this.firstRun || !isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
+      await this.writeEmpty(path);
     } catch (error) { console.error('Tag Ontology:', error); }
+  }
+
+  async createDictionary(): Promise<boolean> {
+    try { await this.writeEmpty(this.settings.dictionaryPath); }
+    catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
+    await this.reload();
+    return true;
+  }
+
+  // vault.create refuses an existing path, so this never replaces a dictionary.
+  private async writeEmpty(path: string): Promise<void> {
+    const { vault } = this.app, parts = path.split('/').slice(0, -1);
+    for (let i = 1; i <= parts.length; i++) {
+      const folder = parts.slice(0, i).join('/');
+      if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
+    }
+    await vault.create(path, '{\n}\n');
   }
 
   private notes(): Note[] {

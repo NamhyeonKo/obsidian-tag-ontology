@@ -27,7 +27,7 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary;
-  saveChange(change: Change, base: RawDictionary): Promise<boolean>;
+  saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
 }
 
@@ -45,7 +45,8 @@ async function setup(saved?: Promise<unknown>) {
     existing: new Set(['Tag-Dictionary.json']), created: [] as string[],
     adapter: { exists: async (path: string) => vault.existing.has(path) },
     async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
-    async create(path: string, data: string) { vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
+    // Like Obsidian, create refuses a path that already exists.
+    async create(path: string, data: string) { if (vault.existing.has(path)) throw new Error('File already exists.'); vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
     async cachedRead() { reads++; return vault.text; },
     // Like Obsidian, a throwing callback rejects without writing.
     async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
@@ -260,17 +261,38 @@ test('saveChange writes nothing over a broken file', async () => {
   assert.match(t.notices.at(-1)!, /^Could not save the dictionary:/);
 });
 
-test('a missing dictionary is created empty, with its folder, once the layout is ready', async () => {
-  const t = await setup(Promise.resolve({ dictionaryPath: 'Dicts/Tags.json' }));
+test('a fresh install creates an empty dictionary once the layout is ready', async () => {
+  const t = await setup(Promise.resolve(null));
   await t.loaded; t.vault.existing.clear();
   t.ready(); await settle();
-  assert.deepEqual(t.vault.created, ['folder:Dicts', 'file:Dicts/Tags.json:{\n}\n']);
+  assert.deepEqual(t.vault.created, ['file:Tag-Dictionary.json:{\n}\n']);
+});
+
+test('after the first install a missing dictionary is not created on its own', async () => {
+  const t = await setup();
+  t.vault.existing.clear(); t.ready(); await settle();
+  assert.deepEqual(t.vault.created, []);
 });
 
 test('an existing dictionary is never overwritten, even when broken', async () => {
-  const t = await setup();
-  t.vault.text = '{ broken'; t.ready(); await settle();
+  const t = await setup(Promise.resolve(null));
+  await t.loaded; t.vault.text = '{ broken'; t.ready(); await settle();
   assert.deepEqual(t.vault.created, []);
+});
+
+test('createDictionary makes the folder and an empty file, then reloads', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Dicts/Tags.json' }));
+  await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.createDictionary(), true);
+  assert.deepEqual(t.vault.created, ['folder:Dicts', 'file:Dicts/Tags.json:{\n}\n']);
+  assert.ok(t.plugin.model);
+});
+
+test('createDictionary never replaces a file that appeared meanwhile', async () => {
+  const t = await setup();
+  assert.equal(await t.plugin.createDictionary(), false);
+  assert.deepEqual(t.vault.created, []);
+  assert.match(t.notices.at(-1)!, /^Could not create the dictionary:/);
 });
 
 test('changing the dictionary path in settings does not create a file', async () => {
