@@ -5,6 +5,8 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology, isIncludedNote } from '../src/ontology.ts';
 import * as settings from '../src/settings.ts';
+import * as dictionaryModule from '../src/dictionary.ts';
+import { apply, draftOf, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -24,7 +26,8 @@ class NativeGraphs {
 }
 
 interface Main {
-  native: NativeGraphs; model?: Ontology; settings: settings.Settings;
+  native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary;
+  saveChange(change: Change, base: RawDictionary): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
 }
 
@@ -38,7 +41,10 @@ async function setup(saved?: Promise<unknown>) {
   const leaf = { async setViewState() { ui.push('create'); } };
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
-    async cachedRead() { reads++; return dictionary; },
+    text: dictionary, writes: [] as string[],
+    async cachedRead() { reads++; return vault.text; },
+    // Like Obsidian, a throwing callback rejects without writing.
+    async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
     on(name: string, callback: (file: { path: string }) => void) { events.set(name, callback); },
   };
   const workspace = {
@@ -66,6 +72,7 @@ async function setup(saved?: Promise<unknown>) {
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './ontology.ts' ? { Ontology, isIncludedNote }
       : specifier === './settings.ts' ? { ...settings }
+      : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { NativeGraphs, PANEL_VIEW: 'tag-ontology-panel' };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -201,4 +208,48 @@ test('a successful manual reload updates the model and graph without an error no
   assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
   assert.deepEqual(t.notices, []);
   assert.deepEqual(t.errors, []);
+});
+
+const base: RawDictionary = { root: { description: 'Root', broader: [] }, child: { description: 'Child', broader: ['root'] } };
+const describe = (description: string): Change => ({ kind: 'edit', tag: 'child', draft: { ...draftOf(base, 'child'), description } });
+async function withBase() {
+  const t = await setup();
+  t.vault.text = serialize(base); t.ready(); await settle();
+  return t;
+}
+
+test('loadModel keeps the parsed dictionary as raw', async () => {
+  const t = await withBase();
+  // Parsed inside the module's realm, so compare plain copies.
+  assert.deepEqual(JSON.parse(JSON.stringify(t.plugin.raw)), base);
+});
+
+test('saveChange writes the applied change in the one-entry-per-line format', async () => {
+  const t = await withBase();
+  assert.equal(await t.plugin.saveChange(describe('New'), t.plugin.raw!), true);
+  assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
+});
+
+test('saveChange refuses when a touched entry changed outside, and writes nothing', async () => {
+  const t = await withBase();
+  t.vault.text = serialize({ ...base, child: { description: 'Outside', broader: ['root'] } });
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.equal(t.notices.at(-1), 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.');
+});
+
+test('saveChange refuses a change that would break the dictionary', async () => {
+  const t = await withBase();
+  const change: Change = { kind: 'edit', tag: 'child', draft: { ...draftOf(base, 'child'), parents: ['missing'] } };
+  assert.equal(await t.plugin.saveChange(change, base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.match(t.notices.at(-1)!, /^Could not save the dictionary: .*unknown tag missing/);
+});
+
+test('saveChange writes nothing over a broken file', async () => {
+  const t = await withBase();
+  t.vault.text = '{ broken';
+  assert.equal(await t.plugin.saveChange(describe('New'), base), false);
+  assert.deepEqual(t.vault.writes, []);
+  assert.match(t.notices.at(-1)!, /^Could not save the dictionary:/);
 });
