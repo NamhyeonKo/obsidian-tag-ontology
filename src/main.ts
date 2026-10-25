@@ -110,12 +110,12 @@ export default class TagOntologyPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
     if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${this.settings.dictionaryPath}`); return false; }
     try {
-      const notes = this.notes();
       await this.app.vault.process(file, (text) => {
         const latest = JSON.parse(text) as RawDictionary;
         if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
         const next = apply(latest, change);
-        new Ontology(next, notes);
+        // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
+        new Ontology(next, []);
         return serialize(next);
       });
       return true;

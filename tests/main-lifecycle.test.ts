@@ -309,3 +309,10 @@ test('saveChange writes nothing when the dictionary file is gone', async () => {
   assert.deepEqual(t.vault.writes, []);
   assert.equal(t.notices.at(-1), 'Tag dictionary not found: Tag-Dictionary.json');
 });
+
+test('saveChange does not wait for the note index', async () => {
+  const t = await withBase();
+  // A note whose metadata isn't cached yet: building the note index would throw.
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }];
+  assert.equal(await t.plugin.saveChange(describe('New'), base), true);
+});
