@@ -79,7 +79,7 @@ You should see two roots, `computer-science` and `security`, with the six notes 
 
 ## Tag dictionary format
 
-By default the plugin reads `Tag-Dictionary.json` at the vault root. You can change the path in the plugin settings. If no file is there when the plugin starts, it creates an empty dictionary (`{}`) to add tags to. It never replaces an existing file.
+By default the plugin reads `Tag-Dictionary.json` at the vault root. You can change the path in the plugin settings. On a fresh install, if no file is there, the plugin creates an empty dictionary (`{}`) to add tags to. After that it never creates the file on its own, because a file that is still syncing looks missing too: the sidebar tab says the dictionary was not found and offers **Create empty dictionary**, and the file shows up by itself once it arrives. Neither ever replaces an existing file.
 
 The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
 
@@ -186,7 +186,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds the settings above, the expanded tags and the Notes/Related toggles. It writes the dictionary file only when you save a change in the sidebar, or to create an empty one at first start.
+- Writes its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`), which holds the settings above, the expanded tags and the Notes/Related toggles. It writes the dictionary file only when you save a change in the sidebar, or to create an empty one (on a fresh install, or when you press Create empty dictionary).
 
 ## Compatibility and known limitations
 
