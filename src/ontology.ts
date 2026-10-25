@@ -7,7 +7,8 @@ export interface Entry {
 }
 
 export interface Note { path: string; tags: string[] }
-export interface Suggestion { tag: string; alias?: string }
+// alias: the alias that matched; notes: how many notes use a tag that is not in the dictionary yet.
+export interface Suggestion { tag: string; alias?: string; notes?: number }
 
 export function isIncludedNote(path: string): boolean {
   return path.endsWith('.md')

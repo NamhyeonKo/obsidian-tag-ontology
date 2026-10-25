@@ -41,6 +41,9 @@
 .tag-ontology-chip:not(.tag) { padding: 0 2px 0 8px; border-radius: var(--radius-s); background: var(--background-modifier-hover); }
 .tag-ontology-remove { width: auto; height: auto; padding: 1px; }
 .tag-ontology-remove svg { width: 12px; height: 12px; }
+.tag-ontology-form h3 { margin: 0 0 12px; }
+.tag-ontology-add-child { width: auto; height: auto; margin-left: 6px; padding: 2px; vertical-align: middle; }
+.tag-ontology-add-child svg { width: 14px; height: 14px; }
 .tag-ontology-count { margin-top: 14px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
 /* The buttons stay in view at the bottom of the sidebar while a long form scrolls. */
 .tag-ontology-footer { position: sticky; bottom: 0; display: flex; gap: 6px; margin-top: 6px; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); background: var(--background-secondary); }

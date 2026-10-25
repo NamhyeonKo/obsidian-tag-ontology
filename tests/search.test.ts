@@ -47,3 +47,11 @@ test('choosing a suggestion clears the box, closes the popover and reveals the t
   assert.equal(t.suggest.closed, 1);
   assert.deepEqual(t.chosen, ['machine-learning']);
 });
+
+test('suggestions with a note count show it under the tag', async () => {
+  const t = await setup(), one = new Div(), two = new Div();
+  t.suggest.renderSuggestion({ tag: 'to-read', notes: 1 }, one);
+  t.suggest.renderSuggestion({ tag: 'book', notes: 2 }, two);
+  assert.deepEqual(one.children[1], { text: '1 note', cls: 'tag-ontology-suggestion-alias' });
+  assert.deepEqual(two.children[1], { text: '2 notes', cls: 'tag-ontology-suggestion-alias' });
+});

@@ -16,7 +16,7 @@ class Element {
   css: Record<string, string> = {}; disabled = false;
   setText(text: string) { this.text = text; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
-  createDiv(cls?: string) { return this.createEl('div', { cls }); }
+  createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
   createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
     const child = new Element(); child.tag = tag; child.text = options?.text ?? ''; this.children.push(child);
@@ -707,4 +707,50 @@ test('a rename warns when notes use the old name', async () => {
   t.search('ml'); t.click('Edit tag');
   type(field(t, 'Name'), 'machine-learning');
   assert.equal(byClass(t, 'tag-ontology-hint')!.text, '1 note uses #ml. It keeps it and it will show as not in the dictionary.');
+});
+
+test('the name suggestions are unregistered tags by note count', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['to-read', 'book'] }, { path: 'B.md', tags: ['book'] }]);
+  t.click('New tag');
+  const name = t.suggests.filter(s => s.input.attrs['aria-label'] === 'Name').at(-1)!;
+  assert.deepEqual(JSON.parse(JSON.stringify(name.source(''))), [{ tag: 'book', notes: 2 }, { tag: 'to-read', notes: 1 }]);
+  assert.deepEqual([...name.source('READ').map(s => s.tag)], ['to-read']);
+  name.onChoose('book');
+  assert.equal(field(t, 'Name').value, 'book'); assert.equal(button(t, 'Add').disabled, false);
+});
+
+test('Add sends an add change with no parent and shows the new tag', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.ok(navButton(t, 'New tag').classes.has('is-active'));
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Description', 'Aliases']);
+  type(field(t, 'Name'), '#book');
+  t.click('Add'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'book', description: '', aliases: [], parents: [], children: [], related: [] } }]);
+  assert.equal(heading(t), 'book'); assert.equal(t.owner.reloads, 1);
+});
+
+test('Add a child opens the form with the parent filled in', async () => {
+  const t = await setup();
+  t.search('dl');
+  t.click('Add a child');
+  assert.equal(heading(t), 'New tag');
+  assert.deepEqual(tagLinks(t.sidebar), ['#dl']);
+});
+
+test('Add is disabled until the name is new, ignoring case', async () => {
+  const t = await setup();
+  t.click('New tag');
+  assert.equal(button(t, 'Add').disabled, true);
+  assert.equal(byClass(t, 'tag-ontology-hint')!.text, 'Pick one, or type a new name.');
+  type(field(t, 'Name'), 'ML');
+  assert.equal(byClass(t, 'tag-ontology-error')!.text, '#ml is already in the dictionary.');
+  assert.equal(button(t, 'Add').disabled, true);
+});
+
+test('Cancel on the new tag form goes back to the tag that was shown', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('New tag'); t.click('Cancel');
+  assert.equal(heading(t), 'ml');
 });
