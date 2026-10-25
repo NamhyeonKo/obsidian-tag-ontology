@@ -922,6 +922,10 @@ test('the + next to a field opens its input, which stays open while adding and c
   t.search('ml'); t.click('Edit tag');
   const input = (placeholder: string) => t.sidebar.all().find(el => el.tag === 'input' && el.attrs.placeholder === placeholder);
   for (const placeholder of ['Add an alias', 'Add a parent', 'Add a child', 'Add a related tag']) assert.equal(input(placeholder), undefined, placeholder);
+  // The + follows the last item of its field, not the field's name.
+  assert.ok(t.sidebar.all().filter(el => el.tag === 'label').every(label => !label.children.length));
+  const row = t.sidebar.all().find(el => el.classes.has('tag-ontology-tags') && el.children.some(child => child.attrs['aria-label'] === 'Add a child'))!;
+  assert.deepEqual(row.children.slice(-2).map(child => child.text || child.attrs['aria-label']), ['#overfitting', 'Add a child']);
   t.click('Add an alias');
   assert.ok(input('Add an alias')!.focused); assert.ok(navButton(t, 'Add an alias').classes.has('is-active'));
   input('Add an alias')!.value = 'ML'; input('Add an alias')!.events.get('keydown')!({ key: 'Enter' });

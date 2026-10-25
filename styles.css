@@ -34,7 +34,6 @@
 .tag-ontology-form label:first-child { margin-top: 0; }
 .tag-ontology-form input[type="text"], .tag-ontology-form textarea { width: 100%; }
 .tag-ontology-form textarea { resize: vertical; }
-.tag-ontology-form .tag-ontology-tags:empty { display: none; }
 .tag-ontology-hint, .tag-ontology-error { margin-top: 4px; font-size: var(--font-ui-smaller); }
 .tag-ontology-hint { color: var(--text-faint); }
 .tag-ontology-error { color: var(--text-error); }
@@ -43,7 +42,7 @@
 .tag-ontology-remove { width: auto; height: auto; padding: 1px; }
 .tag-ontology-remove svg { width: 12px; height: 12px; }
 .tag-ontology-form h3 { margin: 0 0 12px; }
-.tag-ontology-add { display: inline-flex; width: auto; height: auto; margin-left: 4px; padding: 2px; vertical-align: middle; }
+.tag-ontology-add { display: inline-flex; align-self: center; width: auto; height: auto; padding: 2px; }
 .tag-ontology-add svg { width: 14px; height: 14px; }
 .tag-ontology-add.is-active { color: var(--interactive-accent); }
 .tag-ontology-count { margin-top: 14px; font-size: var(--font-ui-smaller); color: var(--text-muted); }

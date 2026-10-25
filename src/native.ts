@@ -575,9 +575,9 @@ export class NativeGraphs {
       description.addEventListener('input', () => { draft.description = description.value; this.syncForm(); });
     };
     const aliases = () => {
-      const open = this.fieldLabel(form, 'Aliases', 'aliases', 'Add an alias');
-      this.chips(form, draft.aliases, item => item, item => { draft.aliases = draft.aliases.filter(a => a !== item); });
-      if (!open) return;
+      form.createEl('label', { text: 'Aliases' });
+      const list = this.chips(form, draft.aliases, item => item, item => { draft.aliases = draft.aliases.filter(a => a !== item); });
+      if (!this.opener(list, 'aliases', 'Add an alias')) return;
       const alias = form.createEl('input', { type: 'text', attr: { placeholder: 'Add an alias' } });
       alias.value = mode.alias ?? '';
       alias.addEventListener('input', () => { mode.alias = alias.value; this.syncForm(); });
@@ -590,7 +590,7 @@ export class NativeGraphs {
       });
       alias.focus();
     };
-    const list = (kind: ListKey, label: string, placeholder: string) => this.picker(form, kind, placeholder, this.fieldLabel(form, label, kind, placeholder));
+    const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder); };
     if (tag === undefined) {
       list('parents', 'Parents', 'Add a parent');
       form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
@@ -622,7 +622,7 @@ export class NativeGraphs {
   }
 
   // Tags use Obsidian's tag style, which it gives to links only.
-  private chips(parent: HTMLElement, items: string[], text: (item: string) => string, remove: (item: string) => void, asTag = false) {
+  private chips(parent: HTMLElement, items: string[], text: (item: string) => string, remove: (item: string) => void, asTag = false): HTMLElement {
     const list = parent.createDiv('tag-ontology-tags');
     for (const item of items) {
       const chip = asTag ? list.createEl('a', { text: text(item), cls: 'tag tag-ontology-chip' }) : list.createSpan({ text: text(item), cls: 'tag-ontology-chip' });
@@ -630,13 +630,14 @@ export class NativeGraphs {
       setIcon(button, 'x');
       button.addEventListener('click', () => { remove(item); this.drawForm(); });
     }
+    return list;
   }
 
   // Only dictionary tags can be linked, and never one that would make a cycle.
-  // A field's input stays out of the way until its + is pressed, and stays open while items are added one after another.
-  private fieldLabel(form: HTMLElement, text: string, key: 'aliases' | ListKey, placeholder: string): boolean {
+  // A field's input stays out of the way until the + after its last item is pressed, and stays open while items are added one after another.
+  private opener(list: HTMLElement, key: 'aliases' | ListKey, placeholder: string): boolean {
     const mode = this.mode!, open = mode.open === key;
-    const add = form.createEl('label', { text }).createEl('button', { cls: 'clickable-icon tag-ontology-add', attr: { 'aria-label': placeholder } });
+    const add = list.createEl('button', { cls: 'clickable-icon tag-ontology-add', attr: { 'aria-label': placeholder } });
     setIcon(add, 'plus'); add.toggleClass('is-active', open);
     add.addEventListener('click', () => {
       mode.open = open ? undefined : key;
@@ -647,10 +648,10 @@ export class NativeGraphs {
     return open;
   }
 
-  private picker(parent: HTMLElement, kind: ListKey, placeholder: string, open: boolean) {
+  private picker(parent: HTMLElement, kind: ListKey, placeholder: string) {
     const mode = this.mode!;
-    this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
-    if (!open) return;
+    const list = this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
+    if (!this.opener(list, kind, placeholder)) return;
     const input = parent.createEl('input', { type: 'text', attr: { placeholder } });
     new TagSuggest(this.owner.app, input, query => {
       const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
