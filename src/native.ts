@@ -256,7 +256,8 @@ export class NativeGraphs {
       this.reveal(first.tag);
     });
     this.panel = el.createDiv('tag-ontology-panel');
-    this.renderPanel();
+    // Obsidian mounts again when the tab is reopened; an open form comes back with it.
+    if (this.mode) this.drawForm(); else this.renderPanel();
   }
 
   // The panel is a sidebar tab the user can drag to either side; Obsidian reuses it wherever it is.

@@ -850,3 +850,12 @@ test('a tag whose key breaks the name rules can still be edited when the name st
   t.click('Save'); await settle();
   assert.equal(t.owner.changes.length, 1);
 });
+
+test('reopening the sidebar tab while editing shows the form again', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  const reopened = new Element();
+  t.controller.mount(reopened);
+  assert.equal(reopened.all().find(el => el.attrs['aria-label'] === 'Description')!.value, 'typed');
+});
