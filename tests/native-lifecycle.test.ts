@@ -867,3 +867,12 @@ test('the pickers only offer tags that were in the dictionary when the form open
   const picker = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
   assert.deepEqual([...picker.source('later')], []);
 });
+
+test('an alias typed without Enter counts as a change and is saved', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(t.sidebar.all().find(el => el.attrs.placeholder === 'Add an alias')!, 'Machine learning ');
+  assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
+  t.click('Save'); await settle();
+  assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
+});

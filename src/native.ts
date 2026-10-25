@@ -50,7 +50,8 @@ type ToggleKey = 'showNotes' | 'showRelated';
 // What the sidebar shows; the back and forward buttons move through these.
 type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
-type Mode = { kind: 'edit'; tag: string; base: RawDictionary; draft: Draft } | { kind: 'new'; base: RawDictionary; draft: Draft };
+// alias: text still in the alias input, not yet added with Enter.
+type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
@@ -58,6 +59,11 @@ export const PANEL_VIEW = 'tag-ontology-panel';
 // The renderer's color format.
 const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+// The draft with the alias still being typed, so typing one and pressing Save keeps it.
+function typed(mode: Mode): Draft {
+  const alias = mode.alias?.trim();
+  return alias && !mode.draft.aliases.includes(alias) ? { ...mode.draft, aliases: [...mode.draft.aliases, alias] } : mode.draft;
+}
 
 // A question with a few answers, in the middle of the window like Obsidian's own delete confirmation.
 class ChoiceModal extends Modal {
@@ -99,7 +105,7 @@ export class NativeGraphs {
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
   // Unsaved edits are only dropped when the user says so.
   private leave(next: () => void) {
-    const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, mode.draft) : 0;
+    const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
     new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
       { text: 'Keep editing', action: () => {} },
@@ -566,10 +572,13 @@ export class NativeGraphs {
       form.createEl('label', { text: 'Aliases' });
       this.chips(form, draft.aliases, item => item, item => { draft.aliases = draft.aliases.filter(a => a !== item); });
       const alias = form.createEl('input', { type: 'text', attr: { placeholder: 'Add an alias' } });
+      alias.value = mode.alias ?? '';
+      alias.addEventListener('input', () => { mode.alias = alias.value; this.syncForm(); });
       alias.addEventListener('keydown', e => {
         const value = alias.value.trim();
         if (e.key !== 'Enter' || e.isComposing || !value) return;
         if (!draft.aliases.includes(value)) draft.aliases = [...draft.aliases, value];
+        mode.alias = '';
         this.drawForm();
       });
     };
@@ -593,7 +602,7 @@ export class NativeGraphs {
       // A new tag's empty name is not an error yet, only not ready.
       // An unchanged name is never an error, so a key written before these rules can still be edited.
       const error = tag === undefined ? draft.name ? nameError(draft.name, base) : undefined : draft.name === tag ? undefined : nameError(draft.name, base, tag);
-      const changes = tag === undefined ? 0 : changedFields(base, tag, draft);
+      const changes = tag === undefined ? 0 : changedFields(base, tag, typed(mode));
       const hint = tag === undefined ? 'Pick one, or type a new name.'
         : draft.name !== tag && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
       note.toggleClass('tag-ontology-error', !!error); note.toggleClass('tag-ontology-hint', !error);
@@ -633,7 +642,7 @@ export class NativeGraphs {
     if (!mode || this.saving) return false;
     this.saving = true; this.syncForm();
     try {
-      const { draft, base } = mode, name = draft.name, tag = mode.kind === 'edit' ? mode.tag : name;
+      const { base } = mode, draft = typed(mode), name = draft.name, tag = mode.kind === 'edit' ? mode.tag : name;
       // The dialog's Save reaches here without the form's checks.
       const error = mode.kind === 'edit' && name === mode.tag ? undefined : nameError(name, base, mode.kind === 'edit' ? mode.tag : undefined);
       if (error) { new Notice(error); return false; }
