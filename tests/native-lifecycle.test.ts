@@ -60,6 +60,14 @@ const layoutOutside: string[][] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
+  // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
+  const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
+  class Modal {
+    titleEl = new Element(); contentEl = new Element(); closed = false;
+    onOpen() {} onClose() {}
+    open() { modals.push(this); this.onOpen(); }
+    close() { this.closed = true; this.onClose(); }
+  }
   // Animation frames wait until a test advances the fake clock with tick().
   const frames = new Map<number, () => void>();
   let frameId = 0, clock = 0;
@@ -73,7 +81,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File,
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
@@ -143,7 +151,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick };
+  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -753,4 +761,82 @@ test('Cancel on the new tag form goes back to the tag that was shown', async () 
   const t = await setup();
   t.search('ml'); t.click('New tag'); t.click('Cancel');
   assert.equal(heading(t), 'ml');
+});
+
+const press = (modal: { contentEl: Element }, text: string) => modal.contentEl.all().find(el => el.tag === 'button' && el.text === text)!.events.get('click')!();
+
+test('Delete shows where children go and deletes on confirm', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag'); t.click('Delete');
+  const modal = t.modals.at(-1)!;
+  assert.equal(modal.titleEl.text, 'Delete #ml?');
+  assert.deepEqual(modal.contentEl.all().filter(el => el.tag === 'li').map(el => el.text), ['2 children move under #cs']);
+  press(modal, 'Delete'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'delete', tag: 'ml' }]);
+  assert.equal(heading(t), 'cs');
+});
+
+test('the delete dialog lists related tags, notes and children that become roots', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['dl'] }]);
+  t.search('dl'); t.click('Edit tag'); t.click('Delete');
+  assert.deepEqual(t.modals.at(-1)!.contentEl.all().filter(el => el.tag === 'li').map(el => el.text),
+    ['Removed from related of #overfitting', '1 note keeps #dl; it will show as not in the dictionary.']);
+  press(t.modals.at(-1)!, 'Cancel');
+  t.search('sec'); t.click('Edit tag'); t.click('Delete');
+  assert.deepEqual(t.modals.at(-1)!.contentEl.all().filter(el => el.tag === 'li').map(el => el.text), []);
+});
+
+test('Cancel in the delete dialog writes nothing', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag'); t.click('Delete');
+  press(t.modals.at(-1)!, 'Cancel');
+  assert.deepEqual(t.owner.changes, []);
+  assert.equal(field(t, 'Name').value, 'ml');
+});
+
+test('clicking a graph tag with unsaved changes asks first and Keep editing stays', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  const expanded = [...t.owner.settings.expanded];
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  assert.equal(t.modals.at(-1)!.titleEl.text, '1 change to #ml is not saved');
+  press(t.modals.at(-1)!, 'Keep editing');
+  assert.equal(field(t, 'Description').value, 'typed');
+  assert.deepEqual([...t.owner.settings.expanded], expanded);
+});
+
+test('Discard drops the draft and follows the navigation', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.click('Home');
+  press(t.modals.at(-1)!, 'Discard');
+  assert.equal(heading(t), 'Root tags (2)'); assert.deepEqual(t.owner.changes, []);
+});
+
+test('Save in the dialog follows the navigation only after a successful save', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.owner.saveChange = async () => false;
+  t.click('Home'); press(t.modals.at(-1)!, 'Save'); await settle();
+  assert.equal(field(t, 'Description').value, 'typed');
+  t.owner.saveChange = async (change: Change) => { t.owner.changes.push(change); t.owner.raw = apply(t.owner.raw, change); return true; };
+  t.click('Home'); press(t.modals.at(-1)!, 'Save'); await settle();
+  assert.equal(t.owner.changes.length, 1); assert.equal(heading(t), 'Root tags (2)');
+});
+
+test('Cancel with changes asks too, and without changes navigation leaves the form without asking', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'typed');
+  t.click('Cancel');
+  assert.equal(t.modals.length, 1);
+  press(t.modals.at(-1)!, 'Discard');
+  assert.equal(heading(t), 'ml');
+  t.click('Edit tag'); t.click('Home');
+  assert.equal(t.modals.length, 1); assert.equal(heading(t), 'Root tags (2)');
 });

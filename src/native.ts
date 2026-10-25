@@ -1,11 +1,11 @@
-import { Notice, TFile, setIcon, setTooltip, type ItemView, type WorkspaceLeaf } from 'obsidian';
+import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
 import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
-import { changedFields, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type RawDictionary } from './dictionary.ts';
+import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type RawDictionary } from './dictionary.ts';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
@@ -57,6 +57,21 @@ const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'F
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The renderer's color format.
 const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+// A question with a few answers, in the middle of the window like Obsidian's own delete confirmation.
+class ChoiceModal extends Modal {
+  constructor(app: App, title: string, private lines: string[], private buttons: { text: string; cls?: string; action: () => void }[]) {
+    super(app);
+    this.titleEl.setText(title);
+  }
+  onOpen() {
+    if (this.lines.length) { const list = this.contentEl.createEl('ul'); for (const line of this.lines) list.createEl('li', { text: line }); }
+    const row = this.contentEl.createDiv('modal-button-container');
+    for (const { text, cls, action } of this.buttons) row.createEl('button', { text, cls }).addEventListener('click', () => { this.close(); action(); });
+  }
+  onClose() { this.contentEl.empty(); }
+}
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -82,9 +97,15 @@ export class NativeGraphs {
     this.leave(() => { this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1); this.showSelection(); });
   }
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
+  // Unsaved edits are only dropped when the user says so.
   private leave(next: () => void) {
-    this.mode = undefined;
-    next();
+    const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, mode.draft) : 0;
+    if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
+    new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
+      { text: 'Keep editing', action: () => {} },
+      { text: 'Discard', action: () => { this.mode = undefined; next(); } },
+      { text: 'Save', cls: 'mod-cta', action: () => { void this.save().then(saved => { if (saved) next(); }); } },
+    ]).open();
   }
 
   attach() {
@@ -469,8 +490,42 @@ export class NativeGraphs {
   }
 
   private cancel() {
-    this.mode = undefined;
-    this.showSelection();
+    this.leave(() => this.showSelection());
+  }
+
+  private confirmDelete() {
+    const mode = this.mode, model = this.owner.model;
+    if (mode?.kind !== 'edit' || !model) return;
+    const { tag, base } = mode, { parents, children, roots, related } = deletionPreview(base, tag), notes = model.counts(tag).direct;
+    const tags = (list: string[]) => list.map(item => '#' + item).join(', ');
+    const lines = [
+      ...children.length && parents.length ? [`${count(children.length, 'child moves', 'children move')} under ${tags(parents)}`] : [],
+      ...roots.length && !parents.length ? [count(roots.length, 'child becomes a root tag', 'children become root tags')] : [],
+      ...related.length ? [`Removed from related of ${tags(related)}`] : [],
+      ...notes ? [`${count(notes, 'note keeps', 'notes keep')} #${tag}; it will show as not in the dictionary.`] : [],
+    ];
+    new ChoiceModal(this.owner.app, `Delete #${tag}?`, lines, [
+      { text: 'Cancel', action: () => {} },
+      { text: 'Delete', cls: 'mod-warning', action: () => { void this.remove(tag, base, parents); } },
+    ]).open();
+  }
+
+  // Deleting writes at once: a deleted tag has no draft to keep.
+  private async remove(tag: string, base: RawDictionary, parents: string[]) {
+    if (this.saving) return;
+    this.saving = true; this.syncForm();
+    try {
+      if (!await this.owner.saveChange({ kind: 'delete', tag }, base)) return;
+      this.mode = undefined;
+      // The deleted tag leaves the history, and so do the neighbors that would then repeat.
+      const kept = this.history.slice(0, this.at + 1).filter(view => !(view.kind === 'tag' && view.tag === tag));
+      this.history = kept.filter((view, i) => !i || JSON.stringify(view) !== JSON.stringify(kept[i - 1]));
+      if (!this.history.length) this.history = [{ kind: 'roots' }];
+      this.at = this.history.length - 1;
+      this.go(parents[0] ? { kind: 'tag', tag: parents[0] } : { kind: 'roots' });
+      this.showSelection();
+      await this.owner.reload();
+    } finally { this.saving = false; this.syncForm(); }
   }
 
   private startNew(parents: string[] = []) {
@@ -526,7 +581,8 @@ export class NativeGraphs {
       describe(); aliases();
       list('parents', 'Parents', 'Add a parent'); list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
     }
-    const count = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
+    const status = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
+    if (tag !== undefined) footer.createEl('button', { text: 'Delete', cls: 'mod-warning' }).addEventListener('click', () => this.confirmDelete());
     footer.createDiv('tag-ontology-spacer');
     footer.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.cancel());
     const save = footer.createEl('button', { text: tag === undefined ? 'Add' : 'Save', cls: 'mod-cta' });
@@ -540,7 +596,7 @@ export class NativeGraphs {
         : draft.name !== tag && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
       note.toggleClass('tag-ontology-error', !!error); note.toggleClass('tag-ontology-hint', !error);
       note.setText(error ?? hint);
-      count.setText(`${changes} change${changes === 1 ? '' : 's'} not saved`); count.hidden = !changes;
+      status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
       save.disabled = (tag === undefined ? !draft.name : !changes) || !!error || this.saving;
     };
     this.syncForm();
@@ -575,6 +631,9 @@ export class NativeGraphs {
     this.saving = true; this.syncForm();
     try {
       const { draft, base } = mode, name = draft.name, tag = mode.kind === 'edit' ? mode.tag : name;
+      // The dialog's Save reaches here without the form's checks.
+      const error = nameError(name, base, mode.kind === 'edit' ? mode.tag : undefined);
+      if (error) { new Notice(error); return false; }
       const change: Change = mode.kind === 'edit' ? { kind: 'edit', tag, draft } : { kind: 'add', draft };
       if (!await this.owner.saveChange(change, base)) return false;
       if (name !== tag) {
