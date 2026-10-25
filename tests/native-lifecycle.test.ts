@@ -840,3 +840,13 @@ test('Cancel with changes asks too, and without changes navigation leaves the fo
   t.click('Edit tag'); t.click('Home');
   assert.equal(t.modals.length, 1); assert.equal(heading(t), 'Root tags (2)');
 });
+
+test('a tag whose key breaks the name rules can still be edited when the name stays', async () => {
+  const t = await setup();
+  t.owner.raw = { ...raw, 'v1.0': { description: '', broader: [] } }; t.owner.model = new Ontology(t.owner.raw, []);
+  t.search('v1.0'); t.click('Edit tag');
+  type(field(t, 'Description'), 'version');
+  assert.equal(byClass(t, 'tag-ontology-error'), undefined); assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  assert.equal(t.owner.changes.length, 1);
+});

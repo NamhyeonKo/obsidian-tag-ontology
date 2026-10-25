@@ -125,3 +125,7 @@ test('a child or reverse related added elsewhere conflicts', () => {
   assert.deepEqual(conflicts(raw, { ...raw, rl: { description: '', broader: ['ml'] } }, edit), ['rl']);
   assert.deepEqual(conflicts(raw, { ...raw, sec: { ...raw.sec!, related: ['ml'] } }, edit), ['sec']);
 });
+
+test('names with combining marks are allowed', () => {
+  assert.equal(nameError('हिन्दी', raw), undefined); assert.equal(nameError('ภาษาไทย', raw), undefined);
+});

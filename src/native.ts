@@ -590,7 +590,8 @@ export class NativeGraphs {
     const notes = tag === undefined ? 0 : model.counts(tag).direct;
     this.syncForm = () => {
       // A new tag's empty name is not an error yet, only not ready.
-      const error = draft.name || tag !== undefined ? nameError(draft.name, base, tag) : undefined;
+      // An unchanged name is never an error, so a key written before these rules can still be edited.
+      const error = tag === undefined ? draft.name ? nameError(draft.name, base) : undefined : draft.name === tag ? undefined : nameError(draft.name, base, tag);
       const changes = tag === undefined ? 0 : changedFields(base, tag, draft);
       const hint = tag === undefined ? 'Pick one, or type a new name.'
         : draft.name !== tag && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
@@ -632,7 +633,7 @@ export class NativeGraphs {
     try {
       const { draft, base } = mode, name = draft.name, tag = mode.kind === 'edit' ? mode.tag : name;
       // The dialog's Save reaches here without the form's checks.
-      const error = nameError(name, base, mode.kind === 'edit' ? mode.tag : undefined);
+      const error = mode.kind === 'edit' && name === mode.tag ? undefined : nameError(name, base, mode.kind === 'edit' ? mode.tag : undefined);
       if (error) { new Notice(error); return false; }
       const change: Change = mode.kind === 'edit' ? { kind: 'edit', tag, draft } : { kind: 'add', draft };
       if (!await this.owner.saveChange(change, base)) return false;

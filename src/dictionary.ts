@@ -69,7 +69,8 @@ export const normalizeName = (input: string) => input.trim().replace(/^#/, '');
 export function nameError(name: string, dict: RawDictionary, current?: string): string | undefined {
   if (!name) return 'Enter a tag name.';
   if (/\s/.test(name)) return 'Tag names cannot contain spaces.';
-  if (!/^[\p{L}\p{N}_\-/]+$/u.test(name)) return 'Use letters, numbers, _, - and / only.';
+  // \p{M}: combining marks, as in Hindi or Thai, which Obsidian accepts in tags.
+  if (!/^[\p{L}\p{M}\p{N}_\-/]+$/u.test(name)) return 'Use letters, numbers, _, - and / only.';
   if (/^\d+$/.test(name)) return 'A tag needs at least one character that is not a number.';
   // The core graph merges tags that differ only in case, so the dictionary can't hold both.
   const existing = Object.keys(dict).find(key => key !== current && key.toLowerCase() === name.toLowerCase());
