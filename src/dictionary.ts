@@ -64,7 +64,62 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   return next;
 }
 
-const inline =(value: unknown): string => Array.isArray(value) ? `[${value.map(inline).join(', ')}]`
+export const normalizeName = (input: string) => input.trim().replace(/^#/, '');
+
+export function nameError(name: string, dict: RawDictionary, current?: string): string | undefined {
+  if (!name) return 'Enter a tag name.';
+  if (/\s/.test(name)) return 'Tag names cannot contain spaces.';
+  if (!/^[\p{L}\p{N}_\-/]+$/u.test(name)) return 'Use letters, numbers, _, - and / only.';
+  if (/^\d+$/.test(name)) return 'A tag needs at least one character that is not a number.';
+  // The core graph merges tags that differ only in case, so the dictionary can't hold both.
+  const existing = Object.keys(dict).find(key => key !== current && key.toLowerCase() === name.toLowerCase());
+  return existing === undefined ? undefined : `#${existing} is already in the dictionary.`;
+}
+
+export function changedFields(dict: RawDictionary, tag: string, draft: Draft): number {
+  const before = draftOf(dict, tag);
+  return [before.name === draft.name, before.description === draft.description,
+    ...(['aliases', 'parents', 'children', 'related'] as const).map(key => sameSet(before[key], draft[key]))].filter(same => !same).length;
+}
+
+// Tags the picker leaves out: choosing a descendant as a parent, or an ancestor as a child, would make a cycle.
+export function excluded(dict: RawDictionary, tag: string, draft: Draft, kind: 'parents' | 'children' | 'related'): Set<string> {
+  const found = new Set([tag, ...draft[kind]]);
+  if (kind === 'related') return found;
+  const next = apply(dict, { kind: 'edit', tag, draft: { ...draft, name: tag } }), children = new Map<string, string[]>();
+  for (const [key, entry] of Object.entries(next)) for (const parent of entry.broader ?? []) children.set(parent, [...children.get(parent) ?? [], key]);
+  const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : next[item]?.broader ?? [];
+  const queue = step(tag), seen = new Set<string>();
+  while (queue.length) {
+    const item = queue.pop()!;
+    if (!seen.has(item)) { seen.add(item); found.add(item); queue.push(...step(item)); }
+  }
+  return found;
+}
+
+export function deletionPreview(dict: RawDictionary, tag: string): { parents: string[]; children: string[]; roots: string[]; related: string[] } {
+  const { parents, children, related } = draftOf(dict, tag), next = apply(dict, { kind: 'delete', tag });
+  return { parents, children, roots: children.filter(child => next[child].broader?.length === 0), related };
+}
+
+// Entries the change rewrites that someone else changed since the edit began, and a new name someone else already used.
+export function conflicts(base: RawDictionary, latest: RawDictionary, change: Change): string[] {
+  const naming = (tag: string) => Object.keys(base).filter(key => base[key].broader?.includes(tag) || base[key].related?.includes(tag));
+  let touched: string[] = [], name: string | undefined;
+  if (change.kind === 'add') name = change.draft.name;
+  else if (change.kind === 'delete') touched = [change.tag, ...naming(change.tag)];
+  else {
+    const { tag, draft } = change, before = draftOf(base, tag), renamed = draft.name !== tag;
+    touched = [tag, ...before.children, ...draft.children, ...before.related, ...draft.related, ...renamed ? naming(tag) : []];
+    if (renamed) name = draft.name;
+  }
+  const hit = [...new Set(touched)].filter(key => JSON.stringify(base[key]) !== JSON.stringify(latest[key]));
+  const own = change.kind === 'edit' ? change.tag : undefined;
+  if (name !== undefined && Object.keys(latest).some(key => key !== own && key.toLowerCase() === name.toLowerCase())) hit.push(name);
+  return hit;
+}
+
+const inline = (value: unknown): string => Array.isArray(value) ? `[${value.map(inline).join(', ')}]`
   : value !== null && typeof value === 'object' ? `{${Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}: ${inline(item)}`).join(', ')}}`
   : JSON.stringify(value);
 

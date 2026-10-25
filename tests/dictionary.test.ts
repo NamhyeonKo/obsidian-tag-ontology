@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { apply, draftOf, emptyDraft, serialize, type RawDictionary } from '../src/dictionary.ts';
+import { apply, changedFields, conflicts, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
 
 // The user's dictionary is written one entry per line, keys in code point order, empty aliases left out.
 const userStyle = '{\n'
@@ -75,4 +75,47 @@ test('apply never mutates its input', () => {
   apply(raw, { kind: 'delete', tag: 'ml' });
   apply(raw, { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), name: 'm', related: ['sec'], children: ['loose'] } });
   assert.deepEqual(raw, copy);
+});
+
+test('names follow Obsidian tag rules and must be new, ignoring case', () => {
+  assert.equal(normalizeName(' #book '), 'book');
+  assert.equal(nameError('', raw), 'Enter a tag name.'); assert.equal(nameError('a b', raw), 'Tag names cannot contain spaces.');
+  assert.equal(nameError('a.b', raw), 'Use letters, numbers, _, - and / only.'); assert.equal(nameError('2026', raw), 'A tag needs at least one character that is not a number.');
+  assert.equal(nameError('ML', raw), '#ml is already in the dictionary.');
+  assert.equal(nameError('ML', raw, 'ml'), undefined); assert.equal(nameError('머신러닝', raw), undefined); assert.equal(nameError('type/area', raw), undefined);
+});
+
+test('parents exclude descendants and children exclude ancestors, using the draft', () => {
+  const draft = draftOf(raw, 'ml');
+  assert.deepEqual([...excluded(raw, 'ml', draft, 'parents')].sort(), ['ai-sec', 'cs', 'dl', 'ml']);
+  assert.deepEqual([...excluded(raw, 'ml', { ...draft, children: [...draft.children, 'py'] }, 'parents')].sort(), ['ai-sec', 'cs', 'dl', 'ml', 'py']);
+  assert.deepEqual([...excluded(raw, 'dl', draftOf(raw, 'dl'), 'children')].sort(), ['cs', 'dl', 'ml']);
+  assert.deepEqual([...excluded(raw, 'ml', draft, 'related')].sort(), ['ml', 'py']);
+});
+
+test('changedFields counts fields, not items', () => {
+  assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), aliases: ['a', 'b'], related: [] }), 2);
+  assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), children: ['dl', 'ai-sec'] }), 0);
+  assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), name: 'm', description: 'd' }), 2);
+});
+
+test('deletion preview names where children go', () => {
+  assert.deepEqual(deletionPreview(raw, 'ml'), { parents: ['cs'], children: ['ai-sec', 'dl'], roots: [], related: ['py'] });
+  assert.deepEqual(deletionPreview(raw, 'cs').roots, ['ml', 'py']);
+});
+
+test('only outside changes to touched entries conflict', () => {
+  const edit: Change = { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), description: 'new' } };
+  assert.deepEqual(conflicts(raw, { ...raw, sec: { description: 'changed', broader: [] } }, edit), []);
+  assert.deepEqual(conflicts(raw, { ...raw, py: { ...raw.py!, description: 'changed' } }, edit), ['py']);
+  assert.deepEqual(conflicts(raw, { ...raw, Book: { description: '' } }, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }), ['book']);
+  const gone = { ...raw }; delete gone.ml;
+  assert.deepEqual(conflicts(raw, gone, edit), ['ml']);
+});
+
+test('a rename conflicts with an outside change to any entry naming the tag, or a new entry under the new name', () => {
+  const rename: Change = { kind: 'edit', tag: 'loose', draft: { ...draftOf(raw, 'loose'), name: 'free' } };
+  assert.deepEqual(conflicts(raw, { ...raw, Free: { description: '' } }, rename), ['free']);
+  assert.deepEqual(conflicts(raw, { ...raw, ml: { ...raw.ml!, description: 'changed' } }, { kind: 'edit', tag: 'dl', draft: { ...draftOf(raw, 'dl'), name: 'deep' } }), []);
+  assert.deepEqual(conflicts(raw, { ...raw, 'ai-sec': { description: 'changed' } }, { kind: 'delete', tag: 'ml' }), ['ai-sec']);
 });
