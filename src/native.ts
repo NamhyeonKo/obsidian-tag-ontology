@@ -294,9 +294,12 @@ export class NativeGraphs {
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
+    // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
+    const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
     session.resolved = layer.resolved; session.kinds = layer.kinds; session.data = layer.data;
     const r = session.renderer, result = session.original.call(r, this.painted(session));
     this.paint(session);
+    if (restyled) r.changed();
     this.styleLinks(session);
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;

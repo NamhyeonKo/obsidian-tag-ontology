@@ -581,6 +581,19 @@ test('a native update that changes nothing leaves the renderer asleep, and choos
   assert.equal(wakes, 1, 'the new selection repaints');
 });
 
+test('a dictionary edit that only turns a parent link into a related link still redraws it', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  // ml stays in the graph as a root tag, so the core graph gets the same nodes and links and redraws nothing by itself.
+  t.owner.model = new Ontology({ ...raw, ml: { description: '', broader: [], related: ['cs'] } }, []);
+  t.controller.refresh();
+  const link = t.renderer.links.find(l => l.source.id === '#cs' && l.target.id === '#ml')!;
+  link.render();
+  assert.equal(link.line.texture, t.dashTexture);
+  assert.equal(wakes, 1, 'the link is redrawn in its new style');
+});
+
 test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
   const t = await setup({ customColors: true });
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
