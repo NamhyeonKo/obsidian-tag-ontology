@@ -612,7 +612,8 @@ export class NativeGraphs {
       list('parents', 'Parents', 'Add a parent'); list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
     }
     const status = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
-    if (tag !== undefined) footer.createEl('button', { text: 'Delete', cls: 'mod-warning' }).addEventListener('click', () => this.confirmDelete());
+    const remove = tag === undefined ? undefined : footer.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+    remove?.addEventListener('click', () => this.confirmDelete());
     footer.createDiv('tag-ontology-spacer');
     footer.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.cancel());
     const save = footer.createEl('button', { text: tag === undefined ? 'Add' : 'Save', cls: 'mod-cta' });
@@ -630,6 +631,8 @@ export class NativeGraphs {
       note.setText(error ?? hint);
       status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
       save.disabled = (tag === undefined ? !draft.name : !changes) || !!error || this.saving;
+      // A delete can't run while a save is writing, so its button says so instead of opening a dialog that does nothing.
+      if (remove) remove.disabled = this.saving;
     };
     this.syncForm();
   }
