@@ -311,9 +311,18 @@ test('saveChange writes nothing when the dictionary file is gone', async () => {
   assert.equal(t.notices.at(-1), 'Tag dictionary not found: Tag-Dictionary.json');
 });
 
+test('a note the metadata cache has not indexed yet does not stop the dictionary from loading', async () => {
+  const t = await setup();
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }];
+  (t.plugin as unknown as { app: { metadataCache: { getFileCache: () => null } } }).app.metadataCache.getFileCache = () => null;
+  t.ready(); await settle();
+  assert.deepEqual(t.plugin.model!.roots, ['root']);
+  assert.deepEqual(t.errors, []);
+});
+
 test('saveChange does not wait for the note index', async () => {
   const t = await withBase();
-  // A note whose metadata isn't cached yet: building the note index would throw.
+  // The stub has no metadata cache to read, so building the note index would throw.
   (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }];
   assert.equal(await t.plugin.saveChange(describe('New'), base), true);
 });

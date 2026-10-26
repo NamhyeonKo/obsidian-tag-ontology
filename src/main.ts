@@ -96,11 +96,12 @@ export default class TagOntologyPlugin extends Plugin {
     await vault.create(path, '{\n}\n');
   }
 
+  // A note the metadata cache hasn't indexed yet (one that arrived while Obsidian was closed) is left out until its
+  // 'changed' event reloads, instead of failing the whole dictionary.
   private notes(): Note[] {
-    return this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path)).map((note) => {
+    return this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path)).flatMap((note) => {
       const cache = this.app.metadataCache.getFileCache(note);
-      if (!cache) throw new Error(`The metadata cache is not ready yet: ${note.path}`);
-      return { path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] };
+      return cache ? [{ path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] }] : [];
     });
   }
 
