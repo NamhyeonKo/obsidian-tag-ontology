@@ -822,8 +822,9 @@ export class NativeGraphs {
   private fit(session: Session) {
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
-    const xs = r.nodes.map(n => n.x), ys = r.nodes.map(n => n.y);
-    const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+    // One pass rather than Math.min(...xs): spreading a graph of about 125,000 nodes into one call overflows the stack.
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
     const scale = Math.min(1.4, r.width * devicePixelRatio / (right - left + 220), r.height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
     r.setPan(r.width * devicePixelRatio / 2 - (left + right) / 2 * scale, r.height * devicePixelRatio / 2 - (top + bottom) / 2 * scale);

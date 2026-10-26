@@ -462,6 +462,15 @@ test('in a tree, the reheat the core graph sends with new nodes never reaches th
   assert.ok(messages.slice(-2).every(m => 'alpha' in m), 'Force keeps the core reheat and adds its own');
 });
 
+test('Fit works on a graph too big to spread into one call', async () => {
+  const t = await setup();
+  t.controller.attach();
+  // Spreading about 125,000 numbers into one Math.min call overflows the stack.
+  t.renderer.nodes = Array.from({ length: 130000 }, (_, i) => ({ id: String(i), x: i % 1000, y: Math.floor(i / 1000), fx: null, fy: null, color: null }));
+  assert.doesNotThrow(() => t.click('Fit'));
+  assert.equal(t.renderer.scale, Math.min(1.4, 800 / (999 + 220), 600 / (129 + 220)));
+});
+
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
   t.controller.attach();
