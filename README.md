@@ -114,7 +114,7 @@ Rules:
 - **Roots need `"broader": []`.** A tag with no `broader` key at all is treated as not yet placed and does not appear in the graph.
 - Every tag named in `broader` or `related` must exist in the dictionary.
 - A tag cannot reference itself, and `broader` links cannot form a cycle.
-- If the dictionary is invalid, opening the view shows a notice with the reason.
+- If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
 
 See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
 

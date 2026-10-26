@@ -22,11 +22,12 @@ class NativeGraphs {
   attach() { this.calls.push('attach'); }
   refresh(redraw = true) { this.calls.push(`refresh:${redraw}`); }
   showPanel() { this.calls.push('panel'); }
+  renderPanel() { this.calls.push('render-panel'); }
   destroy() { this.calls.push('destroy'); }
 }
 
 interface Main {
-  native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary;
+  native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
 }
@@ -157,7 +158,7 @@ test('a manual reload reports failure and keeps the last valid model and graph',
   assert.match(t.notices[0], /dictionary/i);
   assert.equal(t.errors.length, 1);
   assert.equal(t.plugin.model, previous);
-  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel']);
 });
 
 test('a settings change reports a dictionary reload failure', async () => {
@@ -177,7 +178,27 @@ test('a background reload failure only logs and keeps the last valid model', asy
   assert.deepEqual(t.notices, []);
   assert.equal(t.errors.length, 1);
   assert.equal(t.plugin.model, previous);
-  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel']);
+});
+
+test('a broken dictionary at startup is reported, and the sidebar keeps the reason until it loads', async () => {
+  const t = await setup();
+  t.vault.text = '{ broken'; t.ready(); await settle();
+  assert.equal(t.notices.length, 1);
+  assert.match(t.plugin.error!, /^Could not read the tag dictionary/);
+  assert.deepEqual(t.plugin.native.calls, ['render-panel']);
+  t.vault.text = dictionary;
+  t.events.get('modify')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
+  assert.equal(t.plugin.error, undefined);
+  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:true']);
+});
+
+test('a missing dictionary at startup is left to the sidebar, without a notice', async () => {
+  const t = await setup();
+  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  t.ready(); await settle();
+  assert.deepEqual(t.notices, []);
+  assert.match(t.plugin.error!, /^Tag dictionary not found/);
 });
 
 test('a pending manual reload does not report its failure after unload', async () => {

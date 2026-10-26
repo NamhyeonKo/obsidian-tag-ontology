@@ -14,6 +14,8 @@ export default class TagOntologyPlugin extends Plugin {
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
+  // Why the last reload failed; the sidebar shows it until one works again.
+  error?: string;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
   // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
@@ -35,7 +37,8 @@ export default class TagOntologyPlugin extends Plugin {
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
-    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews()); });
+    // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath) instanceof TFile })); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -167,10 +170,12 @@ export default class TagOntologyPlugin extends Plugin {
 
   private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
     if (this.disposed) return;
-    try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
+    try { await this.loadModel(); this.error = undefined; if (!this.disposed) this.native.refresh(redraw); }
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
+      this.error = error instanceof Error ? error.message : String(error);
+      this.native.renderPanel();
       if (notify) new Notice(`Could not reload the dictionary: ${String(error)}`);
     }
   }
