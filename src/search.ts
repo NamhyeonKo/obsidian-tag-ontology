@@ -3,7 +3,7 @@ import type { Suggestion } from './ontology.ts';
 
 // Type-ahead for the graph search box, using Obsidian's own suggestion popover.
 export class TagSuggest extends AbstractInputSuggest<Suggestion> {
-  constructor(app: App, private input: HTMLInputElement,
+  constructor(app: App, input: HTMLInputElement,
     private source: (query: string) => Suggestion[], private onChoose: (tag: string) => void) {
     super(app, input);
   }
@@ -19,7 +19,7 @@ export class TagSuggest extends AbstractInputSuggest<Suggestion> {
   }
 
   selectSuggestion(value: Suggestion): void {
-    this.input.value = '';
+    this.setValue('');
     this.close();
     this.onChoose(value.tag);
   }

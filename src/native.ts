@@ -20,7 +20,7 @@ interface NativeRenderer {
   setScale(scale: number): void; setPan(x: number, y: number): void;
   fShowArrow: boolean;
   getHighlightNode: () => unknown;
-  worker: Worker;
+  worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
   nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[];
   links: NativeLink[];
@@ -41,7 +41,7 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
-  fitFrame?: number; stopFit: () => void; repin: () => void;
+  fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -139,19 +139,19 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
-      // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
-      // restarted its simulation, which would then carry the node off. The tree layouts pin it again and ease it back to
-      // its place with a slight overshoot, like a spring; grabbing it again stops that.
-      // ponytail: a release outside the graph pane is missed; listen on window if that matters.
+      // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
+      // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
+      // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
+      // listening on the same window after it catches a release anywhere, such as over the sidebar. A drag starts with a
+      // press on the graph, so each press listens on the window the graph is in then, which follows a tab moved to a popout.
       session.repin = () => {
         if (!session.active || this.owner.settings.layout === 'force') return;
         const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
         if (!released.length) return;
-        r.worker.postMessage({ run: false });
         for (const { node } of released) { node.fx = node.x; node.fy = node.y; }
         this.follow(session, progress => {
           const k = 1 + 2.2 * (progress - 1) ** 3 + 1.2 * (progress - 1) ** 2;
@@ -162,7 +162,8 @@ export class NativeGraphs {
           r.changed();
         }, 450);
       };
-      view.contentEl.addEventListener('pointerup', session.repin);
+      session.grab = () => view.contentEl.win.addEventListener('pointerup', session.repin, { once: true });
+      view.contentEl.addEventListener('pointerdown', session.grab, { capture: true });
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
@@ -297,7 +298,14 @@ export class NativeGraphs {
     // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
     const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
     session.resolved = layer.resolved; session.kinds = layer.kinds; session.data = layer.data;
-    const r = session.renderer, result = session.original.call(r, this.painted(session));
+    const r = session.renderer, worker = r.worker, post = worker.postMessage;
+    // A tree pins every node, so the reheat the core graph sends with new nodes or links would only simulate positions
+    // nobody sees. The worker still gets the nodes and links, for Force to start from.
+    if (settings.layout !== 'force') worker.postMessage = (message: Record<string, unknown>) => {
+      const rest = { ...message }; delete rest.alpha; delete rest.run; post.call(worker, rest);
+    };
+    let result: unknown;
+    try { result = session.original.call(r, this.painted(session)); } finally { worker.postMessage = post; }
     this.paint(session);
     if (restyled) r.changed();
     this.styleLinks(session);
@@ -361,14 +369,18 @@ export class NativeGraphs {
       .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
     const positions = treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
-    r.worker.postMessage({ run: false }); r.workerResults = null; session.home.clear();
+    r.workerResults = null; session.home.clear();
+    let moved = false;
     for (const node of r.nodes) {
       const p = positions.get(node.id)!;
       // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
-      node.x = p.x + .01; node.y = p.y + .01; session.home.set(node.id, { x: node.x, y: node.y });
-      node.fx = node.x; node.fy = node.y;
+      const x = p.x + .01, y = p.y + .01;
+      session.home.set(node.id, { x, y });
+      if (node.x === x && node.y === y && node.fx === x && node.fy === y) continue;
+      node.x = node.fx = x; node.y = node.fy = y; moved = true;
     }
-    r.changed();
+    // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
+    if (moved) r.changed();
   }
 
   private reveal(tag: string) {
@@ -810,8 +822,9 @@ export class NativeGraphs {
   private fit(session: Session) {
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
-    const xs = r.nodes.map(n => n.x), ys = r.nodes.map(n => n.y);
-    const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+    // One pass rather than Math.min(...xs): spreading a graph of about 125,000 nodes into one call overflows the stack.
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
     const scale = Math.min(1.4, r.width * devicePixelRatio / (right - left + 220), r.height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
     r.setPan(r.width * devicePixelRatio / 2 - (left + right) / 2 * scale, r.height * devicePixelRatio / 2 - (top + bottom) / 2 * scale);
@@ -823,7 +836,8 @@ export class NativeGraphs {
     s.active = false;
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
-    s.view.contentEl.removeEventListener('pointerup', s.repin);
+    s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;

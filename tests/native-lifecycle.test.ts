@@ -14,6 +14,8 @@ class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   css: Record<string, string> = {}; disabled = false;
+  // The window the element is in, like Obsidian's Node.win.
+  win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
@@ -24,7 +26,8 @@ class Element {
     Object.assign(child.attrs, options?.attr ?? {});
     return child;
   }
-  addEventListener(event: string, fn: (event?: unknown) => void) { this.events.set(event, fn); }
+  // Every listener for an event runs, as in the DOM.
+  addEventListener(event: string, fn: (event?: unknown) => void) { const prev = this.events.get(event); this.events.set(event, prev ? e => { prev(e); fn(e); } : fn); }
   removeEventListener(event: string) { this.events.delete(event); }
   setAttribute(name: string, value: string) { this.attrs[name] = value; }
   addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
@@ -114,7 +117,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     },
   };
   const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick, getHighlightNode: renderer.getHighlightNode };
-  const contentEl = new Element();
+  const contentEl = new Element(), win = new Element(); contentEl.win = win;
   const graphOptions = { showTags, showOrphans: true }, optionWrites: object[] = [];
   const dataEngine = {
     getOptions: () => ({ ...graphOptions }),
@@ -148,11 +151,11 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   };
   const addTab = () => {
     const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
-    const tabEl = new Element();
+    const tabEl = new Element(); tabEl.win = win;
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -382,22 +385,36 @@ test('tree pins every node and hands the tags outside the hierarchy to the layou
   assert.deepEqual([...layoutOutside.at(-1)!].sort(), ['#loose', '#to-read']);
 });
 
-test('in a tree, a node released after a drag springs back to its place', async () => {
+test('in a tree, a node released after a drag springs back to its place, even outside the graph pane', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
   const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
-  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
+  // The drag starts with a press on the graph. The core graph unpins the node under the pointer on release, after its
+  // simulation ran for the drag; it listens on the window, so the release can be anywhere, such as over the sidebar.
+  t.contentEl.events.get('pointerdown')!();
   node.x += 300; node.y += 100; node.fx = null; node.fy = null;
-  t.contentEl.events.get('pointerup')!();
-  assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
+  t.win.events.get('pointerup')?.();
   t.tick(100);
   assert.ok(node.fx === node.x && Math.abs(node.x - home[0]) < 300, 'pinned on its way back');
   t.tick(1000);
   assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
   // Force leaves the core behavior alone.
   t.click('Layout: Force');
-  node.fx = null; t.contentEl.events.get('pointerup')!();
+  t.contentEl.events.get('pointerdown')!(); node.fx = null; t.win.events.get('pointerup')?.();
   assert.equal(node.fx, null);
+});
+
+test('a tree node springs back after its tab moved to another window', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  // Obsidian keeps the leaf and the view when a tab moves to a popout window, so nothing attaches again.
+  const popout = new Element(); t.contentEl.win = popout;
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
+  t.contentEl.events.get('pointerdown')!();
+  node.x += 300; node.fx = null; node.fy = null;
+  popout.events.get('pointerup')?.();
+  t.tick(1000);
+  assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
 });
 
 test('force reheats the simulation only when it takes over the layout, not on every update', async () => {
@@ -410,6 +427,48 @@ test('force reheats the simulation only when it takes over the layout, not on ev
   assert.equal(reheats(), 1, 'a settled graph stays still');
   t.click('Layout: Vertical tree'); t.click('Layout: Force');
   assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
+});
+
+// The core graph keeps a node's object, and with it the node's position, for as long as the node stays in the data.
+const keepNodes = (renderer: Awaited<ReturnType<typeof setup>>['renderer']) => {
+  const set = renderer.setData;
+  renderer.setData = function (data: NativeData) {
+    const old = new Map(this.nodes.map(n => [n.id, n]));
+    set.call(this, data); this.nodes = this.nodes.map(n => old.get(n.id) ?? n);
+  };
+};
+
+test('in a tree, a native update that moves nothing asks for no redraw', async () => {
+  const t = await setup({ layout: 'tree', expanded: ['cs'] });
+  keepNodes(t.renderer);
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  t.renderer.setData(core());
+  assert.equal(wakes, 0);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
+});
+
+test('in a tree, the reheat the core graph sends with new nodes never reaches the simulation', async () => {
+  const t = await setup({ layout: 'tree' });
+  const set = t.renderer.setData;
+  // Like the core graph, the stub hands the worker the nodes and links with a reheat.
+  t.renderer.setData = function (data: NativeData) { set.call(this, data); this.worker.postMessage({ nodes: {}, links: [], alpha: 0.3, run: true }); };
+  t.controller.attach();
+  const messages = t.renderer.worker.messages as Record<string, unknown>[];
+  assert.ok(messages.every(m => !('alpha' in m) && !('run' in m)), 'nothing restarts the simulation');
+  assert.ok(messages.some(m => 'nodes' in m && 'links' in m), 'the worker still gets the nodes and links');
+  t.click('Layout: Force');
+  assert.ok(messages.slice(-2).every(m => 'alpha' in m), 'Force keeps the core reheat and adds its own');
+});
+
+test('Fit works on a graph too big to spread into one call', async () => {
+  const t = await setup();
+  t.controller.attach();
+  // Spreading about 125,000 numbers into one Math.min call overflows the stack.
+  t.renderer.nodes = Array.from({ length: 130000 }, (_, i) => ({ id: String(i), x: i % 1000, y: Math.floor(i / 1000), fx: null, fy: null, color: null }));
+  assert.doesNotThrow(() => t.click('Fit'));
+  assert.equal(t.renderer.scale, Math.min(1.4, 800 / (999 + 220), 600 / (129 + 220)));
 });
 
 test('the notes button is disabled in tree', async () => {
