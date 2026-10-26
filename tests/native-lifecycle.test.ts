@@ -683,6 +683,19 @@ test('a second Save click while saving writes once', async () => {
   assert.equal(t.owner.changes.length, 1);
 });
 
+test('Delete is off while a save is in progress and comes back after it', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  assert.equal(button(t, 'Delete').disabled, false);
+  t.click('Save');
+  assert.equal(button(t, 'Delete').disabled, true);
+  finish(false); await settle();
+  assert.equal(button(t, 'Delete').disabled, false);
+});
+
 test('a failed save keeps the form and the draft', async () => {
   const t = await setup();
   t.owner.saveChange = async () => false;
