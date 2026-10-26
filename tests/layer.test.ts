@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Ontology } from '../src/ontology.ts';
-import { addEdges, applyCollapse, buildLayer, edgeKey, resolveTags, type NativeData } from '../src/layer.ts';
+import { addEdges, applyCollapse, buildLayer, edgeKey, hideNotes, resolveTags, type NativeData } from '../src/layer.ts';
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -93,6 +93,17 @@ test('hideNotes keeps only tag nodes and their links among tags', () => {
   const { data } = buildLayer(core(), model, { expanded: new Set(['cs']), showNotes: false, showRelated: true });
   assert.ok(Object.values(data.nodes).every(n => n.type === 'tag'));
   assert.ok(data.nodes['#cs']!.links['#ml']);
+});
+
+test('hiding notes gives the layer with notes, less its notes', () => {
+  // The core graph never links a tag to anything, but a tag that did must still come out the same.
+  const input = withOverfitting(); input.nodes['#loose']!.links = { 'A.md': true, '#DL': true };
+  for (const expanded of [[], ['cs'], ['cs', 'ml'], ['cs', 'ml', 'sec']]) {
+    const state = { expanded: new Set(expanded), showRelated: true, tagColor: { a: 1, rgb: 0x00ff00 } };
+    const hidden = buildLayer(input, model, { ...state, showNotes: false }), shown = buildLayer(input, model, { ...state, showNotes: true });
+    assert.deepEqual(hidden.data, hideNotes(shown.data), expanded.join());
+    assert.deepEqual(hidden.kinds, shown.kinds); assert.deepEqual(hidden.resolved, shown.resolved);
+  }
 });
 
 test('buildLayer passes numLinks through and leaves the input untouched', () => {
