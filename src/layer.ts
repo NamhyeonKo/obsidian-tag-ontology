@@ -104,11 +104,12 @@ export function hideNotes(data: NativeData): NativeData {
 }
 
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
-  const resolved = resolveTags(model, data, state.expanded);
-  const collapsed = applyCollapse(data, resolved, model);
-  const edges = addEdges(collapsed, resolved, model, state.showRelated);
-  const layered = state.showNotes ? edges.data : hideNotes(edges.data);
+  // Hidden notes go first, so collapsing never copies them only to drop them.
+  const shown = state.showNotes ? data : hideNotes(data);
+  const resolved = resolveTags(model, shown, state.expanded);
+  const collapsed = applyCollapse(shown, resolved, model);
+  const { data: layered, kinds } = addEdges(collapsed, resolved, model, state.showRelated);
   // Every node here is already a copy, so coloring tags leaves the core data alone.
   if (state.tagColor) for (const node of Object.values(layered.nodes)) if (node.type === 'tag') node.color = state.tagColor;
-  return { data: layered, kinds: edges.kinds, resolved };
+  return { data: layered, kinds, resolved };
 }
