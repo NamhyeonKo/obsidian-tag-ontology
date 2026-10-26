@@ -605,7 +605,7 @@ export class NativeGraphs {
     const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder); };
     if (tag === undefined) {
       list('parents', 'Parents', 'Add a parent');
-      form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
+      if (!draft.parents.length) form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
       describe(); aliases();
     } else {
       describe(); aliases();

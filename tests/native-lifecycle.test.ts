@@ -761,6 +761,18 @@ test('Add sends an add change with no parent and shows the new tag', async () =>
   assert.equal(heading(t), 'book'); assert.equal(t.owner.reloads, 1);
 });
 
+test('the new tag form says it becomes a root tag only while it has no parent', async () => {
+  const t = await setup();
+  const hint = () => t.sidebar.all().some(el => el.text === 'No parent: it becomes a root tag.');
+  t.click('New tag');
+  assert.equal(hint(), true);
+  t.click('Add a parent');
+  t.suggests.filter(s => s.input.attrs.placeholder === 'Add a parent').at(-1)!.onChoose('cs');
+  assert.equal(hint(), false);
+  t.click('Remove #cs');
+  assert.equal(hint(), true);
+});
+
 test('Add is disabled until the name is new, ignoring case', async () => {
   const t = await setup();
   t.click('New tag');
