@@ -1009,3 +1009,18 @@ test('the new tag form opens its parent and alias inputs with + too', async () =
   t.click('Add a parent');
   assert.ok(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'));
 });
+
+test('text typed in a tag picker survives a redraw, and choosing a tag or switching fields clears it', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const input = () => t.sidebar.all().find(el => el.tag === 'input' && el.attrs.placeholder === 'Add a related tag')!;
+  t.click('Add a related tag');
+  type(input(), 'cry');
+  t.click('Remove #cs');
+  assert.equal(input().value, 'cry');
+  t.suggests.filter(s => s.input === input()).at(-1)!.onChoose('crypto');
+  assert.equal(input().value, '');
+  type(input(), 'se');
+  t.click('Add a parent'); t.click('Add a related tag');
+  assert.equal(input().value, '');
+});
