@@ -696,6 +696,21 @@ test('Delete is off while a save is in progress and comes back after it', async 
   assert.equal(button(t, 'Delete').disabled, false);
 });
 
+test('leaving the form while a save is writing is ignored, and the save then shows the tag', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  t.click('Save');
+  assert.equal(button(t, 'Cancel').disabled, true);
+  t.click('Cancel'); t.click('Home');
+  assert.equal(t.modals.length, 0);
+  finish(true); await settle();
+  assert.equal(heading(t), 'ml');
+  assert.equal(button(t, 'Cancel'), undefined);
+});
+
 test('a failed save keeps the form and the draft', async () => {
   const t = await setup();
   t.owner.saveChange = async () => false;
