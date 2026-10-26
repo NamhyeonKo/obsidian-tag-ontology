@@ -106,6 +106,8 @@ export class NativeGraphs {
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
   // Unsaved edits are only dropped when the user says so.
   private leave(next: () => void) {
+    // A save or delete that is writing can't be called off, and it moves the sidebar itself when it ends.
+    if (this.saving) return;
     const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
     new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
@@ -616,7 +618,8 @@ export class NativeGraphs {
     const remove = tag === undefined ? undefined : footer.createEl('button', { text: 'Delete', cls: 'mod-warning' });
     remove?.addEventListener('click', () => this.confirmDelete());
     footer.createDiv('tag-ontology-spacer');
-    footer.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.cancel());
+    const cancel = footer.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.cancel());
     const save = footer.createEl('button', { text: tag === undefined ? 'Add' : 'Save', cls: 'mod-cta' });
     save.addEventListener('click', () => { void this.save(); });
     const notes = tag === undefined ? 0 : model.counts(tag).direct;
@@ -632,7 +635,8 @@ export class NativeGraphs {
       note.setText(error ?? hint);
       status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
       save.disabled = (tag === undefined ? !draft.name : !changes) || !!error || this.saving;
-      // A delete can't run while a save is writing, so its button says so instead of opening a dialog that does nothing.
+      // Neither can run while a save is writing, so their buttons say so instead of opening a dialog that does nothing.
+      cancel.disabled = this.saving;
       if (remove) remove.disabled = this.saving;
     };
     this.syncForm();
