@@ -10,8 +10,13 @@ class Div {
   // Spread so the options object, built inside the module's realm, compares with plain objects here.
   createDiv(options: { text: string; cls: string }) { this.children.push({ ...options }); }
 }
-// Stands in for Obsidian's popover base class; only close() is used.
-class AbstractInputSuggest { closed = 0; close() { this.closed++; } }
+// Stands in for Obsidian's popover base class: like it, setValue() writes into the input it was given.
+class AbstractInputSuggest {
+  closed = 0; textInputEl: { value: string };
+  constructor(_app: unknown, textInputEl: { value: string }) { this.textInputEl = textInputEl; }
+  setValue(value: string) { this.textInputEl.value = value; }
+  close() { this.closed++; }
+}
 interface Suggest { closed: number; renderSuggestion(value: Suggestion, el: Div): void; selectSuggestion(value: Suggestion): void; getSuggestions(query: string): Suggestion[] }
 
 async function setup() {
