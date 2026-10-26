@@ -400,6 +400,18 @@ test('in a tree, a node released after a drag springs back to its place', async 
   assert.equal(node.fx, null);
 });
 
+test('force reheats the simulation only when it takes over the layout, not on every update', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const reheats = () => t.renderer.worker.messages.filter(m => 'alpha' in (m as object)).length;
+  assert.equal(reheats(), 1, 'the first render starts the simulation');
+  // The core graph re-sends its data on every file open and metadata change, and reheats by itself when nodes or links change.
+  t.renderer.setData(core()); t.controller.refresh();
+  assert.equal(reheats(), 1, 'a settled graph stays still');
+  t.click('Layout: Vertical tree'); t.click('Layout: Force');
+  assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
+});
+
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
   t.controller.attach();
