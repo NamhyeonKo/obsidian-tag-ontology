@@ -130,7 +130,10 @@ export default class TagOntologyPlugin extends Plugin {
         const next = apply(latest, change);
         // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
         new Ontology(next, []);
-        return serialize(next);
+        // A file kept with CRLF line endings stays that way, so a save still changes only the lines it touches.
+        // serialize's only raw newlines are line breaks: JSON.stringify escapes them inside strings.
+        const out = serialize(next);
+        return text.includes('\r\n') ? out.replace(/\n/g, '\r\n') : out;
       });
       return true;
     } catch (error) {

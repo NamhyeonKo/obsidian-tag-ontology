@@ -683,6 +683,34 @@ test('a second Save click while saving writes once', async () => {
   assert.equal(t.owner.changes.length, 1);
 });
 
+test('Delete is off while a save is in progress and comes back after it', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  assert.equal(button(t, 'Delete').disabled, false);
+  t.click('Save');
+  assert.equal(button(t, 'Delete').disabled, true);
+  finish(false); await settle();
+  assert.equal(button(t, 'Delete').disabled, false);
+});
+
+test('leaving the form while a save is writing is ignored, and the save then shows the tag', async () => {
+  const t = await setup();
+  let finish = (_ok: boolean) => {};
+  t.owner.saveChange = (change: Change) => { t.owner.changes.push(change); return new Promise<boolean>(resolve => { finish = resolve; }); };
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Description'), 'x');
+  t.click('Save');
+  assert.equal(button(t, 'Cancel').disabled, true);
+  t.click('Cancel'); t.click('Home');
+  assert.equal(t.modals.length, 0);
+  finish(true); await settle();
+  assert.equal(heading(t), 'ml');
+  assert.equal(button(t, 'Cancel'), undefined);
+});
+
 test('a failed save keeps the form and the draft', async () => {
   const t = await setup();
   t.owner.saveChange = async () => false;
@@ -995,4 +1023,19 @@ test('the new tag form opens its parent and alias inputs with + too', async () =
   assert.equal(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'), false);
   t.click('Add a parent');
   assert.ok(t.sidebar.all().some(el => el.tag === 'input' && el.attrs.placeholder === 'Add a parent'));
+});
+
+test('text typed in a tag picker survives a redraw, and choosing a tag or switching fields clears it', async () => {
+  const t = await setup();
+  t.search('ml'); t.click('Edit tag');
+  const input = () => t.sidebar.all().find(el => el.tag === 'input' && el.attrs.placeholder === 'Add a related tag')!;
+  t.click('Add a related tag');
+  type(input(), 'cry');
+  t.click('Remove #cs');
+  assert.equal(input().value, 'cry');
+  t.suggests.filter(s => s.input === input()).at(-1)!.onChoose('crypto');
+  assert.equal(input().value, '');
+  type(input(), 'se');
+  t.click('Add a parent'); t.click('Add a related tag');
+  assert.equal(input().value, '');
 });

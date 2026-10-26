@@ -51,7 +51,8 @@ type ToggleKey = 'showNotes' | 'showRelated';
 type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
-type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; open?: 'aliases' | ListKey };
+// query: text typed in an open parent, child or related input, so a redraw keeps it.
+type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
@@ -105,6 +106,8 @@ export class NativeGraphs {
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
   // Unsaved edits are only dropped when the user says so.
   private leave(next: () => void) {
+    // A save or delete that is writing can't be called off, and it moves the sidebar itself when it ends.
+    if (this.saving) return;
     const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
     new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
@@ -612,9 +615,11 @@ export class NativeGraphs {
       list('parents', 'Parents', 'Add a parent'); list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
     }
     const status = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
-    if (tag !== undefined) footer.createEl('button', { text: 'Delete', cls: 'mod-warning' }).addEventListener('click', () => this.confirmDelete());
+    const remove = tag === undefined ? undefined : footer.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+    remove?.addEventListener('click', () => this.confirmDelete());
     footer.createDiv('tag-ontology-spacer');
-    footer.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.cancel());
+    const cancel = footer.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.cancel());
     const save = footer.createEl('button', { text: tag === undefined ? 'Add' : 'Save', cls: 'mod-cta' });
     save.addEventListener('click', () => { void this.save(); });
     const notes = tag === undefined ? 0 : model.counts(tag).direct;
@@ -630,6 +635,9 @@ export class NativeGraphs {
       note.setText(error ?? hint);
       status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
       save.disabled = (tag === undefined ? !draft.name : !changes) || !!error || this.saving;
+      // Neither can run while a save is writing, so their buttons say so instead of opening a dialog that does nothing.
+      cancel.disabled = this.saving;
+      if (remove) remove.disabled = this.saving;
     };
     this.syncForm();
   }
@@ -656,6 +664,7 @@ export class NativeGraphs {
       mode.open = open ? undefined : key;
       // A closed alias input leaves nothing half typed behind to count as a change.
       if (mode.open !== 'aliases') mode.alias = '';
+      mode.query = '';
       this.drawForm();
     });
     return open;
@@ -666,11 +675,13 @@ export class NativeGraphs {
     const list = this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
     if (!this.opener(list, kind, placeholder)) return;
     const input = parent.createEl('input', { type: 'text', attr: { placeholder } });
+    input.value = mode.query ?? '';
+    input.addEventListener('input', () => { mode.query = input.value; });
     new TagSuggest(this.owner.app, input, query => {
       const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
       // The model can already hold tags added to the file after the form opened; the draft only knows the base.
       return (this.owner.model?.suggest(query, 50) ?? []).filter(s => Object.hasOwn(mode.base, s.tag) && !skip.has(s.tag)).slice(0, 10);
-    }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; this.drawForm(); });
+    }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; mode.query = ''; this.drawForm(); });
     input.focus();
   }
 

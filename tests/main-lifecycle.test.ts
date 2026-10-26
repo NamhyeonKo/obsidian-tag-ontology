@@ -275,6 +275,14 @@ test('saveChange writes the applied change in the one-entry-per-line format', as
   assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
 });
 
+test('saveChange keeps the CRLF line endings of a dictionary written that way', async () => {
+  const t = await withBase();
+  const crlf = (text: string) => text.replace(/\n/g, '\r\n');
+  t.vault.text = crlf(serialize(base));
+  assert.equal(await t.plugin.saveChange(describe('New'), base), true);
+  assert.equal(t.vault.text, crlf(serialize(apply(base, describe('New')))));
+});
+
 test('saveChange refuses when a touched entry changed outside, and writes nothing', async () => {
   const t = await withBase();
   t.vault.text = serialize({ ...base, child: { description: 'Outside', broader: ['root'] } });
