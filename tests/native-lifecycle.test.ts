@@ -389,7 +389,6 @@ test('in a tree, a node released after a drag springs back to its place', async 
   // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
   node.x += 300; node.y += 100; node.fx = null; node.fy = null;
   t.contentEl.events.get('pointerup')!();
-  assert.deepEqual({ ...t.renderer.worker.messages.at(-1) as object }, { run: false }, 'the simulation stops');
   t.tick(100);
   assert.ok(node.fx === node.x && Math.abs(node.x - home[0]) < 300, 'pinned on its way back');
   t.tick(1000);
@@ -410,6 +409,39 @@ test('force reheats the simulation only when it takes over the layout, not on ev
   assert.equal(reheats(), 1, 'a settled graph stays still');
   t.click('Layout: Vertical tree'); t.click('Layout: Force');
   assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
+});
+
+// The core graph keeps a node's object, and with it the node's position, for as long as the node stays in the data.
+const keepNodes = (renderer: Awaited<ReturnType<typeof setup>>['renderer']) => {
+  const set = renderer.setData;
+  renderer.setData = function (data: NativeData) {
+    const old = new Map(this.nodes.map(n => [n.id, n]));
+    set.call(this, data); this.nodes = this.nodes.map(n => old.get(n.id) ?? n);
+  };
+};
+
+test('in a tree, a native update that moves nothing asks for no redraw', async () => {
+  const t = await setup({ layout: 'tree', expanded: ['cs'] });
+  keepNodes(t.renderer);
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  t.renderer.setData(core());
+  assert.equal(wakes, 0);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
+});
+
+test('in a tree, the reheat the core graph sends with new nodes never reaches the simulation', async () => {
+  const t = await setup({ layout: 'tree' });
+  const set = t.renderer.setData;
+  // Like the core graph, the stub hands the worker the nodes and links with a reheat.
+  t.renderer.setData = function (data: NativeData) { set.call(this, data); this.worker.postMessage({ nodes: {}, links: [], alpha: 0.3, run: true }); };
+  t.controller.attach();
+  const messages = t.renderer.worker.messages as Record<string, unknown>[];
+  assert.ok(messages.every(m => !('alpha' in m) && !('run' in m)), 'nothing restarts the simulation');
+  assert.ok(messages.some(m => 'nodes' in m && 'links' in m), 'the worker still gets the nodes and links');
+  t.click('Layout: Force');
+  assert.ok(messages.slice(-2).every(m => 'alpha' in m), 'Force keeps the core reheat and adds its own');
 });
 
 test('the notes button is disabled in tree', async () => {
