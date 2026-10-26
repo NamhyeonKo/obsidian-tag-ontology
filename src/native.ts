@@ -297,14 +297,16 @@ export class NativeGraphs {
     const r = session.renderer, result = session.original.call(r, layer.data);
     session.data = layer.data; this.paint(session);
     this.styleLinks(session);
-    if (settings.layout !== 'force') this.staticLayout(session);
-    else {
-      for (const node of r.nodes) { node.fx = null; node.fy = null; }
-      r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
-    }
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
     session.layout = settings.layout;
+    if (settings.layout !== 'force') this.staticLayout(session);
+    // Taking over from a tree releases its pins and restarts the simulation from the tree's positions. Otherwise the core
+    // graph reheats by itself when nodes or links change, and reheating on every update would shake a settled graph.
+    else if (layoutChanged) {
+      for (const node of r.nodes) { node.fx = null; node.fy = null; }
+      r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
+    }
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
