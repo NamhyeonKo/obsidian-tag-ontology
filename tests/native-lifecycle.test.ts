@@ -412,6 +412,26 @@ test('force reheats the simulation only when it takes over the layout, not on ev
   assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
 });
 
+// The core graph keeps a node's object, and with it the node's position, for as long as the node stays in the data.
+const keepNodes = (renderer: Awaited<ReturnType<typeof setup>>['renderer']) => {
+  const set = renderer.setData;
+  renderer.setData = function (data: NativeData) {
+    const old = new Map(this.nodes.map(n => [n.id, n]));
+    set.call(this, data); this.nodes = this.nodes.map(n => old.get(n.id) ?? n);
+  };
+};
+
+test('in a tree, a native update that moves nothing asks for no redraw', async () => {
+  const t = await setup({ layout: 'tree', expanded: ['cs'] });
+  keepNodes(t.renderer);
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  t.renderer.setData(core());
+  assert.equal(wakes, 0);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
+});
+
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
   t.controller.attach();

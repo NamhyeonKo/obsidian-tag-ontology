@@ -362,13 +362,17 @@ export class NativeGraphs {
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
     const positions = treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
     r.worker.postMessage({ run: false }); r.workerResults = null; session.home.clear();
+    let moved = false;
     for (const node of r.nodes) {
       const p = positions.get(node.id)!;
       // The renderer treats fx = 0 as unpinned, so keep coordinates off exact zero.
-      node.x = p.x + .01; node.y = p.y + .01; session.home.set(node.id, { x: node.x, y: node.y });
-      node.fx = node.x; node.fy = node.y;
+      const x = p.x + .01, y = p.y + .01;
+      session.home.set(node.id, { x, y });
+      if (node.x === x && node.y === y && node.fx === x && node.fy === y) continue;
+      node.x = node.fx = x; node.y = node.fy = y; moved = true;
     }
-    r.changed();
+    // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
+    if (moved) r.changed();
   }
 
   private reveal(tag: string) {
