@@ -14,6 +14,8 @@ class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   css: Record<string, string> = {}; disabled = false;
+  // The window the element is in, like Obsidian's Node.win.
+  win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
@@ -114,7 +116,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     },
   };
   const original = { setData: renderer.setData, onNodeClick: renderer.onNodeClick, getHighlightNode: renderer.getHighlightNode };
-  const contentEl = new Element();
+  const contentEl = new Element(), win = new Element(); contentEl.win = win;
   const graphOptions = { showTags, showOrphans: true }, optionWrites: object[] = [];
   const dataEngine = {
     getOptions: () => ({ ...graphOptions }),
@@ -148,11 +150,11 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   };
   const addTab = () => {
     const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
-    const tabEl = new Element();
+    const tabEl = new Element(); tabEl.win = win;
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -382,20 +384,21 @@ test('tree pins every node and hands the tags outside the hierarchy to the layou
   assert.deepEqual([...layoutOutside.at(-1)!].sort(), ['#loose', '#to-read']);
 });
 
-test('in a tree, a node released after a drag springs back to its place', async () => {
+test('in a tree, a node released after a drag springs back to its place, even outside the graph pane', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
   const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
-  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag.
+  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag. It listens on the
+  // window, so the release can be anywhere, such as over the sidebar.
   node.x += 300; node.y += 100; node.fx = null; node.fy = null;
-  t.contentEl.events.get('pointerup')!();
+  t.win.events.get('pointerup')?.();
   t.tick(100);
   assert.ok(node.fx === node.x && Math.abs(node.x - home[0]) < 300, 'pinned on its way back');
   t.tick(1000);
   assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
   // Force leaves the core behavior alone.
   t.click('Layout: Force');
-  node.fx = null; t.contentEl.events.get('pointerup')!();
+  node.fx = null; t.win.events.get('pointerup')?.();
   assert.equal(node.fx, null);
 });
 

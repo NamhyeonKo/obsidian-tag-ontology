@@ -42,6 +42,8 @@ interface Session {
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void; repin: () => void;
+  // The window the graph is in, which hears a drag's release wherever it happens.
+  win: Window;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -139,14 +141,14 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, win: view.contentEl.win, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
-      // On release the core graph unpins the node under the pointer (its window listener runs first), and the drag has
-      // restarted its simulation, which would then carry the node off. The tree layouts pin it again and ease it back to
-      // its place with a slight overshoot, like a spring; grabbing it again stops that.
-      // ponytail: a release outside the graph pane is missed; listen on window if that matters.
+      // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
+      // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
+      // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
+      // listening on the same window after it catches a release anywhere, such as over the sidebar.
       session.repin = () => {
         if (!session.active || this.owner.settings.layout === 'force') return;
         const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
@@ -161,7 +163,7 @@ export class NativeGraphs {
           r.changed();
         }, 450);
       };
-      view.contentEl.addEventListener('pointerup', session.repin);
+      session.win.addEventListener('pointerup', session.repin);
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
@@ -833,7 +835,7 @@ export class NativeGraphs {
     s.active = false;
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
-    s.view.contentEl.removeEventListener('pointerup', s.repin);
+    s.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
