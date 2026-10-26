@@ -184,8 +184,8 @@ test('a background reload failure only logs and keeps the last valid model', asy
 test('a broken dictionary at startup is reported, and the sidebar keeps the reason until it loads', async () => {
   const t = await setup();
   t.vault.text = '{ broken'; t.ready(); await settle();
-  assert.equal(t.notices.length, 1);
-  assert.match(t.plugin.error!, /^Could not read the tag dictionary/);
+  assert.match(t.plugin.error!, /^Invalid JSON: /);
+  assert.deepEqual(t.notices, [`Could not load the tag dictionary: ${t.plugin.error}`]);
   assert.deepEqual(t.plugin.native.calls, ['render-panel']);
   t.vault.text = dictionary;
   t.events.get('modify')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();

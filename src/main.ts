@@ -8,6 +8,8 @@ export type { Settings } from './settings.ts';
 
 const ICON = 'book-open';
 export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
+// Notices and the sidebar show the message alone; String(error) would add an "Error: " prefix.
+const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -57,7 +59,7 @@ export default class TagOntologyPlugin extends Plugin {
     if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
     let raw: unknown;
     try { raw = JSON.parse(await this.app.vault.cachedRead(file)); }
-    catch (error) { throw new Error(`Could not read the tag dictionary: ${String(error)}`); }
+    catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
     const dictionaryMs = performance.now() - start;
     const indexStart = performance.now();
     const notes = this.notes();
@@ -154,7 +156,7 @@ export default class TagOntologyPlugin extends Plugin {
       this.native.attach();
       this.native.showPanel(false);
       await this.app.workspace.revealLeaf(leaf);
-    } catch (error) { if (!this.disposed) new Notice(`Could not open the graph: ${String(error)}`); }
+    } catch (error) { if (!this.disposed) new Notice(`Could not open the graph: ${reason(error)}`); }
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
@@ -174,9 +176,9 @@ export default class TagOntologyPlugin extends Plugin {
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
-      this.error = error instanceof Error ? error.message : String(error);
+      this.error = reason(error);
       this.native.renderPanel();
-      if (notify) new Notice(`Could not reload the dictionary: ${String(error)}`);
+      if (notify) new Notice(`Could not load the tag dictionary: ${this.error}`);
     }
   }
 

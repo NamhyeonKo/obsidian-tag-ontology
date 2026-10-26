@@ -914,7 +914,7 @@ test('a dictionary that stops loading shows why above the last version and turns
 
 test('a dictionary that never loaded shows why instead of an empty panel', async () => {
   const t = await setup();
-  t.owner.model = undefined; t.owner.error = 'Could not read the tag dictionary: SyntaxError'; t.controller.renderPanel();
+  t.owner.model = undefined; t.owner.error = 'Invalid JSON: Unexpected end of JSON input'; t.controller.renderPanel();
   assert.equal(heading(t), 'Could not load the tag dictionary');
   assert.ok(!t.sidebar.all().some(el => el.text.startsWith('The graph and this panel')));
   assert.equal(navButton(t, 'New tag').disabled, true);
