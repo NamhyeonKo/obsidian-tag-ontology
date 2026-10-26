@@ -419,15 +419,17 @@ export class NativeGraphs {
     r.changed();
   }
 
-  private renderPanel() {
+  renderPanel() {
     this.syncNav();
     // An open form is never rebuilt here: refreshes come with every note edit and would drop what is being typed.
     if (this.mode) return;
-    const panel = this.panel, model = this.owner.model;
+    const panel = this.panel, model = this.owner.model, error = this.owner.error;
     if (!panel) return;
     if (this.missing()) { panel.empty(); this.notFound(panel); return; }
-    if (!model) return;
+    if (!model && !error) return;
     panel.empty();
+    if (error) this.loadError(panel, error);
+    if (!model) return;
     panel.setCssProps({ '--tag-ontology-color': this.owner.settings.highlightColor });
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
@@ -444,6 +446,15 @@ export class NativeGraphs {
     panel.createEl('p', { text: `${this.owner.settings.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.` });
     const create = panel.createEl('button', { text: 'Create empty dictionary', cls: 'mod-cta' });
     create.addEventListener('click', () => { create.disabled = true; void this.owner.createDictionary().finally(() => { create.disabled = false; }); });
+  }
+
+  // A dictionary that stops loading leaves the last version that loaded on show, under the reason; fixing the file reloads it.
+  private loadError(panel: HTMLElement, error: string) {
+    panel.createEl('h4', { text: 'Could not load the tag dictionary' });
+    panel.createEl('p', { text: error, cls: 'tag-ontology-error' });
+    const shown = this.owner.model ? 'The graph and this panel show the last version that loaded. ' : '';
+    panel.createEl('p', { text: `${shown}Fix the file and this updates on its own. New tag and Edit tag are off until then.`, cls: 'tag-ontology-muted' });
+    if (this.owner.model) panel.createEl('hr');
   }
 
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
@@ -704,9 +715,10 @@ export class NativeGraphs {
     const expanded = tag !== undefined && this.owner.settings.expanded.includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
     disable(expand, !tag); expand.toggleClass('is-active', !!tag);
-    const missing = this.missing();
-    disable(add, !this.owner.model || missing); add.toggleClass('is-active', this.mode?.kind === 'new');
-    disable(edit, !tag || missing); edit.toggleClass('is-active', this.mode?.kind === 'edit');
+    // Forms start from the last dictionary that loaded, so they wait while the file is missing or broken.
+    const blocked = this.missing() || this.owner.error !== undefined;
+    disable(add, !this.owner.model || blocked); add.toggleClass('is-active', this.mode?.kind === 'new');
+    disable(edit, !tag || blocked); edit.toggleClass('is-active', this.mode?.kind === 'edit');
     setIcon(expand, expanded ? 'waypoints' : 'circle-small');
     setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }

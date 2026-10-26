@@ -8,12 +8,16 @@ export type { Settings } from './settings.ts';
 
 const ICON = 'book-open';
 export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
+// Notices and the sidebar show the message alone; String(error) would add an "Error: " prefix.
+const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
+  // Why the last reload failed; the sidebar shows it until one works again.
+  error?: string;
   native = new NativeGraphs(this);
   loadMetrics = { dictionaryMs: 0, indexMs: 0, noteCount: 0, taggedNotes: 0 };
   // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
@@ -35,7 +39,8 @@ export default class TagOntologyPlugin extends Plugin {
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
-    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews()); });
+    // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath) instanceof TFile })); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -47,14 +52,22 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on('changed', changed));
   }
 
+  // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.
   async loadModel(): Promise<Ontology> {
+    try { const model = await this.readModel(); this.error = undefined; return model; }
+    catch (error) { this.error = reason(error); throw error; }
+  }
+
+  private async readModel(): Promise<Ontology> {
     if (!isValidDictionaryPath(this.settings.dictionaryPath, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
     if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
+    // A read error keeps its own message; only a parse error is about the JSON.
+    const text = await this.app.vault.cachedRead(file);
     let raw: unknown;
-    try { raw = JSON.parse(await this.app.vault.cachedRead(file)); }
-    catch (error) { throw new Error(`Could not read the tag dictionary: ${String(error)}`); }
+    try { raw = JSON.parse(text); }
+    catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
     const dictionaryMs = performance.now() - start;
     const indexStart = performance.now();
     const notes = this.notes();
@@ -96,11 +109,12 @@ export default class TagOntologyPlugin extends Plugin {
     await vault.create(path, '{\n}\n');
   }
 
+  // A note the metadata cache hasn't indexed yet (one that arrived while Obsidian was closed) is left out until its
+  // 'changed' event reloads, instead of failing the whole dictionary.
   private notes(): Note[] {
-    return this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path)).map((note) => {
+    return this.app.vault.getMarkdownFiles().filter((note) => isIncludedNote(note.path)).flatMap((note) => {
       const cache = this.app.metadataCache.getFileCache(note);
-      if (!cache) throw new Error(`The metadata cache is not ready yet: ${note.path}`);
-      return { path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] };
+      return cache ? [{ path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] }] : [];
     });
   }
 
@@ -147,10 +161,15 @@ export default class TagOntologyPlugin extends Plugin {
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type: 'graph', active: true });
       if (this.disposed) return;
-      this.native.attach();
+      // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
+      this.native.refresh(false);
       this.native.showPanel(false);
       await this.app.workspace.revealLeaf(leaf);
-    } catch (error) { if (!this.disposed) new Notice(`Could not open the graph: ${String(error)}`); }
+    } catch (error) {
+      if (this.disposed) return;
+      new Notice(`Could not open the graph: ${reason(error)}`);
+      this.native.renderPanel();
+    }
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
@@ -170,7 +189,8 @@ export default class TagOntologyPlugin extends Plugin {
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
-      if (notify) new Notice(`Could not reload the dictionary: ${String(error)}`);
+      this.native.renderPanel();
+      if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
     }
   }
 

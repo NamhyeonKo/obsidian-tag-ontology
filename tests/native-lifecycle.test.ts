@@ -33,7 +33,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(redraw?: boolean): void; destroy(): void; mount(el: Element): void };
+type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void };
 
 const raw: RawDictionary = {
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -123,10 +123,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   };
   const view = { renderer, contentEl, dataEngine, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
   const owner = {
-    model, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
+    model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
-    raw, changes: [] as Change[], reloads: 0, missing: false, created: 0,
+    raw, changes: [] as Change[], reloads: 0, missing: false, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
     async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
@@ -898,6 +898,26 @@ test('the panel comes back when the dictionary file returns', async () => {
   t.owner.missing = true; t.controller.refresh(false);
   t.owner.missing = false; t.controller.refresh(false);
   assert.equal(heading(t), 'Root tags (2)'); assert.equal(navButton(t, 'New tag').disabled, false);
+});
+
+test('a dictionary that stops loading shows why above the last version and turns off New tag and Edit until it loads again', async () => {
+  const t = await setup();
+  t.click('#cs'); t.owner.error = 'ml.broader: unknown tag ai'; t.controller.renderPanel();
+  assert.equal(heading(t), 'Could not load the tag dictionary');
+  assert.ok(t.sidebar.all().some(el => el.text === 'ml.broader: unknown tag ai'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+  assert.equal(navButton(t, 'New tag').disabled, true); assert.equal(navButton(t, 'Edit tag').disabled, true);
+  t.owner.error = undefined; t.controller.refresh(false);
+  assert.equal(heading(t), 'cs');
+  assert.equal(navButton(t, 'New tag').disabled, false); assert.equal(navButton(t, 'Edit tag').disabled, false);
+});
+
+test('a dictionary that never loaded shows why instead of an empty panel', async () => {
+  const t = await setup();
+  t.owner.model = undefined; t.owner.error = 'Invalid JSON: Unexpected end of JSON input'; t.controller.renderPanel();
+  assert.equal(heading(t), 'Could not load the tag dictionary');
+  assert.ok(!t.sidebar.all().some(el => el.text.startsWith('The graph and this panel')));
+  assert.equal(navButton(t, 'New tag').disabled, true);
 });
 
 test('the pickers do not take Object properties such as constructor for dictionary tags', async () => {

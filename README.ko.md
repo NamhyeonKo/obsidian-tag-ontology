@@ -114,7 +114,7 @@ Tag Ontology는 기본 그래프 뷰 안에서 동작합니다. Obsidian이 필�
 - **루트 태그에는 `"broader": []`가 꼭 있어야 합니다.** `broader` 키가 아예 없는 태그는 아직 분류되지 않은 것으로 보고 그래프에 나타나지 않습니다.
 - `broader`나 `related`에 적은 태그는 모두 사전에 있어야 합니다.
 - 자기 자신을 참조할 수 없고, `broader` 관계가 순환해서도 안 됩니다.
-- 사전에 오류가 있으면 뷰를 열 때 이유를 알림으로 보여 줍니다.
+- 사전에 오류가 있으면 Obsidian을 시작하거나 뷰를 열 때 이유를 알림으로 보여 주고, 파일을 고칠 때까지 사이드바에도 이유를 보여 줍니다. 그동안 그래프는 마지막으로 읽은 사전을 그대로 보여 주고, **New tag**·**Edit tag**는 꺼집니다.
 
 전체 예시는 [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json)을 참고하세요.
 
