@@ -96,7 +96,7 @@ test('opening a graph still loads the dictionary, attaches and reveals it', asyn
   const t = await setup();
   await t.plugin.openView();
   assert.deepEqual(t.plugin.model!.roots, ['root']);
-  assert.deepEqual(t.plugin.native.calls, ['attach', 'panel']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel']);
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
@@ -191,6 +191,15 @@ test('a broken dictionary at startup is reported, and the sidebar keeps the reas
   t.events.get('modify')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
   assert.equal(t.plugin.error, undefined);
   assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:true']);
+});
+
+test('opening the graph records how the load went, so a later success clears an earlier failure', async () => {
+  const t = await setup();
+  t.vault.text = '{ broken'; await t.plugin.openView();
+  assert.match(t.plugin.error!, /^Invalid JSON: /);
+  t.vault.text = dictionary; await t.plugin.openView();
+  assert.equal(t.plugin.error, undefined);
+  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:false', 'panel']);
 });
 
 test('a missing dictionary at startup is left to the sidebar, without a notice', async () => {

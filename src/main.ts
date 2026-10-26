@@ -52,7 +52,13 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on('changed', changed));
   }
 
+  // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.
   async loadModel(): Promise<Ontology> {
+    try { const model = await this.readModel(); this.error = undefined; return model; }
+    catch (error) { this.error = reason(error); throw error; }
+  }
+
+  private async readModel(): Promise<Ontology> {
     if (!isValidDictionaryPath(this.settings.dictionaryPath, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
@@ -153,10 +159,15 @@ export default class TagOntologyPlugin extends Plugin {
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type: 'graph', active: true });
       if (this.disposed) return;
-      this.native.attach();
+      // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
+      this.native.refresh(false);
       this.native.showPanel(false);
       await this.app.workspace.revealLeaf(leaf);
-    } catch (error) { if (!this.disposed) new Notice(`Could not open the graph: ${reason(error)}`); }
+    } catch (error) {
+      if (this.disposed) return;
+      new Notice(`Could not open the graph: ${reason(error)}`);
+      this.native.renderPanel();
+    }
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
@@ -172,13 +183,12 @@ export default class TagOntologyPlugin extends Plugin {
 
   private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
     if (this.disposed) return;
-    try { await this.loadModel(); this.error = undefined; if (!this.disposed) this.native.refresh(redraw); }
+    try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
-      this.error = reason(error);
       this.native.renderPanel();
-      if (notify) new Notice(`Could not load the tag dictionary: ${this.error}`);
+      if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
     }
   }
 
