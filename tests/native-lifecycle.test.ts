@@ -565,6 +565,35 @@ test('the highlight toggles add up: the tag itself, its descendants and its dire
   assert.deepEqual(highlighted(), []);
 });
 
+test('a native update that changes nothing leaves the renderer asleep, and choosing another tag still wakes it', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs', 'ml'] });
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  // The core graph redraws for every node whose color is a different object from the one it has.
+  t.renderer.setData(core());
+  const [before, after] = t.forwarded.slice(-2).map(data => data.nodes);
+  assert.equal(after!['#sec']!.color, before!['#sec']!.color, 'the tag color is the same object');
+  assert.equal((after!['#cs']!.color as { rgb: number }).rgb, HIGHLIGHT, 'the core graph gets the highlight, so it has nothing to undo');
+  assert.equal(wakes, 0);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
+  assert.equal(wakes, 1, 'the new selection repaints');
+});
+
+test('a dictionary edit that only turns a parent link into a related link still redraws it', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  // ml stays in the graph as a root tag, so the core graph gets the same nodes and links and redraws nothing by itself.
+  t.owner.model = new Ontology({ ...raw, ml: { description: '', broader: [], related: ['cs'] } }, []);
+  t.controller.refresh();
+  const link = t.renderer.links.find(l => l.source.id === '#cs' && l.target.id === '#ml')!;
+  link.render();
+  assert.equal(link.line.texture, t.dashTexture);
+  assert.equal(wakes, 1, 'the link is redrawn in its new style');
+});
+
 test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
   const t = await setup({ customColors: true });
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
