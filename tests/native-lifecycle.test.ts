@@ -730,6 +730,15 @@ test('a rename warns when notes use the old name', async () => {
   assert.equal(byClass(t, 'tag-ontology-hint')!.text, '1 note uses #ml. It keeps it and it will show as not in the dictionary.');
 });
 
+test('a rename that only changes case does not warn, since notes match tags ignoring case', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'ML');
+  assert.equal(byClass(t, 'tag-ontology-hint')!.text, '');
+  assert.equal(button(t, 'Save').disabled, false);
+});
+
 test('the name suggestions are unregistered tags by note count', async () => {
   const t = await setup();
   t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['to-read', 'book'] }, { path: 'B.md', tags: ['book'] }]);

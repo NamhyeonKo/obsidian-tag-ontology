@@ -623,8 +623,9 @@ export class NativeGraphs {
       // An unchanged name is never an error, so a key written before these rules can still be edited.
       const error = tag === undefined ? draft.name ? nameError(draft.name, base) : undefined : draft.name === tag ? undefined : nameError(draft.name, base, tag);
       const changes = tag === undefined ? 0 : changedFields(base, tag, typed(mode));
+      // Notes match dictionary tags ignoring case, so a case-only rename keeps them.
       const hint = tag === undefined ? 'Pick one, or type a new name.'
-        : draft.name !== tag && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
+        : draft.name.toLowerCase() !== tag.toLowerCase() && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
       note.toggleClass('tag-ontology-error', !!error); note.toggleClass('tag-ontology-hint', !error);
       note.setText(error ?? hint);
       status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
