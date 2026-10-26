@@ -63,8 +63,10 @@ export default class TagOntologyPlugin extends Plugin {
     const start = performance.now();
     const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
     if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
+    // A read error keeps its own message; only a parse error is about the JSON.
+    const text = await this.app.vault.cachedRead(file);
     let raw: unknown;
-    try { raw = JSON.parse(await this.app.vault.cachedRead(file)); }
+    try { raw = JSON.parse(text); }
     catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
     const dictionaryMs = performance.now() - start;
     const indexStart = performance.now();

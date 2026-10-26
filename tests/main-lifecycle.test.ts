@@ -202,6 +202,14 @@ test('opening the graph records how the load went, so a later success clears an 
   assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:false', 'panel']);
 });
 
+test('a file that cannot be read is not reported as invalid JSON', async () => {
+  const t = await setup();
+  t.vault.cachedRead = async () => { throw new Error('EIO: i/o error, read'); };
+  t.ready(); await settle();
+  // The error comes from outside the plugin's realm here, so it may carry an "Error: " prefix.
+  assert.match(t.plugin.error!, /^(Error: )?EIO: i\/o error, read$/);
+});
+
 test('a missing dictionary at startup is left to the sidebar, without a notice', async () => {
   const t = await setup();
   (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
