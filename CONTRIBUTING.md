@@ -62,9 +62,9 @@ Confirm this with the checkbox in the pull request template. Pull requests witho
 
 ## Pull requests
 
-1. Work on a branch, not `main`. Keep one feature or fix per branch and PR, so each can be reviewed and reverted on its own.
+1. Branch from `dev` and open the PR against `dev`, not `main`. `main` holds the released version and changes only when a maintainer releases. Keep one feature or fix per branch and PR, so each can be reviewed and reverted on its own.
 2. Leave the version alone. It changes only when a maintainer releases (see [Releasing](#releasing)).
-3. Open a PR. CI runs lint, tests and build.
+3. Open a PR. GitHub suggests `main` as the base; switch it to `dev`. CI runs lint, tests and build.
 4. Fill in the pull request template: what changed, how you tested it in Obsidian, and the checklist (including the contributor license agreement).
 
 ## Testing in Obsidian
@@ -87,21 +87,21 @@ Confirm this with the checkbox in the pull request template. Pull requests witho
 
 ### Merging
 
-Merge pull requests into `main` with a merge commit (`gh pr merge --merge`, or `git merge --no-ff` locally) so the branch history stays. Don't fast-forward, squash or rebase.
+Merge pull requests into `dev` with a merge commit (`gh pr merge --merge`, or `git merge --no-ff` locally) so the branch history stays. Don't fast-forward, squash or rebase. `main` only takes merges from a release or a hotfix (below), also as merge commits.
 
 ### Releasing
 
-Merged PRs collect on `main` until a release; merging doesn't release anything. Release when the merged changes are worth shipping together, or right away for a fix users need. Every published version goes through the community review and reaches users as an update, so don't publish each small change on its own.
+Merged PRs collect on `dev` until a release; merging doesn't release anything. Release when the merged changes are worth shipping together, or right away for a fix users need. Every published version goes through the community review and reaches users as an update, so don't publish each small change on its own.
 
-Pick the version when you release: a minor version (`0.x.0`) when the release adds features, a patch version (`0.x.y`) when it only fixes things. List what goes into the notes with `git log --merges --oneline <last tag>..main`.
+Pick the version when you release: a minor version (`0.x.0`) when the release adds features, a patch version (`0.x.y`) when it only fixes things. List what goes into the notes with `git log --merges --oneline <last tag>..dev`.
 
-1. Merge the release-ready changes into `main` through a PR with passing CI.
-2. Bump the version:
+1. Bump the version on `dev`:
    - `npm version x.y.z --no-git-tag-version` (updates `package.json` and `package-lock.json`)
    - set the same `version` in `manifest.json`
    - add `"x.y.z": "<minAppVersion>"` to `versions.json`
-   - commit as `chore: release x.y.z`
-3. Push a tag that matches the version exactly, with no `v` prefix:
+   - commit as `chore: release x.y.z` and push `dev`
+2. Open a PR from `dev` into `main` titled `release x.y.z`. Merge it with a merge commit once CI passes.
+3. Push a tag on that merge commit that matches the version exactly, with no `v` prefix:
 
    ```sh
    git fetch origin main && git tag x.y.z origin/main && git push origin x.y.z
@@ -111,6 +111,10 @@ Pick the version when you release: a minor version (`0.x.0`) when the release ad
 5. Write release notes on the draft **before publishing**. An empty description gets a review Recommendation, and editing the notes later does not trigger a new review of the same version.
 6. In the [community dashboard](https://community.obsidian.md), put the tag in **Review branch** and run a preview scan. Publish the draft only when it reports no errors.
 7. Click **Check for new releases** in the dashboard and check the review. A published version is reviewed once; fixes need a new version.
+
+### Hotfixes
+
+For a fix that can't wait for the changes on `dev`: branch from `main`, open the PR against `main`, and add the `chore: release x.y.z` commit to that branch before merging. Then tag and publish as in steps 3–7 above, and merge `main` back into `dev` (`git switch dev && git merge --no-ff main`) so `dev` keeps the fix.
 
 ### Community review
 
