@@ -400,6 +400,18 @@ test('in a tree, a node released after a drag springs back to its place', async 
   assert.equal(node.fx, null);
 });
 
+test('force reheats the simulation only when it takes over the layout, not on every update', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const reheats = () => t.renderer.worker.messages.filter(m => 'alpha' in (m as object)).length;
+  assert.equal(reheats(), 1, 'the first render starts the simulation');
+  // The core graph re-sends its data on every file open and metadata change, and reheats by itself when nodes or links change.
+  t.renderer.setData(core()); t.controller.refresh();
+  assert.equal(reheats(), 1, 'a settled graph stays still');
+  t.click('Layout: Vertical tree'); t.click('Layout: Force');
+  assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
+});
+
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
   t.controller.attach();
@@ -551,6 +563,35 @@ test('the highlight toggles add up: the tag itself, its descendants and its dire
   assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
   t.owner.settings.customColors = false; t.controller.refresh();
   assert.deepEqual(highlighted(), []);
+});
+
+test('a native update that changes nothing leaves the renderer asleep, and choosing another tag still wakes it', async () => {
+  const t = await setup({ customColors: true, expanded: ['cs', 'ml'] });
+  t.controller.attach();
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  // The core graph redraws for every node whose color is a different object from the one it has.
+  t.renderer.setData(core());
+  const [before, after] = t.forwarded.slice(-2).map(data => data.nodes);
+  assert.equal(after!['#sec']!.color, before!['#sec']!.color, 'the tag color is the same object');
+  assert.equal((after!['#cs']!.color as { rgb: number }).rgb, HIGHLIGHT, 'the core graph gets the highlight, so it has nothing to undo');
+  assert.equal(wakes, 0);
+  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
+  assert.equal(wakes, 1, 'the new selection repaints');
+});
+
+test('a dictionary edit that only turns a parent link into a related link still redraws it', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.controller.attach();
+  let wakes = 0; t.renderer.changed = () => { wakes++; };
+  // ml stays in the graph as a root tag, so the core graph gets the same nodes and links and redraws nothing by itself.
+  t.owner.model = new Ontology({ ...raw, ml: { description: '', broader: [], related: ['cs'] } }, []);
+  t.controller.refresh();
+  const link = t.renderer.links.find(l => l.source.id === '#cs' && l.target.id === '#ml')!;
+  link.render();
+  assert.equal(link.line.texture, t.dashTexture);
+  assert.equal(wakes, 1, 'the link is redrawn in its new style');
 });
 
 test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {

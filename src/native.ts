@@ -57,8 +57,9 @@ type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
-// The renderer's color format.
-const hexColor = (hex: string): NodeColor => ({ a: 1, rgb: parseInt(hex.slice(1), 16) });
+// The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
+const colors = new Map<string, NodeColor>();
+const hexColor = (hex: string): NodeColor => colors.get(hex) ?? colors.set(hex, { a: 1, rgb: parseInt(hex.slice(1), 16) }).get(hex)!;
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 // The draft with the alias still being typed, so typing one and pressing Save keeps it.
 function typed(mode: Mode): Draft {
@@ -293,18 +294,23 @@ export class NativeGraphs {
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
-    session.resolved = layer.resolved; session.kinds = layer.kinds;
-    const r = session.renderer, result = session.original.call(r, layer.data);
-    session.data = layer.data; this.paint(session);
+    // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
+    const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
+    session.resolved = layer.resolved; session.kinds = layer.kinds; session.data = layer.data;
+    const r = session.renderer, result = session.original.call(r, this.painted(session));
+    this.paint(session);
+    if (restyled) r.changed();
     this.styleLinks(session);
-    if (settings.layout !== 'force') this.staticLayout(session);
-    else {
-      for (const node of r.nodes) { node.fx = null; node.fy = null; }
-      r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
-    }
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
     session.layout = settings.layout;
+    if (settings.layout !== 'force') this.staticLayout(session);
+    // Taking over from a tree releases its pins and restarts the simulation from the tree's positions. Otherwise the core
+    // graph reheats by itself when nodes or links change, and reheating on every update would shake a settled graph.
+    else if (layoutChanged) {
+      for (const node of r.nodes) { node.fx = null; node.fy = null; }
+      r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
+    }
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
@@ -411,15 +417,34 @@ export class NativeGraphs {
     ];
   }
 
+  private highlightIds(session: Session) {
+    return new Set(this.highlighted().flatMap(tag => session.resolved?.idOf.get(tag) ?? []));
+  }
+
+  // The layered data with the highlight colors on. The core graph sets back every color that differs from the data and
+  // redraws, so without them each native update would undo the highlight for paint to redo.
+  private painted(session: Session): NativeData {
+    const data = session.data!, ids = this.highlightIds(session), color = hexColor(this.owner.settings.highlightColor);
+    if (!ids.size) return data;
+    const nodes = { ...data.nodes };
+    for (const id of ids) if (nodes[id]) nodes[id] = { ...nodes[id], color };
+    return { ...data, nodes };
+  }
+
   // The renderer reads node colors every frame, so recoloring needs no new data: highlighted tags take the
-  // highlight color and every other node the color the layer gave it.
+  // highlight color and every other node the color the layer gave it. A redraw runs about a second of frames,
+  // so it is only asked for when a color or the focus changed.
   private paint(session: Session) {
-    const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor);
-    const ids = new Set(this.highlighted().flatMap(tag => session.resolved?.idOf.get(tag) ?? []));
-    for (const node of r.nodes) node.color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
+    const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor), ids = this.highlightIds(session);
+    let changed = false;
+    for (const node of r.nodes) {
+      const color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
+      if (node.color !== color) { node.color = color; changed = true; }
+    }
     const focused = this.owner.settings.focus && this.selected ? session.resolved?.idOf.get(this.selected) : undefined;
-    session.focus = focused && r.nodes.find(n => n.id === focused);
-    r.changed();
+    const focus = focused && r.nodes.find(n => n.id === focused);
+    if (focus !== session.focus) { session.focus = focus; changed = true; }
+    if (changed) r.changed();
   }
 
   renderPanel() {
