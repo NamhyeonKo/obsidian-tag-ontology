@@ -26,7 +26,8 @@ class Element {
     Object.assign(child.attrs, options?.attr ?? {});
     return child;
   }
-  addEventListener(event: string, fn: (event?: unknown) => void) { this.events.set(event, fn); }
+  // Every listener for an event runs, as in the DOM.
+  addEventListener(event: string, fn: (event?: unknown) => void) { const prev = this.events.get(event); this.events.set(event, prev ? e => { prev(e); fn(e); } : fn); }
   removeEventListener(event: string) { this.events.delete(event); }
   setAttribute(name: string, value: string) { this.attrs[name] = value; }
   addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
@@ -388,8 +389,9 @@ test('in a tree, a node released after a drag springs back to its place, even ou
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
   const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
-  // The core graph unpins the node under the pointer on release, after its simulation ran for the drag. It listens on the
-  // window, so the release can be anywhere, such as over the sidebar.
+  // The drag starts with a press on the graph. The core graph unpins the node under the pointer on release, after its
+  // simulation ran for the drag; it listens on the window, so the release can be anywhere, such as over the sidebar.
+  t.contentEl.events.get('pointerdown')!();
   node.x += 300; node.y += 100; node.fx = null; node.fy = null;
   t.win.events.get('pointerup')?.();
   t.tick(100);
@@ -398,8 +400,21 @@ test('in a tree, a node released after a drag springs back to its place, even ou
   assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
   // Force leaves the core behavior alone.
   t.click('Layout: Force');
-  node.fx = null; t.win.events.get('pointerup')?.();
+  t.contentEl.events.get('pointerdown')!(); node.fx = null; t.win.events.get('pointerup')?.();
   assert.equal(node.fx, null);
+});
+
+test('a tree node springs back after its tab moved to another window', async () => {
+  const t = await setup({ layout: 'tree' });
+  t.controller.attach();
+  // Obsidian keeps the leaf and the view when a tab moves to a popout window, so nothing attaches again.
+  const popout = new Element(); t.contentEl.win = popout;
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
+  t.contentEl.events.get('pointerdown')!();
+  node.x += 300; node.fx = null; node.fy = null;
+  popout.events.get('pointerup')?.();
+  t.tick(1000);
+  assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
 });
 
 test('force reheats the simulation only when it takes over the layout, not on every update', async () => {

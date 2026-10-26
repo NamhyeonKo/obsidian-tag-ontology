@@ -41,9 +41,7 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
-  fitFrame?: number; stopFit: () => void; repin: () => void;
-  // The window the graph is in, which hears a drag's release wherever it happens.
-  win: Window;
+  fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -141,14 +139,15 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, win: view.contentEl.win, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
       // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
       // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
       // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
-      // listening on the same window after it catches a release anywhere, such as over the sidebar.
+      // listening on the same window after it catches a release anywhere, such as over the sidebar. A drag starts with a
+      // press on the graph, so each press listens on the window the graph is in then, which follows a tab moved to a popout.
       session.repin = () => {
         if (!session.active || this.owner.settings.layout === 'force') return;
         const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
@@ -163,7 +162,8 @@ export class NativeGraphs {
           r.changed();
         }, 450);
       };
-      session.win.addEventListener('pointerup', session.repin);
+      session.grab = () => view.contentEl.win.addEventListener('pointerup', session.repin, { once: true });
+      view.contentEl.addEventListener('pointerdown', session.grab, { capture: true });
       session.wrapped = data => {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
@@ -835,7 +835,8 @@ export class NativeGraphs {
     s.active = false;
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
-    s.win.removeEventListener('pointerup', s.repin);
+    s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
