@@ -51,7 +51,8 @@ type ToggleKey = 'showNotes' | 'showRelated';
 type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
-type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; open?: 'aliases' | ListKey };
+// query: text typed in an open parent, child or related input, so a redraw keeps it.
+type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
@@ -659,6 +660,7 @@ export class NativeGraphs {
       mode.open = open ? undefined : key;
       // A closed alias input leaves nothing half typed behind to count as a change.
       if (mode.open !== 'aliases') mode.alias = '';
+      mode.query = '';
       this.drawForm();
     });
     return open;
@@ -669,11 +671,13 @@ export class NativeGraphs {
     const list = this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
     if (!this.opener(list, kind, placeholder)) return;
     const input = parent.createEl('input', { type: 'text', attr: { placeholder } });
+    input.value = mode.query ?? '';
+    input.addEventListener('input', () => { mode.query = input.value; });
     new TagSuggest(this.owner.app, input, query => {
       const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
       // The model can already hold tags added to the file after the form opened; the draft only knows the base.
       return (this.owner.model?.suggest(query, 50) ?? []).filter(s => Object.hasOwn(mode.base, s.tag) && !skip.has(s.tag)).slice(0, 10);
-    }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; this.drawForm(); });
+    }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; mode.query = ''; this.drawForm(); });
     input.focus();
   }
 
