@@ -60,6 +60,8 @@ interface Link { source: { id: string }; target: { id: string }; line: { texture
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
 const layoutOutside: string[][] = [];
+// The layout throws while this is set, standing in for anything that fails inside a render.
+let layoutFails = false;
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
@@ -86,7 +88,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails) throw new Error('layout failed'); layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { ...layer };
@@ -470,6 +472,26 @@ test('Fit works on a graph too big to spread into one call', async () => {
   assert.doesNotThrow(() => t.click('Fit'));
   assert.equal(t.renderer.scale, Math.min(1.4, 800 / (999 + 220), 600 / (129 + 220)));
 });
+
+// A render that fails can leave the renderer half updated, so the tab goes back to the core graph whatever started it.
+for (const [name, trigger] of [
+  ['a native update', t => t.renderer.setData(core())],
+] as [string, (t: Awaited<ReturnType<typeof setup>>) => void][]) {
+  test(`${name} that fails to render gives the tab back to the core graph with nothing left pinned`, async () => {
+    const t = await setup({ layout: 'tree' });
+    keepNodes(t.renderer);
+    const coreSetData = t.renderer.setData;
+    t.controller.attach();
+    layoutFails = true;
+    try { assert.doesNotThrow(() => trigger(t)); } finally { layoutFails = false; }
+    assert.equal(t.renderer.setData, coreSetData);
+    assert.ok(t.ids().includes('#DL'), 'the core data goes to the renderer as it is');
+    assert.ok(t.renderer.nodes.every(n => n.fx === null && n.fy === null), 'no node stays where the tree pinned it');
+    assert.deepEqual(t.notices, ['Detached the tag ontology from the graph: Error: layout failed']);
+    t.controller.attach();
+    assert.equal(t.renderer.setData, coreSetData, 'the tab stays with the core graph');
+  });
+}
 
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });

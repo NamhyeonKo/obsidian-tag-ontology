@@ -170,9 +170,8 @@ export class NativeGraphs {
         session.base = data;
         try { return this.render(session, first ? 'initial' : 'update'); }
         catch (error) {
-          this.failed.add(leaf); this.detach(leaf, false);
+          this.failed.add(leaf); this.detach(leaf, true);
           new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
-          view.update();
         }
       };
       r.setData = session.wrapped;
