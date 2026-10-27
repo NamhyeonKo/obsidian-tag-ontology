@@ -60,8 +60,8 @@ interface Link { source: { id: string }; target: { id: string }; line: { texture
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
 const layoutOutside: string[][] = [];
-// The layout throws while this is set, standing in for anything that fails inside a render.
-let layoutFails = false;
+// The layout throws this many more times, standing in for anything that fails inside a render.
+let layoutFails = 0;
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
   const notices: string[] = [], sideCalls: object[] = [];
@@ -88,7 +88,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
-      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails) throw new Error('layout failed'); layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === './dictionary.ts' ? { ...dictionaryModule }
       : { ...layer };
@@ -476,14 +476,17 @@ test('Fit works on a graph too big to spread into one call', async () => {
 // A render that fails can leave the renderer half updated, so the tab goes back to the core graph whatever started it.
 for (const [name, trigger] of [
   ['a native update', t => t.renderer.setData(core())],
+  ['a toolbar button', t => t.click('Expand all')],
+  ['a click on a tag', t => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag')],
+  ['a refresh', t => t.controller.refresh()],
 ] as [string, (t: Awaited<ReturnType<typeof setup>>) => void][]) {
   test(`${name} that fails to render gives the tab back to the core graph with nothing left pinned`, async () => {
     const t = await setup({ layout: 'tree' });
     keepNodes(t.renderer);
     const coreSetData = t.renderer.setData;
     t.controller.attach();
-    layoutFails = true;
-    try { assert.doesNotThrow(() => trigger(t)); } finally { layoutFails = false; }
+    layoutFails = 1;
+    try { assert.doesNotThrow(() => trigger(t)); } finally { layoutFails = 0; }
     assert.equal(t.renderer.setData, coreSetData);
     assert.ok(t.ids().includes('#DL'), 'the core data goes to the renderer as it is');
     assert.ok(t.renderer.nodes.every(n => n.fx === null && n.fy === null), 'no node stays where the tree pinned it');
@@ -492,6 +495,19 @@ for (const [name, trigger] of [
     assert.equal(t.renderer.setData, coreSetData, 'the tab stays with the core graph');
   });
 }
+
+test('a render that fails in one graph tab detaches only that tab, and the others keep drawing', async () => {
+  const t = await setup({ layout: 'tree' });
+  const tab = t.addTab(), other = (t.leaves[1] as { view: { renderer: { nodes: { id: string }[] } } }).view.renderer;
+  t.controller.attach();
+  t.owner.settings.expanded = ['cs'];
+  layoutFails = 1;
+  try { assert.doesNotThrow(() => t.controller.refresh()); } finally { layoutFails = 0; }
+  assert.ok(!t.contentEl.classes.has('tag-ontology-native'));
+  assert.ok(tab.classes.has('tag-ontology-native'));
+  assert.ok(other.nodes.some(n => n.id === '#ml'), 'the other tab draws the expanded tag');
+  assert.equal(t.notices.length, 1);
+});
 
 test('the notes button is disabled in tree', async () => {
   const t = await setup({ layout: 'tree', showNotes: true });
