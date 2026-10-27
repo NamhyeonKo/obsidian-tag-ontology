@@ -168,12 +168,7 @@ export class NativeGraphs {
         if (!session.active) return session.original.call(r, data);
         const first = !session.base;
         session.base = data;
-        try { return this.render(session, first ? 'initial' : 'update'); }
-        catch (error) {
-          this.failed.add(leaf); this.detach(leaf, false);
-          new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
-          view.update();
-        }
+        return this.render(session, first ? 'initial' : 'update');
       };
       r.setData = session.wrapped;
       session.ownClick = r.onNodeClick = (event, id, type) => {
@@ -221,11 +216,14 @@ export class NativeGraphs {
       }
       // Ask the engine to send its data again so the first render goes through the layer.
       try { view.update(); }
-      catch (error) {
-        this.failed.add(leaf); this.detach(leaf, true);
-        new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
-      }
+      catch (error) { this.fail(leaf, error); }
     }
+  }
+
+  // The tab goes back to the core graph and stays with it until the plugin loads again.
+  private fail(leaf: WorkspaceLeaf, error: unknown) {
+    this.failed.add(leaf); this.detach(leaf, true);
+    new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
   }
 
   // Note edits only change counts and note lists; the core graph re-sends its own data for them, so only redraw for the dictionary or settings.
@@ -287,7 +285,14 @@ export class NativeGraphs {
     this.renderPanel();
   }
 
+  // Every redraw comes through here: native updates, refreshes and the user's own actions. One that fails can leave the
+  // renderer half updated, so only that tab lets go, and the others still draw.
   private render(session: Session, operation: string) {
+    try { return this.draw(session, operation); }
+    catch (error) { this.fail(session.leaf, error); }
+  }
+
+  private draw(session: Session, operation: string) {
     const model = this.owner.model, settings = this.owner.settings;
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
