@@ -58,7 +58,8 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
 // Nodes and links record what getHighlightNode() returned while they were drawn: null draws normally, anything else fades
 // whatever is not linked to it.
 interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; seen?: unknown; render(): void }
-interface Node { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; seen?: unknown; render?(): void }
+// A node's label keeps its color in its text style, as the core graph's do.
+interface Node { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; seen?: unknown; render?(): void; type?: string; text?: { style: { fill: unknown } } }
 
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
@@ -105,7 +106,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
-    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    fShowArrow: true, colors: { text: { a: 1, rgb: 0xdadada } }, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
@@ -114,7 +115,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     setData(data: NativeData) {
       forwarded.push(data);
       this.nodes = Object.keys(data.nodes).map(id => {
-        const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
+        const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, type: data.nodes[id]!.type,
+          text: { style: { fill: renderer.colors.text.rgb } }, render() { node.seen = renderer.getHighlightNode(); } };
         return node;
       });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
@@ -695,18 +697,31 @@ test('a dictionary edit that only turns a parent link into a related link still 
   assert.equal(wakes, 1, 'the link is redrawn in its new style');
 });
 
-test('with custom colors the sidebar title takes the tag color unless that is switched off', async () => {
+test('with custom colors the tag labels and the sidebar title take the tag color unless that is switched off', async () => {
   const t = await setup({ customColors: true });
+  t.controller.attach();
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
   const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
+  const labels = () => { for (const n of t.renderer.nodes) n.render!(); return Object.fromEntries(t.renderer.nodes.map(n => [n.id, n.text!.style.fill])); };
   t.suggests[0]!.onChoose('cs');
   assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#8b6cef');
+  assert.equal(labels()['#cs'], TAG); assert.equal(labels()['#to-read'], TAG, 'every tag, in the dictionary or not');
+  assert.equal(labels()['A.md'], 0xdadada, 'notes keep the text color');
   t.owner.accent = '#112233'; t.controller.refresh();
   assert.equal(panel.css['--tag-ontology-color'], '#112233', 'it follows the accent with the graph');
+  assert.equal(labels()['#cs'], 0x112233);
   t.owner.settings.titleAccent = false; t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent'));
+  assert.equal(labels()['#cs'], 0xdadada, 'switched off, tag labels go back to the text color');
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent'));
+  assert.equal(labels()['#cs'], 0xdadada);
+  Object.assign(t.owner.settings, { customColors: true }); t.controller.refresh(); labels();
+  // Turning the plugin off hands the graph back to the core, which drops the layer's nodes, so keep one to look at.
+  const tag = t.renderer.nodes.find(n => n.id === '#crypto')!;
+  assert.equal(tag.text!.style.fill, 0x112233);
+  t.controller.destroy();
+  assert.equal(tag.text!.style.fill, 0xdadada, 'turning the plugin off gives the labels back');
 });
 
 test('focus fades everything but the selected tag, its related tags and the chosen branch', async () => {

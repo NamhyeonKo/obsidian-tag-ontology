@@ -248,7 +248,7 @@ const FOCUS_SCOPE = [
 ] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color. It follows the accent color until you pick one.' };
-const TITLE = { name: 'Tag title in the tag color', desc: 'Show the selected tag\'s title in the sidebar in the tag color.' };
+const TITLE = { name: 'Tag names in the tag color', desc: 'Show the tag labels in the graph and the selected tag\'s title in the sidebar in the tag color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
