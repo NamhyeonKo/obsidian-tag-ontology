@@ -112,17 +112,6 @@ export class Ontology {
     return found;
   }
 
-  ancestors(tag: string): Set<string> {
-    const found = new Set<string>();
-    const queue = [tag];
-    for (let index = 0; index < queue.length; index++) {
-      for (const parent of this.entries.get(queue[index])?.broader ?? []) {
-        if (!found.has(parent)) { found.add(parent); queue.push(parent); }
-      }
-    }
-    return found;
-  }
-
   // Type-ahead ranking: key prefix, key substring, alias prefix, alias substring; one row per tag.
   suggest(query: string, limit = 10): Suggestion[] {
     const q = query.trim().toLowerCase();

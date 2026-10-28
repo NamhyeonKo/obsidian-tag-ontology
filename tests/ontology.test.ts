@@ -143,14 +143,3 @@ test('suggest ranks key matches before alias matches and caps the list', () => {
   assert.deepEqual(model.suggest('  '), []);
   assert.equal(model.suggest('o', 2).length, 2);
 });
-
-test('ancestors walks every parent up to the roots', () => {
-  const model = new Ontology({
-    cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
-    ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['ml'] },
-    crypto: { description: '', broader: ['cs', 'sec'] },
-  }, []);
-  assert.deepEqual([...model.ancestors('dl')].sort(), ['cs', 'ml']);
-  assert.deepEqual([...model.ancestors('crypto')].sort(), ['cs', 'sec']);
-  assert.deepEqual([...model.ancestors('cs')], []);
-});

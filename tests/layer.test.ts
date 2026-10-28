@@ -135,7 +135,7 @@ test('a note on the deepest tag of a 10,000-level chain links to the collapsed r
 
 test('focus keeps the tag, its related tags and the chosen branch', () => {
   const input = (): NativeData => ({ ...core(), nodes: { ...core().nodes, 'D.md': { type: '', links: { '#overfitting': true } }, '#overfitting': { type: 'tag', links: {} } } });
-  const scope: FocusScope = { descendants: true, ancestors: false, notes: true };
+  const scope: FocusScope = { descendants: true, notes: true };
   const focus = (expanded: string[], tag: string, over: Partial<FocusScope> = {}) => {
     const { data, resolved } = buildLayer(input(), model, { expanded: new Set(expanded), showNotes: true, showRelated: true });
     return [...focusIds(data, resolved, model, tag, { ...scope, ...over })].sort();
@@ -143,7 +143,7 @@ test('focus keeps the tag, its related tags and the chosen branch', () => {
   // overfitting lists dl as related, so related counts in both directions.
   assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#overfitting', 'A.md', 'D.md']);
   assert.deepEqual(focus(['cs', 'ml'], 'cs'), ['#DL', '#crypto', '#cs', '#ml', '#overfitting', 'A.md', 'B.md', 'D.md']);
-  assert.deepEqual(focus(['cs', 'ml'], 'dl', { ancestors: true }), ['#DL', '#cs', '#ml', '#overfitting', 'A.md', 'D.md']);
+  assert.deepEqual(focus(['cs', 'ml'], 'ml', { descendants: false }), ['#ml'], 'the parent never comes along');
   assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#overfitting']);
   // dl and overfitting are hidden: their notes now link to ml itself, and ml never stands in for them.
   assert.deepEqual(focus(['cs'], 'ml'), ['#ml', 'A.md', 'D.md']);

@@ -494,7 +494,7 @@ export class NativeGraphs {
     const settings = this.owner.settings, model = this.owner.model, tag = this.selected, resolved = session.resolved, data = session.data;
     // A selected tag collapsed out of sight has nothing to keep bright, so nothing fades.
     const bright = settings.focus && model && tag && resolved?.visible.has(tag) && data
-      ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, ancestors: settings.focusAncestors, notes: settings.focusNotes }) : undefined;
+      ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
     if (!sameSet(bright, session.focusIds)) { session.focusIds = bright; changed = true; }
     if (changed) r.changed();
   }
