@@ -27,7 +27,7 @@ export default class TagOntologyPlugin extends Plugin {
   private refreshTimer?: number;
   private redraw = false;
   private disposed = false;
-  // The accent the graphs were last redrawn with, so other style changes on <body> don't redraw them.
+  // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
   private accent?: string;
 
   async onload(): Promise<void> {
@@ -157,13 +157,16 @@ export default class TagOntologyPlugin extends Plugin {
   // The picked tag color, or Obsidian's accent color while none is picked. The accent is read from the theme's variable, which
   // the app's own styles set before any plugin loads.
   tagColor(): string {
-    return this.settings.tagColor || (cssColorToHex(getComputedStyle(document.body).getPropertyValue('--color-accent')) ?? ACCENT);
+    return this.settings.tagColor || (this.accent = this.readAccent());
   }
 
+  private readAccent(): string {
+    return cssColorToHex(getComputedStyle(document.body).getPropertyValue('--color-accent')) ?? ACCENT;
+  }
+
+  // Every redraw takes the tag color from tagColor(), so whatever redrew last, the accent it drew with is the one compared.
   private followAccent() {
-    const accent = this.tagColor();
-    if (!this.model || !this.settings.customColors || this.settings.tagColor || accent === this.accent) return;
-    this.accent = accent;
+    if (!this.model || !this.settings.customColors || this.settings.tagColor || this.readAccent() === this.accent) return;
     this.native.refresh();
   }
 

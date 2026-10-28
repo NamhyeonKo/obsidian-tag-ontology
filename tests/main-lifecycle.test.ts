@@ -19,8 +19,11 @@ function deferred<T>() {
 
 class NativeGraphs {
   calls: string[] = [];
+  // Like the real one, a redraw reads the tag color (the sidebar title and the graph's tags take it).
+  owner?: { tagColor(): string };
+  constructor(owner?: { tagColor(): string }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
-  refresh(redraw = true) { this.calls.push(`refresh:${redraw}`); }
+  refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
   showPanel() { this.calls.push('panel'); }
   renderPanel() { this.calls.push('render-panel'); }
   destroy() { this.calls.push('destroy'); }
@@ -399,4 +402,18 @@ test('a tag color left to the accent redraws when the accent color changes, and 
   assert.equal(t.watching(), 1);
   t.unload();
   assert.equal(t.watching(), 0);
+});
+
+test('the accent the graph was last drawn with is the one compared, even after a settings change redrew it', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  Object.assign(t.plugin.settings, { customColors: true, tagColor: '' });
+  t.restyle('hsl(258, 88%, 66%)');
+  t.plugin.settings.tagColor = '#12ab3c'; await t.plugin.saveSettings();
+  t.restyle('hsl(353, 81%, 55%)');
+  // Back to following: the redraw takes the new accent.
+  t.plugin.settings.tagColor = ''; await t.plugin.saveSettings();
+  t.plugin.native.calls.length = 0;
+  t.restyle('hsl(258, 88%, 66%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'the accent going back is a change from what is drawn');
 });
