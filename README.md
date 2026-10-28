@@ -24,7 +24,8 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Edit the dictionary in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
-- **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
+- **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color.
+- **Focus (optional).** Keep the selected tag, its related tags and, if you like, its descendants and their notes bright while the rest fades.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
 
 | Sidebar tab | Dictionary check |
@@ -168,7 +169,9 @@ The round buttons on the left of the graph show their name when you hover them:
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
 | Layout | Force, Vertical tree or Horizontal tree. |
-| Keep the selected tag focused | Keep the selected tag and its links bright and fade the rest, as when you hover it. Off by default. |
+| Keep the selected tag focused | Keep the selected tag and its related tags bright and fade the rest. Off by default. Turn it on to show the options below. |
+| &nbsp;&nbsp;Its descendants | Also keep the tags under it bright, as far as they are expanded. On by default. |
+| &nbsp;&nbsp;Include notes | Also keep the notes on those tags bright. On by default. |
 | Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
 | &nbsp;&nbsp;Tag color | Color of every tag in the graph. Default `#8b6cef`. |
 | &nbsp;&nbsp;Highlight color | Color of the highlighted tags. Default `#6d47eb`. |

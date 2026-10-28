@@ -215,7 +215,11 @@ class DictionaryView extends ItemView {
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
 const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Horizontal tree' };
-const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its links bright and fade the rest, as when you hover it.' };
+const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its related tags bright and fade the rest.' };
+const FOCUS_SCOPE = [
+  { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep the tags under it bright, as far as they are expanded.' },
+  { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on those tags bright.' },
+] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };
 const HIGHLIGHT_COLOR = { name: 'Highlight color', desc: 'Highlighted tags take this color.' };
@@ -238,6 +242,9 @@ class OntologySettingsTab extends PluginSettingTab {
       } },
       { name: 'Layout', control: { type: 'dropdown', key: 'layout', options: LAYOUTS, defaultValue: DEFAULT_SETTINGS.layout } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
+      // What else stays bright only shows while focus is on.
+      { type: 'group', visible: () => this.owner.settings.focus, items:
+        FOCUS_SCOPE.map(({ key, name, desc }) => ({ name, desc, control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })) },
       { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
       // The color options only show while custom colors are on.
       { type: 'group', visible: () => this.owner.settings.customColors, items: [
@@ -272,9 +279,17 @@ class OntologySettingsTab extends PluginSettingTab {
           await this.owner.saveSettings();
         });
     });
+    const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.focus).onChange(value => this.setControlValue('focus', value));
+      toggle.setValue(this.owner.settings.focus).onChange((value) => {
+        for (const setting of scope) setting.settingEl.toggle(value);
+        return this.setControlValue('focus', value);
+      });
     });
+    for (const { key, name, desc } of FOCUS_SCOPE) scope.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
+    }));
+    for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
     const custom: Setting[] = [];
     new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.customColors).onChange((value) => {
