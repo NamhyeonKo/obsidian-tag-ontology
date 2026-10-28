@@ -12,7 +12,7 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
-![Tag Ontology demo](assets/0.5.1/demo.gif)
+![Tag Ontology demo](assets/0.7.6/demo.gif)
 
 ## Features
 
@@ -29,15 +29,15 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 
 | Sidebar tab | Dictionary check |
 | --- | --- |
-| ![Sidebar tab showing a tag with its parents, children and note counts](assets/0.5.1/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.5.1/dictionary-check.png) |
+| ![Sidebar tab showing a tag with its parents, children, related tags and note counts](assets/0.7.6/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.7.6/dictionary-check.png) |
 | **Vertical tree** | **Horizontal tree** |
-| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.6.0/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.6.0/tree-horizontal.png) |
-| **Custom colors** | **Keep the selected tag focused** |
-| ![Every tag in one color, the selected tag and its connected tags in the highlight color](assets/0.5.1/custom-colors.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.5.1/focus.png) |
+| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.7.6/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.7.6/tree-horizontal.png) |
+| **Original theme** | **Keep the selected tag focused** |
+| ![With custom colors off, tags keep the graph's own colors](assets/0.7.6/original-theme.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.7.6/focus.png) |
 | **Edit a tag** | **New tag** |
 | ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.7.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.7.0/new-tag.png) |
 | **Search suggestions** | **Delete a tag** |
-| ![Sidebar search suggesting a tag by name and another by alias](assets/0.5.1/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.7.0/delete-tag.png) |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.7.6/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.7.0/delete-tag.png) |
 
 ## How it works
 
