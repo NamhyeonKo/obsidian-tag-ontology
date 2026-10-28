@@ -24,7 +24,7 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Edit the dictionary in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
-- **Custom colors (optional).** Give every tag in the graph one color, the accent color unless you pick another, and show the sidebar's tags in it.
+- **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
 - **Focus (optional).** Keep the selected tag, its related tags and, if you like, its descendants and their notes bright while the rest fades.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
 
@@ -173,8 +173,8 @@ The round buttons on the left of the graph show their name when you hover them:
 | &nbsp;&nbsp;Its descendants | Also keep the tags under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on those tags bright. On by default. |
 | Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
-| &nbsp;&nbsp;Tag color | Color of every tag in the graph. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
-| &nbsp;&nbsp;Tag names in the tag color | Show the tags in the sidebar tab, and the selected tag's title, in the tag color. Off: the tags keep Obsidian's tag colors and the title the text color. On by default. |
+| &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
+| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
