@@ -63,6 +63,15 @@ test('add writes a root when no parent is chosen and leaves empty aliases out', 
   assert.deepEqual(Object.keys(apply(raw, { kind: 'add', draft: { ...emptyDraft(['cs']), name: 'b', aliases: ['B'] } }).b!), ['aliases', 'description', 'broader']);
 });
 
+test('add links children and related too, the way edit does', () => {
+  const next = apply(raw, { kind: 'add', draft: { ...emptyDraft(['ml']), name: 'llm', aliases: ['LLM'], children: ['dl', 'loose'], related: ['py', 'sec'] } });
+  assert.deepEqual(next.llm, { aliases: ['LLM'], description: '', broader: ['ml'], related: ['py', 'sec'] });
+  assert.deepEqual(Object.keys(next.llm!), ['aliases', 'description', 'broader', 'related']);
+  assert.deepEqual(next.dl!.broader, ['ml', 'llm']); assert.deepEqual(next.loose!.broader, ['llm']);
+  assert.deepEqual(next.py!.related, ['ml', 'llm']); assert.deepEqual(next.sec!.related, ['llm']);
+  assert.equal('related' in apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }).book!, false);
+});
+
 test('delete hands children to the deleted tag\'s parents and cleans related', () => {
   const next = apply(raw, { kind: 'delete', tag: 'ml' });
   assert.deepEqual(next.dl!.broader, ['cs']); assert.deepEqual(next['ai-sec']!.broader, ['sec', 'cs']);
@@ -93,6 +102,14 @@ test('parents exclude descendants and children exclude ancestors, using the draf
   assert.deepEqual([...excluded(raw, 'ml', draft, 'related')].sort(), ['ml', 'py']);
 });
 
+test('a new tag keeps cycles out through the parents and children it already names', () => {
+  const draft = emptyDraft();
+  assert.deepEqual([...excluded(raw, undefined, { ...draft, children: ['ml'] }, 'parents')].sort(), ['ai-sec', 'dl', 'ml']);
+  assert.deepEqual([...excluded(raw, undefined, { ...draft, parents: ['dl'] }, 'children')].sort(), ['cs', 'dl', 'ml']);
+  assert.deepEqual([...excluded(raw, undefined, { ...draft, related: ['py'] }, 'related')], ['py']);
+  assert.deepEqual([...excluded(raw, undefined, draft, 'parents')], []);
+});
+
 test('changedFields counts fields, not items', () => {
   assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), aliases: ['a', 'b'], related: [] }), 2);
   assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), children: ['dl', 'ai-sec'] }), 0);
@@ -115,6 +132,16 @@ test('only outside changes to the tag, its links or the tags it names conflict',
   assert.deepEqual(conflicts(raw, { ...raw, Book: { description: '' } }, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }), ['book']);
   const gone = { ...raw }; delete gone.ml;
   assert.deepEqual(conflicts(raw, gone, edit), ['ml']);
+});
+
+test('adding conflicts when a parent, child or related tag it names is gone', () => {
+  const add: Change = { kind: 'add', draft: { ...emptyDraft(['cs']), name: 'llm', children: ['dl'], related: ['py'] } };
+  assert.deepEqual(conflicts(raw, raw, add), []);
+  for (const tag of ['cs', 'dl', 'py']) {
+    const gone = { ...raw }; delete gone[tag];
+    assert.deepEqual(conflicts(raw, gone, add), [tag]);
+  }
+  assert.deepEqual(conflicts(raw, { ...raw, LLM: { description: '' } }, add), ['llm']);
 });
 
 test('a rename conflicts with a new entry under the new name, a delete with changed links', () => {

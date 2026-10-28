@@ -192,7 +192,8 @@ export default class TagOntologyPlugin extends Plugin {
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
-      this.native.showPanel(false);
+      // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
+      this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
     } catch (error) {
       if (this.disposed) return;

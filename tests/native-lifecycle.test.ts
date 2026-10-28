@@ -951,11 +951,35 @@ test('Add sends an add change with no parent and shows the new tag', async () =>
   const t = await setup();
   t.click('New tag');
   assert.ok(navButton(t, 'New tag').classes.has('is-active'));
-  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Description', 'Aliases']);
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Children', 'Related', 'Description', 'Aliases']);
   type(field(t, 'Name'), '#book');
   t.click('Add'); await settle();
   assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'book', description: '', aliases: [], parents: [], children: [], related: [] } }]);
   assert.equal(heading(t), 'book'); assert.equal(t.owner.reloads, 1);
+});
+
+test('Add sends the parents, children and related tags chosen in the new tag form', async () => {
+  const t = await setup();
+  t.click('New tag');
+  type(field(t, 'Name'), 'llm');
+  for (const [placeholder, tag] of [['Add a parent', 'ml'], ['Add a child', 'loose'], ['Add a related tag', 'crypto']] as const) {
+    t.click(placeholder);
+    t.suggests.filter(s => s.input.attrs.placeholder === placeholder).at(-1)!.onChoose(tag);
+  }
+  assert.deepEqual(tagLinks(t.sidebar), ['#ml', '#loose', '#crypto']);
+  t.click('Add'); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'llm', description: '', aliases: [], parents: ['ml'], children: ['loose'], related: ['crypto'] } }]);
+});
+
+test('the pickers of the new tag form leave out what would make a cycle', async () => {
+  const t = await setup();
+  t.click('New tag');
+  t.click('Add a parent');
+  t.suggests.filter(s => s.input.attrs.placeholder === 'Add a parent').at(-1)!.onChoose('dl');
+  t.click('Add a child');
+  const children = t.suggests.filter(s => s.input.attrs.placeholder === 'Add a child').at(-1)!;
+  assert.deepEqual([children.source('dl'), children.source('ml'), children.source('cs')].map(list => list.map(s => s.tag)), [[], [], []]);
+  assert.deepEqual(children.source('sec').map(s => s.tag), ['sec']);
 });
 
 test('the new tag form says it becomes a root tag only while it has no parent', async () => {

@@ -658,6 +658,7 @@ export class NativeGraphs {
     if (tag === undefined) {
       list('parents', 'Parents', 'Add a parent');
       if (!draft.parents.length) form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
+      list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
       describe(); aliases();
     } else {
       describe(); aliases();
@@ -727,7 +728,7 @@ export class NativeGraphs {
     input.value = mode.query ?? '';
     input.addEventListener('input', () => { mode.query = input.value; });
     new TagSuggest(this.owner.app, input, query => {
-      const skip = mode.kind === 'edit' ? excluded(mode.base, mode.tag, mode.draft, kind) : new Set(mode.draft[kind]);
+      const skip = excluded(mode.base, mode.kind === 'edit' ? mode.tag : undefined, mode.draft, kind);
       // The model can already hold tags added to the file after the form opened; the draft only knows the base.
       return (this.owner.model?.suggest(query, 50) ?? []).filter(s => Object.hasOwn(mode.base, s.tag) && !skip.has(s.tag)).slice(0, 10);
     }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; mode.query = ''; this.drawForm(); });
