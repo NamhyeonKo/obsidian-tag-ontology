@@ -241,9 +241,9 @@ class DictionaryView extends ItemView {
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
 const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Horizontal tree' };
-const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its related tags bright and fade the rest.' };
+const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
-  { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep the tags under it bright, as far as they are expanded.' },
+  { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
   { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on the selected tag bright, and on its descendants when those are on.' },
 ] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };

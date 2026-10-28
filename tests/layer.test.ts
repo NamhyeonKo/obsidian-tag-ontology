@@ -140,14 +140,15 @@ test('focus keeps the tag, its related tags and the chosen branch', () => {
     const { data, resolved } = buildLayer(input(), model, { expanded: new Set(expanded), showNotes: true, showRelated: true });
     return [...focusIds(data, resolved, model, tag, { ...scope, ...over })].sort();
   };
-  // overfitting lists dl as related, so related counts in both directions; a related tag's notes stay dark.
-  assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#overfitting', 'A.md']);
-  assert.deepEqual(focus(['cs', 'ml'], 'overfitting'), ['#DL', '#overfitting', 'D.md']);
+  // The tags next to it always stay: its parent ml and overfitting, which lists dl as related. Their notes stay dark.
+  assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#ml', '#overfitting', 'A.md']);
+  assert.deepEqual(focus(['cs', 'ml'], 'overfitting'), ['#DL', '#ml', '#overfitting', 'D.md']);
+  // Its parent, its children and, with descendants, every tag below; notes from the tag and its descendants.
+  assert.deepEqual(focus(['cs', 'ml'], 'ml', { descendants: false }), ['#DL', '#cs', '#ml', '#overfitting']);
   assert.deepEqual(focus(['cs', 'ml'], 'cs'), ['#DL', '#crypto', '#cs', '#ml', '#overfitting', 'A.md', 'B.md', 'D.md']);
-  // Descendants bring their notes only with notes on, and the tags alone without.
+  assert.deepEqual(focus(['cs', 'ml'], 'cs', { descendants: false }), ['#crypto', '#cs', '#ml']);
   assert.deepEqual(focus(['cs', 'ml'], 'cs', { notes: false }), ['#DL', '#crypto', '#cs', '#ml', '#overfitting']);
-  assert.deepEqual(focus(['cs', 'ml'], 'ml', { descendants: false }), ['#ml'], 'the parent never comes along');
-  assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#overfitting']);
+  assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#ml', '#overfitting']);
   // dl and overfitting are hidden: their notes now link to ml itself, and ml never stands in for them.
-  assert.deepEqual(focus(['cs'], 'ml'), ['#ml', 'A.md', 'D.md']);
+  assert.deepEqual(focus(['cs'], 'ml'), ['#cs', '#ml', 'A.md', 'D.md']);
 });
