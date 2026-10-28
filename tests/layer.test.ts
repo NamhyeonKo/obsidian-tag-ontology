@@ -140,9 +140,12 @@ test('focus keeps the tag, its related tags and the chosen branch', () => {
     const { data, resolved } = buildLayer(input(), model, { expanded: new Set(expanded), showNotes: true, showRelated: true });
     return [...focusIds(data, resolved, model, tag, { ...scope, ...over })].sort();
   };
-  // overfitting lists dl as related, so related counts in both directions.
-  assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#overfitting', 'A.md', 'D.md']);
+  // overfitting lists dl as related, so related counts in both directions; a related tag's notes stay dark.
+  assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#overfitting', 'A.md']);
+  assert.deepEqual(focus(['cs', 'ml'], 'overfitting'), ['#DL', '#overfitting', 'D.md']);
   assert.deepEqual(focus(['cs', 'ml'], 'cs'), ['#DL', '#crypto', '#cs', '#ml', '#overfitting', 'A.md', 'B.md', 'D.md']);
+  // Descendants bring their notes only with notes on, and the tags alone without.
+  assert.deepEqual(focus(['cs', 'ml'], 'cs', { notes: false }), ['#DL', '#crypto', '#cs', '#ml', '#overfitting']);
   assert.deepEqual(focus(['cs', 'ml'], 'ml', { descendants: false }), ['#ml'], 'the parent never comes along');
   assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#overfitting']);
   // dl and overfitting are hidden: their notes now link to ml itself, and ml never stands in for them.

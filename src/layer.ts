@@ -105,13 +105,15 @@ export function hideNotes(data: NativeData): NativeData {
 
 export interface FocusScope { descendants: boolean; notes: boolean }
 
-// What Focus keeps bright: the tag and its related tags, plus its descendants if the scope says so, as far as they are visible,
-// and with notes the notes linked to any of those. A hidden tag never brightens the visible tag standing in for it.
+// What Focus keeps bright: the tag and its related tags, plus its descendants if the scope says so, as far as they are visible.
+// With notes, the notes on the tag itself, and on its descendants when those are in: a related tag's notes stay dark.
+// A hidden tag never brightens the visible tag standing in for it.
 export function focusIds(data: NativeData, resolved: Resolved, model: Ontology, tag: string, scope: FocusScope): Set<string> {
-  const tags = [tag, ...model.related(tag), ...scope.descendants ? model.descendants(tag) : []];
-  const tagIds = new Set(tags.filter(item => resolved.visible.has(item)).map(item => resolved.idOf.get(item)!)), ids = new Set(tagIds);
+  const visibleIds = (tags: Iterable<string>) => [...tags].filter(item => resolved.visible.has(item)).map(item => resolved.idOf.get(item)!);
+  const branch = new Set(visibleIds([tag, ...scope.descendants ? model.descendants(tag) : []]));
+  const ids = new Set([...branch, ...visibleIds(model.related(tag))]);
   if (scope.notes) for (const [id, node] of Object.entries(data.nodes)) {
-    if (node.type !== 'tag' && Object.keys(node.links).some(target => tagIds.has(target))) ids.add(id);
+    if (node.type !== 'tag' && Object.keys(node.links).some(target => branch.has(target))) ids.add(id);
   }
   return ids;
 }

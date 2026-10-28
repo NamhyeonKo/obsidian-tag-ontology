@@ -244,7 +244,7 @@ const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Hor
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and its related tags bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep the tags under it bright, as far as they are expanded.' },
-  { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on those tags bright.' },
+  { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on the selected tag bright, and on its descendants when those are on.' },
 ] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph and in the sidebar takes this color. It follows the accent color until you pick one.' };
