@@ -19,6 +19,13 @@
 .tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }
 .tag-ontology-header h3.tag-ontology-accent { color: var(--tag-ontology-color); }
+/* Obsidian tints tags with the accent through these variables; in the sidebar they take the tag color instead. */
+.tag-ontology-panel.tag-ontology-tinted {
+  --tag-color: var(--tag-ontology-color); --tag-color-hover: var(--tag-ontology-color);
+  --tag-background: color-mix(in oklch, var(--tag-ontology-color) 10%, transparent);
+  --tag-background-hover: color-mix(in oklch, var(--tag-ontology-color) 20%, transparent);
+  --tag-border-color: color-mix(in oklch, var(--tag-ontology-color) 15%, transparent);
+}
 .tag-ontology-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tag-ontology-panel p { line-height: 1.6; }
 .tag-ontology-panel h4 { margin: 18px 0 12px; font-size: var(--font-ui-small); }

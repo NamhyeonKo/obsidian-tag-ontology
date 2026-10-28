@@ -4,7 +4,7 @@ export interface Settings {
   // With customColors on, every tag node in the graph takes tagColor, or Obsidian's accent color while it is empty; with it off
   // the plugin leaves colors alone.
   customColors: boolean; tagColor: string;
-  // With customColors on, the sidebar title of the selected tag takes the tag color.
+  // With customColors on, the sidebar's tags and the selected tag's title take the tag color.
   titleAccent: boolean;
   // With focus on, the selected tag and its related tags stay bright and the rest fades; the focus flags add its descendants
   // and the notes on all of those.
