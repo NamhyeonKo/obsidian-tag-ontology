@@ -55,7 +55,10 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
   '#loose': { type: 'tag', links: {} }, '#to-read': { type: 'tag', links: {} },
 } });
 
-interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
+// Nodes and links record what getHighlightNode() returned while they were drawn: null draws normally, anything else fades
+// whatever is not linked to it.
+interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; seen?: unknown; render(): void }
+interface Node { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; seen?: unknown; render?(): void }
 
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
@@ -101,7 +104,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
+    nodes: [] as Node[], links: [] as Link[],
     fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
@@ -110,10 +113,13 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
-      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null }));
+      this.nodes = Object.keys(data.nodes).map(id => {
+        const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
+        return node;
+      });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
-          render() { link.arrows = renderer.fShowArrow; } };
+          render() { link.arrows = renderer.fShowArrow; link.seen = renderer.getHighlightNode(); } };
         return link;
       }));
     },
@@ -718,19 +724,32 @@ test('with custom colors the sidebar title takes the highlight color unless that
   assert.ok(!title().classes.has('tag-ontology-accent'));
 });
 
-test('focus keeps the selected tag looking hovered until something else is hovered or it is turned off', async () => {
-  const t = await setup({ focus: true });
-  t.controller.attach();
-  const node = (id: string) => t.renderer.nodes.find(n => n.id === id);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(t.renderer.getHighlightNode(), node('#cs'));
-  t.renderer.highlightNode = node('#sec');
-  assert.equal(t.renderer.getHighlightNode(), node('#sec'), 'hovering another node still wins');
-  t.renderer.highlightNode = null;
+test('focus fades everything but the selected tag, its related tags and the chosen branch', async () => {
+  const t = await setup({ focus: true, expanded: ['cs', 'ml'] }); t.controller.attach();
+  const bright = () => { for (const n of t.renderer.nodes) n.render!(); return t.renderer.nodes.filter(n => n.seen === null).map(n => n.id).sort(); };
+  nodeClick(t, '#cs');
+  assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml', 'A.md', 'B.md']);
+  const link = (s: string, d: string) => { const l = t.renderer.links.find(l => l.source.id === s && l.target.id === d)!; l.render(); return l.seen; };
+  assert.equal(link('#cs', '#ml'), null, 'a link inside the bright set draws normally');
+  assert.notEqual(link('B.md', '#loose'), null, 'a link leaving it fades');
+  t.owner.settings.focusNotes = false; t.controller.refresh();
+  assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml']);
+  t.renderer.dragNode = t.renderer.nodes.find(n => n.id === '#sec');
+  t.renderer.nodes.find(n => n.id === '#cs')!.render!();
+  assert.equal(t.renderer.nodes.find(n => n.id === '#cs')!.seen, t.renderer.dragNode, 'dragging or hovering wins');
+  t.renderer.dragNode = null;
   t.owner.settings.focus = false; t.controller.refresh();
-  assert.equal(t.renderer.getHighlightNode(), null);
+  assert.equal(bright().length, t.renderer.nodes.length);
   t.controller.destroy();
   assert.equal(t.renderer.getHighlightNode, t.original.getHighlightNode);
+});
+
+test('focus on a tag collapsed out of sight fades nothing', async () => {
+  const t = await setup({ focus: true, expanded: ['cs'] }); t.controller.attach();
+  nodeClick(t, '#ml');
+  t.click('Collapse all');
+  for (const n of t.renderer.nodes) n.render!();
+  assert.ok(t.renderer.nodes.every(n => n.seen === null));
 });
 
 test('a note-only refresh updates the panel without redrawing the graph', async () => {

@@ -1,7 +1,7 @@
 import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
-import { buildLayer, edgeKey, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
+import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
 import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
@@ -22,16 +22,19 @@ interface NativeRenderer {
   getHighlightNode: () => unknown;
   worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[];
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void }[];
   links: NativeLink[];
 }
+type RendererNode = NativeRenderer['nodes'][number];
 interface GraphEngine { getOptions(): Record<string, unknown>; setOptions(options: Record<string, unknown>): void; onOptionsChange(): void }
 interface NativeView extends ItemView { renderer: NativeRenderer; dataEngine?: GraphEngine; update(): void }
 interface Session {
   leaf: WorkspaceLeaf; view: NativeView; renderer: NativeRenderer; active: boolean;
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
-  hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode']; focus?: unknown;
+  hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
+  // What Focus keeps bright, and whether the node or link being drawn right now is part of it.
+  focusIds?: Set<string>; lit?: boolean;
   overlay: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
@@ -39,6 +42,7 @@ interface Session {
   data?: NativeData;
   kinds: Map<string, EdgeKind>;
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
+  nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
@@ -59,6 +63,10 @@ const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'F
 export const PANEL_VIEW = 'tag-ontology-panel';
 // Two clicks on the same tag within this many milliseconds make a double click.
 const DOUBLE_CLICK_MS = 350;
+// Stands in for the highlighted node while Focus fades something: no node links to this id. Returning the selected node instead
+// would also give it the highlight fill, ring and lifted label.
+const FADED = { id: '\0focus' };
+const sameSet = (a?: Set<string>, b?: Set<string>) => a === b || (!!a && !!b && a.size === b.size && [...a].every(id => b.has(id)));
 // The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
 const colors = new Map<string, NodeColor>();
 const hexColor = (hex: string): NodeColor => colors.get(hex) ?? colors.set(hex, { a: 1, rgb: parseInt(hex.slice(1), 16) }).get(hex)!;
@@ -143,7 +151,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -189,8 +197,9 @@ export class NativeGraphs {
           this.showPanel(true);
         });
       };
-      // Node and link drawing fade everything not linked to this node; with focus on, the selected tag counts as hovered when nothing else is.
-      session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || session.focus || null;
+      // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
+      // what Focus keeps bright draws as if nothing were highlighted, and the rest sees a node nothing links to, so it fades.
+      session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (session.focusIds && !session.lit ? FADED : null);
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
       this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
       this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
@@ -321,6 +330,7 @@ export class NativeGraphs {
     this.paint(session);
     if (restyled) r.changed();
     this.styleLinks(session);
+    this.styleNodes(session);
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
     session.layout = settings.layout;
@@ -367,9 +377,25 @@ export class NativeGraphs {
           link.line.texture = session.texture;
         } else if (link.line && original.texture) link.line.texture = original.texture;
         // Hierarchy direction is the meaning of the edge, so it ignores the user's arrow setting; other links follow it.
-        const arrows = r.fShowArrow;
+        const arrows = r.fShowArrow, ids = session.focusIds;
         r.fShowArrow = kind === 'broader' ? true : kind === 'related' ? false : arrows;
-        try { original.render.call(link); } finally { r.fShowArrow = arrows; }
+        session.lit = !ids || (ids.has(link.source.id) && ids.has(link.target.id));
+        try { original.render.call(link); } finally { r.fShowArrow = arrows; session.lit = undefined; }
+      };
+    }
+  }
+
+  // Like links, each node draws while getHighlightNode() answers for it, so Focus can keep any set of nodes bright.
+  private styleNodes(session: Session) {
+    const current = new Set(session.renderer.nodes);
+    for (const node of session.nodeRenders.keys()) if (!current.has(node)) session.nodeRenders.delete(node);
+    for (const node of session.renderer.nodes) {
+      const original = node.render;
+      if (!original || session.nodeRenders.has(node)) continue;
+      session.nodeRenders.set(node, original);
+      node.render = () => {
+        session.lit = !session.focusIds || session.focusIds.has(node.id);
+        try { original.call(node); } finally { session.lit = undefined; }
       };
     }
   }
@@ -457,7 +483,7 @@ export class NativeGraphs {
 
   // The renderer reads node colors every frame, so recoloring needs no new data: highlighted tags take the
   // highlight color and every other node the color the layer gave it. A redraw runs about a second of frames,
-  // so it is only asked for when a color or the focus changed.
+  // so it is only asked for when a color or what Focus keeps bright changed.
   private paint(session: Session) {
     const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor), ids = this.highlightIds(session);
     let changed = false;
@@ -465,9 +491,11 @@ export class NativeGraphs {
       const color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
       if (node.color !== color) { node.color = color; changed = true; }
     }
-    const focused = this.owner.settings.focus && this.selected ? session.resolved?.idOf.get(this.selected) : undefined;
-    const focus = focused && r.nodes.find(n => n.id === focused);
-    if (focus !== session.focus) { session.focus = focus; changed = true; }
+    const settings = this.owner.settings, model = this.owner.model, tag = this.selected, resolved = session.resolved, data = session.data;
+    // A selected tag collapsed out of sight has nothing to keep bright, so nothing fades.
+    const bright = settings.focus && model && tag && resolved?.visible.has(tag) && data
+      ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, ancestors: settings.focusAncestors, notes: settings.focusNotes }) : undefined;
+    if (!sameSet(bright, session.focusIds)) { session.focusIds = bright; changed = true; }
     if (changed) r.changed();
   }
 
@@ -853,6 +881,7 @@ export class NativeGraphs {
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
+    for (const [node, render] of s.nodeRenders) node.render = render;
     for (const [link, original] of s.links) {
       link.render = original.render;
       if (link.line && original.texture) link.line.texture = original.texture;
