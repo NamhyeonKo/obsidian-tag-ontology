@@ -17,7 +17,7 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 ## Features
 
 - **An extension of the core graph.** Notes, note links, filters, color groups, arrows and the other core settings work as usual.
-- **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to expand it one level and watch its notes move to the more specific child tags.
+- **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
@@ -73,7 +73,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 3. Click the **Open tag ontology** ribbon icon (a book) or run **Tag Ontology: Open graph** from the command palette.
 4. If the graph shows no tags, turn on **Filters → Tags** in the graph settings (gear icon).
 
-You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
+You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Double-click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
 
 ## Tag dictionary format
 
@@ -152,7 +152,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Force / Vertical tree / Horizontal tree | Switch the layout; the current one is highlighted |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
-- Click a tag in the graph to expand it and show it in the sidebar tab. Collapse it with the button at the top of the tab.
+- Click a tag in the graph to show it in the sidebar tab, and double-click it to expand it. Collapse it with the button at the top of the tab.
 - Everything else keeps the core behavior: clicking a note opens it, and clicking a tag that is not in the dictionary opens search.
 
 ### Commands
