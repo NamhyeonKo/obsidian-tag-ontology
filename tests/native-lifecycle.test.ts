@@ -136,6 +136,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    // The plugin reads the accent color from the theme; an empty tag color follows it.
+    accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
     raw, changes: [] as Change[], reloads: 0, missing: false, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
@@ -655,48 +657,29 @@ test('custom colors give every tag node the tag color and turning them off gives
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.color === undefined));
 });
 
-const TAG = 0x8b6cef, HIGHLIGHT = 0x6d47eb;
+const TAG = 0x8b6cef;
 const rgbOf = (t: { renderer: { nodes: { id: string; color: unknown }[] } }, id: string) => (t.renderer.nodes.find(n => n.id === id)!.color as { rgb: number } | null)?.rgb;
 
-test('the selected tag takes the highlight color and the one before goes back to the tag color', async () => {
-  const t = await setup({ customColors: true, expanded: ['cs'] });
-  t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT); assert.equal(rgbOf(t, '#sec'), TAG);
-  t.suggests[0]!.onChoose('ml');
-  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT, 'an already expanded tag is highlighted without a re-render');
-  assert.equal(rgbOf(t, '#ml'), TAG);
-});
-
-test('the highlight toggles add up: the tag itself, its descendants and its directly connected tags', async () => {
-  const t = await setup({ customColors: true, expanded: ['cs', 'ml'], highlightSelected: false, highlightDescendants: true });
-  t.controller.attach();
-  const highlighted = () => t.renderer.nodes.filter(n => (n.color as { rgb?: number } | null)?.rgb === HIGHLIGHT).map(n => n.id).sort();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.deepEqual(highlighted(), ['#DL', '#crypto', '#ml']);
-  Object.assign(t.owner.settings, { highlightSelected: true, highlightDescendants: false, highlightConnected: true }); t.controller.refresh();
-  t.suggests[0]!.onChoose('ml');
-  assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
-  t.owner.settings.customColors = false; t.controller.refresh();
-  assert.deepEqual(highlighted(), []);
-});
-
-test('a native update that changes nothing leaves the renderer asleep, and choosing another tag still wakes it', async () => {
+test('a native update that changes nothing leaves the renderer asleep', async () => {
   const t = await setup({ customColors: true, expanded: ['cs', 'ml'] });
   t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  nodeClick(t, '#cs');
   let wakes = 0; t.renderer.changed = () => { wakes++; };
   // The core graph redraws for every node whose color is a different object from the one it has.
   t.renderer.setData(core());
   const [before, after] = t.forwarded.slice(-2).map(data => data.nodes);
   assert.equal(after!['#sec']!.color, before!['#sec']!.color, 'the tag color is the same object');
-  assert.equal((after!['#cs']!.color as { rgb: number }).rgb, HIGHLIGHT, 'the core graph gets the highlight, so it has nothing to undo');
   assert.equal(wakes, 0);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
-  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
-  assert.equal(wakes, 1, 'the new selection repaints');
+});
+
+test('a tag color left to the accent repaints when the accent changes', async () => {
+  const t = await setup({ customColors: true });
+  t.controller.attach();
+  assert.equal(rgbOf(t, '#cs'), TAG);
+  t.owner.accent = '#112233'; t.controller.refresh();
+  assert.equal(rgbOf(t, '#cs'), 0x112233);
+  t.owner.settings.tagColor = '#12ab3c'; t.controller.refresh();
+  assert.equal(rgbOf(t, '#cs'), 0x12ab3c, 'a picked color stays');
 });
 
 test('a dictionary edit that only turns a parent link into a related link still redraws it', async () => {
@@ -712,12 +695,14 @@ test('a dictionary edit that only turns a parent link into a related link still 
   assert.equal(wakes, 1, 'the link is redrawn in its new style');
 });
 
-test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
+test('with custom colors the sidebar title takes the tag color unless that is switched off', async () => {
   const t = await setup({ customColors: true });
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
   const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
   t.suggests[0]!.onChoose('cs');
-  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#6d47eb');
+  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#8b6cef');
+  t.owner.accent = '#112233'; t.controller.refresh();
+  assert.equal(panel.css['--tag-ontology-color'], '#112233', 'it follows the accent with the graph');
   t.owner.settings.titleAccent = false; t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent'));
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();

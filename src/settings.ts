@@ -1,11 +1,10 @@
 export interface Settings {
   dictionaryPath: string; layout: 'force' | 'tree' | 'tree-horizontal';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
-  // With customColors on, every tag node in the graph takes tagColor and the highlighted ones (the selected tag,
-  // its descendants, its directly connected tags, as switched on) take highlightColor; with it off the plugin leaves colors alone.
-  customColors: boolean; tagColor: string; highlightColor: string;
-  highlightSelected: boolean; highlightDescendants: boolean; highlightConnected: boolean;
-  // With customColors on, the sidebar title of the selected tag takes highlightColor.
+  // With customColors on, every tag node in the graph takes tagColor, or Obsidian's accent color while it is empty; with it off
+  // the plugin leaves colors alone.
+  customColors: boolean; tagColor: string;
+  // With customColors on, the sidebar title of the selected tag takes the tag color.
   titleAccent: boolean;
   // With focus on, the selected tag and its related tags stay bright and the rest fades; the focus flags add its descendants
   // and the notes on all of those.
@@ -13,10 +12,7 @@ export interface Settings {
 }
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: 'Tag-Dictionary.json', layout: 'force', expanded: [], showNotes: true, showRelated: true,
-  // Obsidian's default accent color, and a slightly darker one for highlights.
-  customColors: false, tagColor: '#8b6cef', highlightColor: '#6d47eb',
-  highlightSelected: true, highlightDescendants: false, highlightConnected: false, titleAccent: true, focus: false,
-  focusDescendants: true, focusNotes: true,
+  customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true,
 };
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
   const parts = path.split('/');
@@ -28,8 +24,9 @@ export function isValidDictionaryPath(path: string, configDir: string): boolean 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
-  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'highlightSelected' | 'highlightDescendants' | 'highlightConnected' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
-  const hex = (key: 'tagColor' | 'highlightColor') => typeof value[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key]) ? value[key] : DEFAULT_SETTINGS[key];
+  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
+  // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so that saved value follows the accent now.
+  const tagColor = typeof value.tagColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.tagColor) && value.tagColor.toLowerCase() !== '#8b6cef' ? value.tagColor : '';
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
@@ -37,9 +34,22 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     layout: value.layout === 'tree' || value.layout === 'tree-horizontal' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
-    customColors: flag('customColors'), tagColor: hex('tagColor'), highlightColor: hex('highlightColor'),
-    highlightSelected: flag('highlightSelected'), highlightDescendants: flag('highlightDescendants'), highlightConnected: flag('highlightConnected'),
-    titleAccent: flag('titleAccent'), focus: flag('focus'),
+    customColors: flag('customColors'), tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
   };
+}
+
+// A theme color variable as hex: Obsidian's --color-accent holds hsl(), and themes may set hex or rgb() instead.
+export function cssColorToHex(css: string): string | undefined {
+  const text = css.trim(), byte = (n: number) => Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0');
+  const hex = /^#([0-9a-f]{6})$/i.exec(text);
+  if (hex) return '#' + hex[1].toLowerCase();
+  const rgb = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(text);
+  if (rgb) return '#' + rgb.slice(1, 4).map(n => byte(Number(n))).join('');
+  const hsl = /^hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%/.exec(text);
+  if (!hsl) return undefined;
+  // CSS Color 4's hsl-to-rgb: f(0), f(8) and f(4) are red, green and blue.
+  const h = Number(hsl[1]) % 360, s = Number(hsl[2]) / 100, l = Number(hsl[3]) / 100, a = s * Math.min(l, 1 - l);
+  const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return '#' + [0, 8, 4].map(n => byte(f(n) * 255)).join('');
 }

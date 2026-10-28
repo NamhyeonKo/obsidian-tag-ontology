@@ -1,12 +1,14 @@
-import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type SettingDefinitionItem, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type WorkspaceLeaf } from 'obsidian';
 import { Ontology, isIncludedNote, type Note } from './ontology.ts';
-import { DEFAULT_SETTINGS, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
+import { DEFAULT_SETTINGS, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { apply, conflicts, serialize, type Change, type RawDictionary } from './dictionary.ts';
 
 export type { Settings } from './settings.ts';
 
 const ICON = 'book-open';
+// Obsidian's default accent color, for a theme whose accent can't be read.
+const ACCENT = '#8b6cef';
 export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
 // Notices and the sidebar show the message alone; String(error) would add an "Error: " prefix.
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -25,6 +27,8 @@ export default class TagOntologyPlugin extends Plugin {
   private refreshTimer?: number;
   private redraw = false;
   private disposed = false;
+  // The accent the graphs were last redrawn with, so other style changes on <body> don't redraw them.
+  private accent?: string;
 
   async onload(): Promise<void> {
     const saved: unknown = await this.loadData();
@@ -39,6 +43,12 @@ export default class TagOntologyPlugin extends Plugin {
     } });
     this.addSettingTab(new OntologySettingsTab(this.app, this));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
+    // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
+    // accent variables on <body>, so <body>'s style is watched too.
+    this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
+    const accentWatch = new MutationObserver(() => this.followAccent());
+    accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    this.register(() => accentWatch.disconnect());
     // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
     this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath) instanceof TFile })); });
     const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
@@ -144,6 +154,19 @@ export default class TagOntologyPlugin extends Plugin {
 
   reload(): Promise<void> { return this.refreshViews({ notify: true }); }
 
+  // The picked tag color, or Obsidian's accent color while none is picked. The accent is read from the theme's variable, which
+  // the app's own styles set before any plugin loads.
+  tagColor(): string {
+    return this.settings.tagColor || (cssColorToHex(getComputedStyle(document.body).getPropertyValue('--color-accent')) ?? ACCENT);
+  }
+
+  private followAccent() {
+    const accent = this.tagColor();
+    if (!this.model || !this.settings.customColors || this.settings.tagColor || accent === this.accent) return;
+    this.accent = accent;
+    this.native.refresh();
+  }
+
   // Persists graph state (expansion, toggles) without reloading the dictionary or redrawing views.
   async saveState(): Promise<void> {
     await this.saveData(this.settings);
@@ -221,14 +244,8 @@ const FOCUS_SCOPE = [
   { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on those tags bright.' },
 ] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
-const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color.' };
-const HIGHLIGHT_COLOR = { name: 'Highlight color', desc: 'Highlighted tags take this color.' };
-const HIGHLIGHTS = [
-  { key: 'highlightSelected', name: 'Highlight the selected tag', desc: 'The tag you clicked or searched.' },
-  { key: 'highlightDescendants', name: 'Highlight its descendants', desc: 'Every tag under the selected tag.' },
-  { key: 'highlightConnected', name: 'Highlight its connected tags', desc: 'The parents, children and related tags of the selected tag.' },
-] as const;
-const TITLE = { name: 'Tag title in the highlight color', desc: 'Show the selected tag\'s title in the sidebar in the highlight color.' };
+const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color. It follows the accent color until you pick one.' };
+const TITLE = { name: 'Tag title in the tag color', desc: 'Show the selected tag\'s title in the sidebar in the tag color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
@@ -248,9 +265,8 @@ class OntologySettingsTab extends PluginSettingTab {
       { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
       // The color options only show while custom colors are on.
       { type: 'group', visible: () => this.owner.settings.customColors, items: [
-        { ...TAG_COLOR, control: { type: 'color', key: 'tagColor', defaultValue: DEFAULT_SETTINGS.tagColor } },
-        { ...HIGHLIGHT_COLOR, control: { type: 'color', key: 'highlightColor', defaultValue: DEFAULT_SETTINGS.highlightColor } },
-        ...HIGHLIGHTS.map(({ key, name, desc }) => ({ name, desc, control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
+        // A plain color control has no way back to following the accent, so this row is drawn by hand.
+        { ...TAG_COLOR, render: (setting) => { this.tagColor(setting); } },
         { ...TITLE, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
       ] },
     ];
@@ -259,6 +275,24 @@ class OntologySettingsTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown): Promise<void> {
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
+  }
+
+  // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
+  // Showing the accent again calls onChange too, and that must not pin the accent as a picked color.
+  private tagColor(setting: Setting): Setting {
+    let shown: ColorComponent | undefined;
+    return setting.setName(TAG_COLOR.name).setDesc(TAG_COLOR.desc)
+      .addColorPicker((picker) => {
+        shown = picker;
+        picker.setValue(this.owner.tagColor()).onChange(async (value) => {
+          if (!this.owner.settings.tagColor && value === this.owner.tagColor()) return;
+          await this.setControlValue('tagColor', value);
+        });
+      })
+      .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip('Use the accent color').onClick(async () => {
+        await this.setControlValue('tagColor', '');
+        shown?.setValue(this.owner.tagColor());
+      }));
   }
 
   // Fallback for Obsidian older than 1.13, which never calls getSettingDefinitions().
@@ -297,15 +331,7 @@ class OntologySettingsTab extends PluginSettingTab {
         return this.setControlValue('customColors', value);
       });
     });
-    custom.push(new Setting(containerEl).setName(TAG_COLOR.name).setDesc(TAG_COLOR.desc).addColorPicker((picker) => {
-      picker.setValue(this.owner.settings.tagColor).onChange(value => this.setControlValue('tagColor', value));
-    }));
-    custom.push(new Setting(containerEl).setName(HIGHLIGHT_COLOR.name).setDesc(HIGHLIGHT_COLOR.desc).addColorPicker((picker) => {
-      picker.setValue(this.owner.settings.highlightColor).onChange(value => this.setControlValue('highlightColor', value));
-    }));
-    for (const { key, name, desc } of HIGHLIGHTS) custom.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
-    }));
+    custom.push(this.tagColor(new Setting(containerEl)));
     custom.push(new Setting(containerEl).setName(TITLE.name).setDesc(TITLE.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));

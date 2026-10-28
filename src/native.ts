@@ -315,7 +315,7 @@ export class NativeGraphs {
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
-      tagColor: settings.customColors ? hexColor(settings.tagColor) : undefined });
+      tagColor: settings.customColors ? hexColor(this.owner.tagColor()) : undefined });
     // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
     const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
     session.resolved = layer.resolved; session.kinds = layer.kinds; session.data = layer.data;
@@ -326,7 +326,7 @@ export class NativeGraphs {
       const rest = { ...message }; delete rest.alpha; delete rest.run; post.call(worker, rest);
     };
     let result: unknown;
-    try { result = session.original.call(r, this.painted(session)); } finally { worker.postMessage = post; }
+    try { result = session.original.call(r, layer.data); } finally { worker.postMessage = post; }
     this.paint(session);
     if (restyled) r.changed();
     this.styleLinks(session);
@@ -456,47 +456,14 @@ export class NativeGraphs {
     for (const session of this.sessions.values()) this.paint(session);
   }
 
-  // Tags to show in the highlight color for the current selection.
-  private highlighted(): string[] {
-    const settings = this.owner.settings, model = this.owner.model, tag = this.selected, entry = tag ? model?.entries.get(tag) : undefined;
-    if (!settings.customColors || !model || !tag || !entry) return [];
-    return [
-      ...settings.highlightSelected ? [tag] : [],
-      ...settings.highlightDescendants ? model.descendants(tag) : [],
-      ...settings.highlightConnected ? [...entry.broader ?? [], ...model.children.get(tag) ?? [], ...model.related(tag)] : [],
-    ];
-  }
-
-  private highlightIds(session: Session) {
-    return new Set(this.highlighted().flatMap(tag => session.resolved?.idOf.get(tag) ?? []));
-  }
-
-  // The layered data with the highlight colors on. The core graph sets back every color that differs from the data and
-  // redraws, so without them each native update would undo the highlight for paint to redo.
-  private painted(session: Session): NativeData {
-    const data = session.data!, ids = this.highlightIds(session), color = hexColor(this.owner.settings.highlightColor);
-    if (!ids.size) return data;
-    const nodes = { ...data.nodes };
-    for (const id of ids) if (nodes[id]) nodes[id] = { ...nodes[id], color };
-    return { ...data, nodes };
-  }
-
-  // The renderer reads node colors every frame, so recoloring needs no new data: highlighted tags take the
-  // highlight color and every other node the color the layer gave it. A redraw runs about a second of frames,
-  // so it is only asked for when a color or what Focus keeps bright changed.
+  // Node and link drawing read what Focus keeps bright every frame, so a new selection needs no new data. A redraw runs
+  // about a second of frames, so it is only asked for when that changed.
   private paint(session: Session) {
-    const r = session.renderer, highlight = hexColor(this.owner.settings.highlightColor), ids = this.highlightIds(session);
-    let changed = false;
-    for (const node of r.nodes) {
-      const color = ids.has(node.id) ? highlight : session.data?.nodes[node.id]?.color ?? null;
-      if (node.color !== color) { node.color = color; changed = true; }
-    }
     const settings = this.owner.settings, model = this.owner.model, tag = this.selected, resolved = session.resolved, data = session.data;
     // A selected tag collapsed out of sight has nothing to keep bright, so nothing fades.
     const bright = settings.focus && model && tag && resolved?.visible.has(tag) && data
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
-    if (!sameSet(bright, session.focusIds)) { session.focusIds = bright; changed = true; }
-    if (changed) r.changed();
+    if (!sameSet(bright, session.focusIds)) { session.focusIds = bright; session.renderer.changed(); }
   }
 
   renderPanel() {
@@ -510,7 +477,7 @@ export class NativeGraphs {
     panel.empty();
     if (error) this.loadError(panel, error);
     if (!model) return;
-    panel.setCssProps({ '--tag-ontology-color': this.owner.settings.highlightColor });
+    panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor() });
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
