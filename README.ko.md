@@ -244,6 +244,10 @@ scripts/deploy.mjs  # Copies the build into a local vault
 
 커밋 규칙(Conventional Commits), 커밋 전 검사, Obsidian에서 테스트하는 방법, 메인테이너용 릴리스 절차는 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다(영어).
 
+## 후원
+
+Tag Ontology는 무료 오픈 소스입니다. 시간을 아껴 줬다면 [GitHub Sponsors](https://github.com/sponsors/NamhyeonKo)로 커피 한 잔을 선물해 주셔도 좋습니다.
+
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
