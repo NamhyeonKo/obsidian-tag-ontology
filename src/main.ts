@@ -240,7 +240,7 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const LAYOUTS = { force: 'Force', tree: 'Vertical tree', 'tree-horizontal': 'Horizontal tree' };
+const LAYOUT = { name: 'Layout', desc: 'Force and the tree layouts are on the graph toolbar. 3D is coming in a later release.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
@@ -260,7 +260,8 @@ class OntologySettingsTab extends PluginSettingTab {
         type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
-      { name: 'Layout', control: { type: 'dropdown', key: 'layout', options: LAYOUTS, defaultValue: DEFAULT_SETTINGS.layout } },
+      // A plain dropdown can't turn off one option, so this row is drawn by hand.
+      { ...LAYOUT, render: (setting) => { this.layout(setting); } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
       { type: 'group', visible: () => this.owner.settings.focus, items:
@@ -278,6 +279,14 @@ class OntologySettingsTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown): Promise<void> {
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
+  }
+
+  // Only the 2D graph exists yet: 3D (beta) is listed so it can be seen coming, but can't be chosen.
+  private layout(setting: Setting): Setting {
+    return setting.setName(LAYOUT.name).setDesc(LAYOUT.desc).addDropdown((dropdown) => {
+      dropdown.addOptions({ '2d': '2D', '3d': '3D (beta)' }).setValue('2d');
+      dropdown.selectEl.querySelector<HTMLOptionElement>('option[value="3d"]')!.disabled = true;
+    });
   }
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
@@ -309,13 +318,7 @@ class OntologySettingsTab extends PluginSettingTab {
         await this.owner.saveSettings();
       });
     });
-    new Setting(containerEl).setName('Layout').addDropdown((dropdown) => {
-      dropdown.addOptions(LAYOUTS)
-        .setValue(this.owner.settings.layout).onChange(async (layout) => {
-          this.owner.settings = sanitizeSettings({ ...this.owner.settings, layout }, this.app.vault.configDir);
-          await this.owner.saveSettings();
-        });
-    });
+    this.layout(new Setting(containerEl));
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.focus).onChange((value) => {
