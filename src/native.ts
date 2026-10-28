@@ -33,8 +33,8 @@ interface Session {
   original: NativeRenderer['setData']; wrapped: NativeRenderer['setData'];
   click: NativeRenderer['onNodeClick']; ownClick?: NativeRenderer['onNodeClick'];
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
-  // What Focus keeps bright, and whether the node or link being drawn right now is part of it.
-  focusIds?: Set<string>; lit?: boolean;
+  // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
+  focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
   overlay: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
@@ -63,8 +63,7 @@ const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'F
 export const PANEL_VIEW = 'tag-ontology-panel';
 // Two clicks on the same tag within this many milliseconds make a double click.
 const DOUBLE_CLICK_MS = 350;
-// Stands in for the highlighted node while Focus fades something: no node links to this id. Returning the selected node instead
-// would also give it the highlight fill, ring and lifted label.
+// Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
 const sameSet = (a?: Set<string>, b?: Set<string>) => a === b || (!!a && !!b && a.size === b.size && [...a].every(id => b.has(id)));
 // The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
@@ -198,8 +197,9 @@ export class NativeGraphs {
         });
       };
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
-      // what Focus keeps bright draws as if nothing were highlighted, and the rest sees a node nothing links to, so it fades.
-      session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (session.focusIds && !session.lit ? FADED : null);
+      // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
+      // and everything else sees a node nothing links to, so it fades.
+      session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (!session.focusIds ? null : session.drawing === undefined ? FADED : session.drawing);
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
       this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
       this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
@@ -377,10 +377,11 @@ export class NativeGraphs {
           link.line.texture = session.texture;
         } else if (link.line && original.texture) link.line.texture = original.texture;
         // Hierarchy direction is the meaning of the edge, so it ignores the user's arrow setting; other links follow it.
-        const arrows = r.fShowArrow, ids = session.focusIds;
+        const arrows = r.fShowArrow, ids = session.focusIds, center = session.focusNode;
         r.fShowArrow = kind === 'broader' ? true : kind === 'related' ? false : arrows;
-        session.lit = !ids || (ids.has(link.source.id) && ids.has(link.target.id));
-        try { original.render.call(link); } finally { r.fShowArrow = arrows; session.lit = undefined; }
+        session.drawing = !ids ? undefined : center && (link.source.id === center.id || link.target.id === center.id) ? center
+          : ids.has(link.source.id) && ids.has(link.target.id) ? null : FADED;
+        try { original.render.call(link); } finally { r.fShowArrow = arrows; session.drawing = undefined; }
       };
     }
   }
@@ -394,8 +395,9 @@ export class NativeGraphs {
       if (!original || session.nodeRenders.has(node)) continue;
       session.nodeRenders.set(node, original);
       node.render = () => {
-        session.lit = !session.focusIds || session.focusIds.has(node.id);
-        try { original.call(node); } finally { session.lit = undefined; }
+        const ids = session.focusIds;
+        session.drawing = !ids ? undefined : node.id === session.focusNode?.id ? node : ids.has(node.id) ? null : FADED;
+        try { original.call(node); } finally { session.drawing = undefined; }
       };
     }
   }
@@ -463,7 +465,8 @@ export class NativeGraphs {
     // A selected tag collapsed out of sight has nothing to keep bright, so nothing fades.
     const bright = settings.focus && model && tag && resolved?.visible.has(tag) && data
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
-    if (!sameSet(bright, session.focusIds)) { session.focusIds = bright; session.renderer.changed(); }
+    const center = bright ? session.renderer.nodes.find(node => node.id === resolved!.idOf.get(tag!)) : undefined;
+    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; session.renderer.changed(); }
   }
 
   renderPanel() {

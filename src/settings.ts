@@ -6,8 +6,8 @@ export interface Settings {
   customColors: boolean; tagColor: string;
   // With customColors on, the selected tag's title in the sidebar takes the tag color too.
   titleAccent: boolean;
-  // With focus on, the selected tag and its related tags stay bright and the rest fades; the focus flags add its descendants
-  // and the notes on all of those.
+  // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
+  // it and the notes on the selected tag (and on its descendants, with those on).
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {

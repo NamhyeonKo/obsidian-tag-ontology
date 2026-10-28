@@ -712,16 +712,25 @@ test('with custom colors the sidebar tags take the tag color, and the sidebar ti
   assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
 });
 
-test('focus fades everything but the selected tag, its related tags and the chosen branch', async () => {
+test('focus fades everything but the selected tag, the tags next to it and the chosen branch', async () => {
   const t = await setup({ focus: true, expanded: ['cs', 'ml'] }); t.controller.attach();
-  const bright = () => { for (const n of t.renderer.nodes) n.render!(); return t.renderer.nodes.filter(n => n.seen === null).map(n => n.id).sort(); };
+  const node = (id: string) => t.renderer.nodes.find(n => n.id === id)!;
+  // The selected tag draws as hovered (it sees itself); the rest of what stays bright sees nothing highlighted.
+  const bright = () => { for (const n of t.renderer.nodes) n.render!(); return t.renderer.nodes.filter(n => n.seen === null || n.seen === n).map(n => n.id).sort(); };
   nodeClick(t, '#cs');
   assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml', 'A.md', 'B.md']);
+  assert.equal(node('#cs').seen, node('#cs'), 'the selected tag looks hovered');
   const link = (s: string, d: string) => { const l = t.renderer.links.find(l => l.source.id === s && l.target.id === d)!; l.render(); return l.seen; };
-  assert.equal(link('#cs', '#ml'), null, 'a link inside the bright set draws normally');
+  assert.equal(link('#cs', '#ml'), node('#cs'), 'its own links draw as hovered');
+  assert.equal(link('#ml', '#DL'), null, 'another link inside the bright set draws normally');
   assert.notEqual(link('B.md', '#loose'), null, 'a link leaving it fades');
   t.owner.settings.focusNotes = false; t.controller.refresh();
   assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml']);
+  Object.assign(t.owner.settings, { focusDescendants: false }); t.controller.refresh();
+  nodeClick(t, '#ml'); t.tick(400);
+  assert.deepEqual(bright(), ['#DL', '#cs', '#ml'], 'the tags next to it: its parent and its children');
+  Object.assign(t.owner.settings, { focusDescendants: true, focusNotes: true }); t.controller.refresh();
+  nodeClick(t, '#cs'); t.tick(400);
   t.renderer.dragNode = t.renderer.nodes.find(n => n.id === '#sec');
   t.renderer.nodes.find(n => n.id === '#cs')!.render!();
   assert.equal(t.renderer.nodes.find(n => n.id === '#cs')!.seen, t.renderer.dragNode, 'dragging or hovering wins');
