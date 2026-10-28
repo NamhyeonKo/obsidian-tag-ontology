@@ -168,7 +168,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
-| Layout | Force, Vertical tree or Horizontal tree. |
+| Layout | 2D. 3D (beta) is listed but can't be chosen yet. Force and the tree layouts are on the graph toolbar. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |

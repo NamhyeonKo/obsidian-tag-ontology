@@ -171,7 +171,7 @@ UI는 영어로 표시됩니다.
 | 설정 | 설명 |
 | --- | --- |
 | Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. |
-| Layout | 그래프 배치. Force, Vertical tree(세로 트리), Horizontal tree(가로 트리) 중 하나를 고릅니다. |
+| Layout | 2D. 3D (beta)는 목록에 보이지만 아직 고를 수 없습니다. Force와 트리 레이아웃은 그래프 툴바에서 고릅니다. |
 | Keep the selected tag focused | 선택한 태그와 바로 옆 태그(상위·하위·연관 태그)는 밝게 두고 나머지는 흐리게 합니다. 선택한 태그와 그 연결선은 마우스를 올린 것처럼 보입니다. 기본값은 꺼짐이며, 켜면 아래 항목이 나타납니다. |
 | &nbsp;&nbsp;Its descendants | 아래의 모든 하위 태그도 펼쳐서 보이는 데까지 밝게 둡니다. 기본값은 켜짐입니다. |
 | &nbsp;&nbsp;Include notes | 선택한 태그의 노트도 밝게 두고, Its descendants가 켜져 있으면 하위 태그의 노트도 밝게 둡니다. 바로 옆 태그의 노트는 흐리게 남습니다. 기본값은 켜짐입니다. |
