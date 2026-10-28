@@ -247,8 +247,8 @@ const FOCUS_SCOPE = [
   { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on those tags bright.' },
 ] as const;
 const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
-const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph takes this color. It follows the accent color until you pick one.' };
-const TITLE = { name: 'Tag names in the tag color', desc: 'Show the tags in the sidebar, and the selected tag\'s title, in the tag color.' };
+const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph and in the sidebar takes this color. It follows the accent color until you pick one.' };
+const TITLE = { name: 'Tag title in the tag color', desc: 'Show the selected tag\'s title in the sidebar in the tag color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }

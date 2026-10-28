@@ -478,7 +478,8 @@ export class NativeGraphs {
     if (error) this.loadError(panel, error);
     if (!model) return;
     panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor() });
-    panel.toggleClass('tag-ontology-tinted', this.owner.settings.customColors && this.owner.settings.titleAccent);
+    // The sidebar's tags match the graph's whenever custom colors are on; the title has its own setting.
+    panel.toggleClass('tag-ontology-tinted', this.owner.settings.customColors);
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }

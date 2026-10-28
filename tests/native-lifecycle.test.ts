@@ -695,7 +695,7 @@ test('a dictionary edit that only turns a parent link into a related link still 
   assert.equal(wakes, 1, 'the link is redrawn in its new style');
 });
 
-test('with custom colors the sidebar title and the sidebar tags take the tag color unless that is switched off', async () => {
+test('with custom colors the sidebar tags take the tag color, and the sidebar title too unless that is switched off', async () => {
   const t = await setup({ customColors: true });
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
   const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
@@ -706,7 +706,8 @@ test('with custom colors the sidebar title and the sidebar tags take the tag col
   t.owner.accent = '#112233'; t.controller.refresh();
   assert.equal(panel.css['--tag-ontology-color'], '#112233', 'it follows the accent with the graph');
   t.owner.settings.titleAccent = false; t.controller.refresh();
-  assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
+  assert.ok(!title().classes.has('tag-ontology-accent'));
+  assert.ok(panel.classes.has('tag-ontology-tinted'), 'the tags keep matching the graph');
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
 });
