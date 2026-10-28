@@ -24,7 +24,7 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Edit the dictionary in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
-- **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color.
+- **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
 - **Focus (optional).** Keep the selected tag, its related tags and, if you like, its descendants and their notes bright while the rest fades.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
 
@@ -172,13 +172,9 @@ The round buttons on the left of the graph show their name when you hover them:
 | Keep the selected tag focused | Keep the selected tag and its related tags bright and fade the rest. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep the tags under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on those tags bright. On by default. |
-| Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
-| &nbsp;&nbsp;Tag color | Color of every tag in the graph. Default `#8b6cef`. |
-| &nbsp;&nbsp;Highlight color | Color of the highlighted tags. Default `#6d47eb`. |
-| &nbsp;&nbsp;Highlight the selected tag | Highlight the tag you clicked or searched. On by default. |
-| &nbsp;&nbsp;Highlight its descendants | Also highlight every tag under it. Off by default. |
-| &nbsp;&nbsp;Highlight its connected tags | Also highlight its parents, children and related tags. Off by default. |
-| &nbsp;&nbsp;Tag title in the highlight color | Show the selected tag's title in the sidebar tab in the highlight color. On by default. |
+| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
+| &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
+| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 

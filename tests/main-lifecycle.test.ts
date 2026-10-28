@@ -19,15 +19,18 @@ function deferred<T>() {
 
 class NativeGraphs {
   calls: string[] = [];
+  // Like the real one, a redraw reads the tag color (the sidebar title and the graph's tags take it).
+  owner?: { tagColor(): string };
+  constructor(owner?: { tagColor(): string }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
-  refresh(redraw = true) { this.calls.push(`refresh:${redraw}`); }
+  refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
   showPanel() { this.calls.push('panel'); }
   renderPanel() { this.calls.push('render-panel'); }
   destroy() { this.calls.push('destroy'); }
 }
 
 interface Main {
-  native: NativeGraphs; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
+  native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
 }
@@ -37,6 +40,9 @@ async function setup(saved?: Promise<unknown>) {
   const commands = new Map<string, () => void>();
   const events = new Map<string, (file: { path: string }) => void>();
   const timers = new Map<number, () => void>();
+  // The theme's accent variable, and the observers watching <body>'s style for the accent color setting.
+  const theme = { accent: 'hsl(258, 88%, 66%)' }, observers: (() => void)[] = [], cleanups: (() => void)[] = [];
+  let watching = 0;
   let ready = () => {}, timer = 0, reads = 0;
   class File {}
   const leaf = { async setViewState() { ui.push('create'); } };
@@ -64,9 +70,13 @@ async function setup(saved?: Promise<unknown>) {
     async saveData() {}
     registerView() { ui.push('register-view'); }
     addRibbonIcon() {} addSettingTab() {} registerEvent() {}
+    register(cleanup: () => void) { cleanups.push(cleanup); }
     addCommand(command: { id: string; callback: () => void }) { commands.set(command.id, command.callback); }
   }
-  const context = createContext({ performance, console: { error: (...args: unknown[]) => errors.push(args) }, window: {
+  const context = createContext({ performance, console: { error: (...args: unknown[]) => errors.push(args) },
+    document: { body: {} }, getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--color-accent' ? theme.accent : '' }),
+    MutationObserver: class { constructor(callback: () => void) { observers.push(callback); } observe() { watching++; } disconnect() { watching--; } },
+    window: {
     setTimeout(callback: () => void) { timers.set(++timer, callback); return timer; },
     clearTimeout(id: number) { timers.delete(id); },
   } });
@@ -89,7 +99,10 @@ async function setup(saved?: Promise<unknown>) {
   const plugin = new Constructor(), loaded = plugin.onload();
   if (!saved) { await loaded; ui.length = 0; }
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
-  return { plugin, loaded, vault, workspace, leaf, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads };
+  // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
+  const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
+  return { plugin, loaded, vault, workspace, leaf, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
+    restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
 test('opening a graph still loads the dictionary, attaches and reveals it', async () => {
@@ -371,4 +384,36 @@ test('saveChange does not wait for the note index', async () => {
   // The stub has no metadata cache to read, so building the note index would throw.
   (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }];
   assert.equal(await t.plugin.saveChange(describe('New'), base), true);
+});
+
+test('a tag color left to the accent redraws when the accent color changes, and only then', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  Object.assign(t.plugin.settings, { customColors: true, tagColor: '' });
+  assert.equal(t.plugin.tagColor(), '#8a5cf5');
+  t.plugin.native.calls.length = 0;
+  t.restyle('hsl(353, 81%, 55%)');
+  assert.equal(t.plugin.tagColor(), '#e92f45');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  t.restyle('hsl(353, 81%, 55%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'another style change on <body> leaves the graph alone');
+  t.plugin.settings.tagColor = '#12ab3c'; t.restyle('hsl(0, 100%, 50%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'a picked color ignores the accent');
+  assert.equal(t.watching(), 1);
+  t.unload();
+  assert.equal(t.watching(), 0);
+});
+
+test('the accent the graph was last drawn with is the one compared, even after a settings change redrew it', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  Object.assign(t.plugin.settings, { customColors: true, tagColor: '' });
+  t.restyle('hsl(258, 88%, 66%)');
+  t.plugin.settings.tagColor = '#12ab3c'; await t.plugin.saveSettings();
+  t.restyle('hsl(353, 81%, 55%)');
+  // Back to following: the redraw takes the new accent.
+  t.plugin.settings.tagColor = ''; await t.plugin.saveSettings();
+  t.plugin.native.calls.length = 0;
+  t.restyle('hsl(258, 88%, 66%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'the accent going back is a change from what is drawn');
 });
