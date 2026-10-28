@@ -6,23 +6,25 @@
 
 **English** | [한국어](README.ko.md)
 
-Tag Ontology adds your **tag hierarchy** to Obsidian's core **Graph view**. You describe your tags in a JSON dictionary (description, aliases, parents, related tags), and the plugin layers that hierarchy on top of the graph you already use. Notes, links between notes, filters, color groups and display settings keep working as before.
+**Link your tags the way you link notes.**
 
-It never edits your notes. The dictionary changes only when you add, edit or delete a tag in the sidebar tab.
+Tag Ontology lets you give each tag parents, children and related tags from a sidebar tab, with no file to edit. Then explore them in Obsidian's own **Graph view**: collapse and expand each branch, switch to a tree layout and keep the selected tag in focus. Notes, links between notes, filters, color groups and display settings keep working as before.
+
+It never edits your notes. It writes only to the tag dictionary, a plain JSON file in your vault, and only when you add, edit or delete a tag in the sidebar tab.
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
-![Tag Ontology demo](assets/0.7.6/demo.gif)
+![Tag Ontology demo](assets/0.8.1/demo.gif)
 
 ## Features
 
+- **Build your hierarchy in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. No file editing, and saving never overwrites changes made elsewhere.
 - **An extension of the core graph.** Notes, note links, filters, color groups, arrows and the other core settings work as usual.
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
-- **Edit the dictionary in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
 - **Focus (optional).** Keep the selected tag and the tags next to it (parents, children and related tags) bright while the rest fades. Options add every tag below it and its notes.
@@ -43,6 +45,8 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 ## How it works
 
 Tag Ontology works inside the core Graph view. It takes the graph Obsidian has already built with your filters and color groups, collapses the dictionary tags and adds the hierarchy and related links between them. Tags that are not in the dictionary stay ordinary tag nodes. The local graph is not affected, and disabling the plugin returns the Graph view to normal.
+
+The hierarchy you build in the sidebar tab is saved in the dictionary file. See [Advanced: the dictionary file](#advanced-the-dictionary-file) if you want to read or edit it directly.
 
 Tag usage comes from Obsidian's metadata cache, which includes frontmatter `tags` and inline `#tags` in every Markdown note.
 
@@ -76,48 +80,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 
 You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Double-click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
 
-## Tag dictionary format
-
-By default the plugin reads `Tag-Dictionary.json` at the vault root; you can change the path in the plugin settings. On a fresh install with no file there, the plugin creates an empty dictionary. If the file goes missing later, the sidebar tab offers to create one.
-
-The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
-
-```json
-{
-  "machine-learning": {
-    "aliases": ["ML"],
-    "description": "Algorithms that improve at a task by learning from data.",
-    "broader": ["computer-science"]
-  },
-  "dropout": {
-    "description": "Randomly disabling units during training to reduce overfitting.",
-    "broader": ["deep-learning"],
-    "related": ["overfitting"],
-    "facet": "technique"
-  },
-  "computer-science": {
-    "description": "The study of computation, information and automation.",
-    "broader": []
-  }
-}
-```
-
-| Field | Required | Type | Meaning |
-| --- | --- | --- | --- |
-| `description` | yes | string | Shown in the tag panel. |
-| `aliases` | no | string[] | Other names. Used by search and by the dictionary check to suggest a match for an unregistered tag. |
-| `broader` | no | string[] | Parent tags. **`[]` marks a root tag.** |
-| `related` | no | string[] | Non-hierarchical links, drawn as dashed lines. |
-| `facet` | no | string | Free-form category. Validated but not displayed yet. |
-
-Rules:
-
-- **Roots need `"broader": []`.** A tag with no `broader` key at all is treated as not yet placed and does not appear in the graph.
-- Every tag named in `broader` or `related` must exist in the dictionary.
-- A tag cannot reference itself, and `broader` links cannot form a cycle.
-- If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
-
-See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
+Then try the sidebar tab: press **+** to add a tag of your own under `machine-learning`.
 
 ## Usage
 
@@ -177,6 +140,51 @@ The round buttons on the left of the graph show their name when you hover them:
 | &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
+
+## Advanced: the dictionary file
+
+The sidebar tab reads and writes this file, so you never have to open it. It is plain JSON in your vault, so you can also edit it by hand.
+
+By default the plugin reads `Tag-Dictionary.json` at the vault root; you can change the path in the plugin settings. On a fresh install with no file there, the plugin creates an empty dictionary. If the file goes missing later, the sidebar tab offers to create one.
+
+The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
+
+```json
+{
+  "machine-learning": {
+    "aliases": ["ML"],
+    "description": "Algorithms that improve at a task by learning from data.",
+    "broader": ["computer-science"]
+  },
+  "dropout": {
+    "description": "Randomly disabling units during training to reduce overfitting.",
+    "broader": ["deep-learning"],
+    "related": ["overfitting"],
+    "facet": "technique"
+  },
+  "computer-science": {
+    "description": "The study of computation, information and automation.",
+    "broader": []
+  }
+}
+```
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `description` | yes | string | Shown in the tag panel. |
+| `aliases` | no | string[] | Other names. Used by search and by the dictionary check to suggest a match for an unregistered tag. |
+| `broader` | no | string[] | Parent tags. **`[]` marks a root tag.** |
+| `related` | no | string[] | Non-hierarchical links, drawn as dashed lines. |
+| `facet` | no | string | Free-form category. Validated but not displayed yet. |
+
+Rules:
+
+- **Roots need `"broader": []`.** A tag with no `broader` key at all is treated as not yet placed and does not appear in the graph.
+- Every tag named in `broader` or `related` must exist in the dictionary.
+- A tag cannot reference itself, and `broader` links cannot form a cycle.
+- If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
+
+See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
 
 ## Privacy
 
