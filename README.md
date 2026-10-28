@@ -14,7 +14,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
-![Tag Ontology demo](assets/0.7.6/demo.gif)
+![Tag Ontology demo](assets/0.8.1/demo.gif)
 
 ## Features
 
