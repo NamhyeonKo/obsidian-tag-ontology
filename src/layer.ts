@@ -103,6 +103,22 @@ export function hideNotes(data: NativeData): NativeData {
   return { ...data, nodes };
 }
 
+export interface FocusScope { descendants: boolean; notes: boolean }
+
+// What Focus keeps bright: the tag and the tags next to it (its parents, children and related tags), plus every tag below it if
+// the scope says so, as far as they are visible. With notes, the notes on the tag itself, and on its descendants when those are
+// in; the notes on the tags next to it stay dark. A hidden tag never brightens the visible tag standing in for it.
+export function focusIds(data: NativeData, resolved: Resolved, model: Ontology, tag: string, scope: FocusScope): Set<string> {
+  const visibleIds = (tags: Iterable<string>) => [...tags].filter(item => resolved.visible.has(item)).map(item => resolved.idOf.get(item)!);
+  const branch = new Set(visibleIds([tag, ...scope.descendants ? model.descendants(tag) : []]));
+  const next = [...model.entries.get(tag)?.broader ?? [], ...model.children.get(tag) ?? [], ...model.related(tag)];
+  const ids = new Set([...branch, ...visibleIds(next)]);
+  if (scope.notes) for (const [id, node] of Object.entries(data.nodes)) {
+    if (node.type !== 'tag' && Object.keys(node.links).some(target => branch.has(target))) ids.add(id);
+  }
+  return ids;
+}
+
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
   // Hidden notes go first, so collapsing never copies them only to drop them.
   const shown = state.showNotes ? data : hideNotes(data);

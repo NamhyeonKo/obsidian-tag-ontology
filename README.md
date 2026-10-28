@@ -17,14 +17,15 @@ It never edits your notes. The dictionary changes only when you add, edit or del
 ## Features
 
 - **An extension of the core graph.** Notes, note links, filters, color groups, arrows and the other core settings work as usual.
-- **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to expand it one level and watch its notes move to the more specific child tags.
+- **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Edit the dictionary in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. Saving never overwrites changes made elsewhere.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
-- **Custom colors (optional).** Give every tag one color and the selected tag (and, if you like, its descendants or directly connected tags) a highlight color. You can also keep the selected tag focused, as if you were hovering it.
+- **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
+- **Focus (optional).** Keep the selected tag and the tags next to it (parents, children and related tags) bright while the rest fades. Options add every tag below it and its notes.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
 
 | Sidebar tab | Dictionary check |
@@ -73,7 +74,7 @@ The repository includes a small vault in [`examples/sample-vault`](examples/samp
 3. Click the **Open tag ontology** ribbon icon (a book) or run **Tag Ontology: Open graph** from the command palette.
 4. If the graph shows no tags, turn on **Filters → Tags** in the graph settings (gear icon).
 
-You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
+You should see two roots, `computer-science` and `security`, with the six notes linked to them, plus the unregistered tag `#to-read`. Double-click `computer-science`, then `machine-learning`: the `Dropout` note moves to `deep-learning`. `cryptography` and `ai-security` have two parents each.
 
 ## Tag dictionary format
 
@@ -152,7 +153,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Force / Vertical tree / Horizontal tree | Switch the layout; the current one is highlighted |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
-- Click a tag in the graph to expand it and show it in the sidebar tab. Collapse it with the button at the top of the tab.
+- Click a tag in the graph to show it in the sidebar tab, and double-click it to expand it. Collapse it with the button at the top of the tab.
 - Everything else keeps the core behavior: clicking a note opens it, and clicking a tag that is not in the dictionary opens search.
 
 ### Commands
@@ -167,15 +168,13 @@ The round buttons on the left of the graph show their name when you hover them:
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
-| Layout | Force, Vertical tree or Horizontal tree. |
-| Keep the selected tag focused | Keep the selected tag and its links bright and fade the rest, as when you hover it. Off by default. |
-| Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
-| &nbsp;&nbsp;Tag color | Color of every tag in the graph. Default `#8b6cef`. |
-| &nbsp;&nbsp;Highlight color | Color of the highlighted tags. Default `#6d47eb`. |
-| &nbsp;&nbsp;Highlight the selected tag | Highlight the tag you clicked or searched. On by default. |
-| &nbsp;&nbsp;Highlight its descendants | Also highlight every tag under it. Off by default. |
-| &nbsp;&nbsp;Highlight its connected tags | Also highlight its parents, children and related tags. Off by default. |
-| &nbsp;&nbsp;Tag title in the highlight color | Show the selected tag's title in the sidebar tab in the highlight color. On by default. |
+| Layout | 2D. 3D (beta) is listed but can't be chosen yet. Force and the tree layouts are on the graph toolbar. |
+| Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
+| &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
+| &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
+| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
+| &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
+| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 

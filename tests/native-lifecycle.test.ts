@@ -55,7 +55,10 @@ const core = (): NativeData => ({ numLinks: 5, nodes: {
   '#loose': { type: 'tag', links: {} }, '#to-read': { type: 'tag', links: {} },
 } });
 
-interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; render(): void }
+// Nodes and links record what getHighlightNode() returned while they were drawn: null draws normally, anything else fades
+// whatever is not linked to it.
+interface Link { source: { id: string }; target: { id: string }; line: { texture: unknown }; arrows?: boolean; seen?: unknown; render(): void }
+interface Node { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; seen?: unknown; render?(): void }
 
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
@@ -101,7 +104,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
-    nodes: [] as { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown }[], links: [] as Link[],
+    nodes: [] as Node[], links: [] as Link[],
     fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
@@ -110,10 +113,13 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
-      this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null }));
+      this.nodes = Object.keys(data.nodes).map(id => {
+        const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
+        return node;
+      });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
-          render() { link.arrows = renderer.fShowArrow; } };
+          render() { link.arrows = renderer.fShowArrow; link.seen = renderer.getHighlightNode(); } };
         return link;
       }));
     },
@@ -130,6 +136,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    // The plugin reads the accent color from the theme; an empty tag color follows it.
+    accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
     raw, changes: [] as Change[], reloads: 0, missing: false, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
@@ -185,14 +193,29 @@ test('hierarchy links always show arrows, related links are dashed, other links 
   assert.equal(find('A.md', 'B.md').arrows, true);
 });
 
-test('clicking a dictionary tag expands it, saves the state and re-renders', async () => {
-  const t = await setup();
-  t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.ok(t.ids().includes('#ml'));
-  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+// A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
+const nodeClick = (t: { renderer: { onNodeClick: unknown } }, id: string) => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, id, 'tag');
+
+test('a click selects a dictionary tag without expanding it', async () => {
+  const t = await setup(); t.controller.attach();
+  nodeClick(t, '#cs'); t.tick(400);
+  assert.ok(!t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], []); assert.equal(t.owner.saves, 0);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+});
+
+test('a double click expands the tag once and a second double click does not collapse it', async () => {
+  const t = await setup(); t.controller.attach();
+  nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  assert.ok(t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
+  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
   assert.ok(t.ids().includes('#ml')); assert.equal(t.owner.saves, 1);
+});
+
+test('quick clicks on two different tags are two selections', async () => {
+  const t = await setup({ expanded: ['cs'] }); t.controller.attach();
+  nodeClick(t, '#cs'); nodeClick(t, '#ml');
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'ml'));
 });
 
 test('other nodes keep the core click behavior', async () => {
@@ -292,7 +315,7 @@ test('search reveals a tag whose expanded ancestor sits under a collapsed one', 
 test('the panel button reads the live expansion after Expand all', async () => {
   const t = await setup();
   t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  nodeClick(t, '#cs'); nodeClick(t, '#cs');
   t.click('Collapse in graph');
   t.click('Expand all');
   assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the label follows Expand all');
@@ -447,7 +470,7 @@ test('in a tree, a native update that moves nothing asks for no redraw', async (
   let wakes = 0; t.renderer.changed = () => { wakes++; };
   t.renderer.setData(core());
   assert.equal(wakes, 0);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  nodeClick(t, '#ml'); nodeClick(t, '#ml');
   assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
 });
 
@@ -477,7 +500,7 @@ test('Fit works on a graph too big to spread into one call', async () => {
 for (const [name, trigger] of [
   ['a native update', t => t.renderer.setData(core())],
   ['a toolbar button', t => t.click('Expand all')],
-  ['a click on a tag', t => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag')],
+  ['a double click on a tag', t => { nodeClick(t, '#cs'); nodeClick(t, '#cs'); }],
   ['a refresh', t => t.controller.refresh()],
 ] as [string, (t: Awaited<ReturnType<typeof setup>>) => void][]) {
   test(`${name} that fails to render gives the tab back to the core graph with nothing left pinned`, async () => {
@@ -634,48 +657,29 @@ test('custom colors give every tag node the tag color and turning them off gives
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.color === undefined));
 });
 
-const TAG = 0x8b6cef, HIGHLIGHT = 0x6d47eb;
+const TAG = 0x8b6cef;
 const rgbOf = (t: { renderer: { nodes: { id: string; color: unknown }[] } }, id: string) => (t.renderer.nodes.find(n => n.id === id)!.color as { rgb: number } | null)?.rgb;
 
-test('the selected tag takes the highlight color and the one before goes back to the tag color', async () => {
-  const t = await setup({ customColors: true, expanded: ['cs'] });
-  t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT); assert.equal(rgbOf(t, '#sec'), TAG);
-  t.suggests[0]!.onChoose('ml');
-  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(rgbOf(t, '#cs'), HIGHLIGHT, 'an already expanded tag is highlighted without a re-render');
-  assert.equal(rgbOf(t, '#ml'), TAG);
-});
-
-test('the highlight toggles add up: the tag itself, its descendants and its directly connected tags', async () => {
-  const t = await setup({ customColors: true, expanded: ['cs', 'ml'], highlightSelected: false, highlightDescendants: true });
-  t.controller.attach();
-  const highlighted = () => t.renderer.nodes.filter(n => (n.color as { rgb?: number } | null)?.rgb === HIGHLIGHT).map(n => n.id).sort();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.deepEqual(highlighted(), ['#DL', '#crypto', '#ml']);
-  Object.assign(t.owner.settings, { highlightSelected: true, highlightDescendants: false, highlightConnected: true }); t.controller.refresh();
-  t.suggests[0]!.onChoose('ml');
-  assert.deepEqual(highlighted(), ['#DL', '#cs', '#ml']);
-  t.owner.settings.customColors = false; t.controller.refresh();
-  assert.deepEqual(highlighted(), []);
-});
-
-test('a native update that changes nothing leaves the renderer asleep, and choosing another tag still wakes it', async () => {
+test('a native update that changes nothing leaves the renderer asleep', async () => {
   const t = await setup({ customColors: true, expanded: ['cs', 'ml'] });
   t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  nodeClick(t, '#cs');
   let wakes = 0; t.renderer.changed = () => { wakes++; };
   // The core graph redraws for every node whose color is a different object from the one it has.
   t.renderer.setData(core());
   const [before, after] = t.forwarded.slice(-2).map(data => data.nodes);
   assert.equal(after!['#sec']!.color, before!['#sec']!.color, 'the tag color is the same object');
-  assert.equal((after!['#cs']!.color as { rgb: number }).rgb, HIGHLIGHT, 'the core graph gets the highlight, so it has nothing to undo');
   assert.equal(wakes, 0);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
-  assert.equal(rgbOf(t, '#ml'), HIGHLIGHT); assert.equal(rgbOf(t, '#cs'), TAG);
-  assert.equal(wakes, 1, 'the new selection repaints');
+});
+
+test('a tag color left to the accent repaints when the accent changes', async () => {
+  const t = await setup({ customColors: true });
+  t.controller.attach();
+  assert.equal(rgbOf(t, '#cs'), TAG);
+  t.owner.accent = '#112233'; t.controller.refresh();
+  assert.equal(rgbOf(t, '#cs'), 0x112233);
+  t.owner.settings.tagColor = '#12ab3c'; t.controller.refresh();
+  assert.equal(rgbOf(t, '#cs'), 0x12ab3c, 'a picked color stays');
 });
 
 test('a dictionary edit that only turns a parent link into a related link still redraws it', async () => {
@@ -691,31 +695,58 @@ test('a dictionary edit that only turns a parent link into a related link still 
   assert.equal(wakes, 1, 'the link is redrawn in its new style');
 });
 
-test('with custom colors the sidebar title takes the highlight color unless that is switched off', async () => {
+test('with custom colors the sidebar tags take the tag color, and the sidebar title too unless that is switched off', async () => {
   const t = await setup({ customColors: true });
   const title = () => t.sidebar.all().find(el => el.tag === 'h3')!;
   const panel = t.sidebar.all().find(el => el.classes.has('tag-ontology-panel'))!;
   t.suggests[0]!.onChoose('cs');
-  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#6d47eb');
+  assert.ok(title().classes.has('tag-ontology-accent')); assert.equal(panel.css['--tag-ontology-color'], '#8b6cef');
+  // The #tag links and chips in the sidebar use Obsidian's tag style; this class points its colors at the tag color.
+  assert.ok(panel.classes.has('tag-ontology-tinted'));
+  t.owner.accent = '#112233'; t.controller.refresh();
+  assert.equal(panel.css['--tag-ontology-color'], '#112233', 'it follows the accent with the graph');
   t.owner.settings.titleAccent = false; t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent'));
+  assert.ok(panel.classes.has('tag-ontology-tinted'), 'the tags keep matching the graph');
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
-  assert.ok(!title().classes.has('tag-ontology-accent'));
+  assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
 });
 
-test('focus keeps the selected tag looking hovered until something else is hovered or it is turned off', async () => {
-  const t = await setup({ focus: true });
-  t.controller.attach();
-  const node = (id: string) => t.renderer.nodes.find(n => n.id === id);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(t.renderer.getHighlightNode(), node('#cs'));
-  t.renderer.highlightNode = node('#sec');
-  assert.equal(t.renderer.getHighlightNode(), node('#sec'), 'hovering another node still wins');
-  t.renderer.highlightNode = null;
+test('focus fades everything but the selected tag, the tags next to it and the chosen branch', async () => {
+  const t = await setup({ focus: true, expanded: ['cs', 'ml'] }); t.controller.attach();
+  const node = (id: string) => t.renderer.nodes.find(n => n.id === id)!;
+  // The selected tag draws as hovered (it sees itself); the rest of what stays bright sees nothing highlighted.
+  const bright = () => { for (const n of t.renderer.nodes) n.render!(); return t.renderer.nodes.filter(n => n.seen === null || n.seen === n).map(n => n.id).sort(); };
+  nodeClick(t, '#cs');
+  assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml', 'A.md', 'B.md']);
+  assert.equal(node('#cs').seen, node('#cs'), 'the selected tag looks hovered');
+  const link = (s: string, d: string) => { const l = t.renderer.links.find(l => l.source.id === s && l.target.id === d)!; l.render(); return l.seen; };
+  assert.equal(link('#cs', '#ml'), node('#cs'), 'its own links draw as hovered');
+  assert.equal(link('#ml', '#DL'), null, 'another link inside the bright set draws normally');
+  assert.notEqual(link('B.md', '#loose'), null, 'a link leaving it fades');
+  t.owner.settings.focusNotes = false; t.controller.refresh();
+  assert.deepEqual(bright(), ['#DL', '#crypto', '#cs', '#ml']);
+  Object.assign(t.owner.settings, { focusDescendants: false }); t.controller.refresh();
+  nodeClick(t, '#ml'); t.tick(400);
+  assert.deepEqual(bright(), ['#DL', '#cs', '#ml'], 'the tags next to it: its parent and its children');
+  Object.assign(t.owner.settings, { focusDescendants: true, focusNotes: true }); t.controller.refresh();
+  nodeClick(t, '#cs'); t.tick(400);
+  t.renderer.dragNode = t.renderer.nodes.find(n => n.id === '#sec');
+  t.renderer.nodes.find(n => n.id === '#cs')!.render!();
+  assert.equal(t.renderer.nodes.find(n => n.id === '#cs')!.seen, t.renderer.dragNode, 'dragging or hovering wins');
+  t.renderer.dragNode = null;
   t.owner.settings.focus = false; t.controller.refresh();
-  assert.equal(t.renderer.getHighlightNode(), null);
+  assert.equal(bright().length, t.renderer.nodes.length);
   t.controller.destroy();
   assert.equal(t.renderer.getHighlightNode, t.original.getHighlightNode);
+});
+
+test('focus on a tag collapsed out of sight fades nothing', async () => {
+  const t = await setup({ focus: true, expanded: ['cs'] }); t.controller.attach();
+  nodeClick(t, '#ml');
+  t.click('Collapse all');
+  for (const n of t.renderer.nodes) n.render!();
+  assert.ok(t.renderer.nodes.every(n => n.seen === null));
 });
 
 test('a note-only refresh updates the panel without redrawing the graph', async () => {

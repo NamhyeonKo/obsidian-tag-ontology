@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Ontology } from '../src/ontology.ts';
-import { addEdges, applyCollapse, buildLayer, edgeKey, hideNotes, resolveTags, type NativeData } from '../src/layer.ts';
+import { addEdges, applyCollapse, buildLayer, edgeKey, focusIds, hideNotes, resolveTags, type FocusScope, type NativeData } from '../src/layer.ts';
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -131,4 +131,24 @@ test('a note on the deepest tag of a 10,000-level chain links to the collapsed r
   const data: NativeData = { numLinks: 1, nodes: { 'a.md': { type: '', links: { '#t9999': true } }, '#t9999': { type: 'tag', links: {} } } };
   const { data: layered } = buildLayer(data, model, { expanded: new Set(), showNotes: true, showRelated: true });
   assert.deepEqual(Object.keys(layered.nodes['a.md'].links), ['#t0']);
+});
+
+test('focus keeps the tag, its related tags and the chosen branch', () => {
+  const input = (): NativeData => ({ ...core(), nodes: { ...core().nodes, 'D.md': { type: '', links: { '#overfitting': true } }, '#overfitting': { type: 'tag', links: {} } } });
+  const scope: FocusScope = { descendants: true, notes: true };
+  const focus = (expanded: string[], tag: string, over: Partial<FocusScope> = {}) => {
+    const { data, resolved } = buildLayer(input(), model, { expanded: new Set(expanded), showNotes: true, showRelated: true });
+    return [...focusIds(data, resolved, model, tag, { ...scope, ...over })].sort();
+  };
+  // The tags next to it always stay: its parent ml and overfitting, which lists dl as related. Their notes stay dark.
+  assert.deepEqual(focus(['cs', 'ml'], 'dl'), ['#DL', '#ml', '#overfitting', 'A.md']);
+  assert.deepEqual(focus(['cs', 'ml'], 'overfitting'), ['#DL', '#ml', '#overfitting', 'D.md']);
+  // Its parent, its children and, with descendants, every tag below; notes from the tag and its descendants.
+  assert.deepEqual(focus(['cs', 'ml'], 'ml', { descendants: false }), ['#DL', '#cs', '#ml', '#overfitting']);
+  assert.deepEqual(focus(['cs', 'ml'], 'cs'), ['#DL', '#crypto', '#cs', '#ml', '#overfitting', 'A.md', 'B.md', 'D.md']);
+  assert.deepEqual(focus(['cs', 'ml'], 'cs', { descendants: false }), ['#crypto', '#cs', '#ml']);
+  assert.deepEqual(focus(['cs', 'ml'], 'cs', { notes: false }), ['#DL', '#crypto', '#cs', '#ml', '#overfitting']);
+  assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#ml', '#overfitting']);
+  // dl and overfitting are hidden: their notes now link to ml itself, and ml never stands in for them.
+  assert.deepEqual(focus(['cs'], 'ml'), ['#cs', '#ml', 'A.md', 'D.md']);
 });
