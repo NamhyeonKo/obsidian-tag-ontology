@@ -25,8 +25,10 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
   const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
-  // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so that saved value follows the accent now.
-  const tagColor = typeof value.tagColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.tagColor) && value.tagColor.toLowerCase() !== '#8b6cef' ? value.tagColor : '';
+  // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
+  // which came in the same release) that value follows the accent now. Picked later, the same color stays.
+  const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
+  const tagColor = typeof value.tagColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.tagColor) && !legacy ? value.tagColor : '';
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,

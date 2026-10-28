@@ -14,9 +14,11 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.equal(sanitizeSettings({ focus: true }, '.obsidian').focus, true);
   assert.deepEqual(sanitizeSettings({ focusDescendants: false, focusNotes: 'x', focusAncestors: true }, '.obsidian'), { ...DEFAULT_SETTINGS, focusDescendants: false });
   assert.deepEqual(sanitizeSettings({ customColors: true, tagColor: '#12AB3c' }, '.obsidian'), { ...DEFAULT_SETTINGS, customColors: true, tagColor: '#12AB3c' });
-  // An empty tag color follows the accent color. The old default is what everyone who never picked a color has saved, so it follows too.
+  // An empty tag color follows the accent color. In a file from 0.7.6 or earlier (the ones with highlightColor), the old default is
+  // what everyone who never picked a color has saved, so it follows too; picked now, the same color stays.
   assert.equal(DEFAULT_SETTINGS.tagColor, '');
-  assert.equal(sanitizeSettings({ tagColor: '#8b6cef' }, '.obsidian').tagColor, '');
+  assert.equal(sanitizeSettings({ tagColor: '#8b6cef', highlightColor: '#6d47eb' }, '.obsidian').tagColor, '');
+  assert.equal(sanitizeSettings({ tagColor: '#8b6cef' }, '.obsidian').tagColor, '#8b6cef');
   assert.equal(sanitizeSettings({ tagColor: 'red' }, '.obsidian').tagColor, '');
   for (const raw of [null, [], 'text', { dictionaryPath: '../tags.json', layout: 'invalid', expanded: 'cs' }]) {
     assert.deepEqual(sanitizeSettings(raw, '.obsidian'), DEFAULT_SETTINGS);
