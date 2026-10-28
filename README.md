@@ -172,7 +172,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Keep the selected tag focused | Keep the selected tag and its related tags bright and fade the rest. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep the tags under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on those tags bright. On by default. |
-| Custom colors | Off by default: the graph keeps its own colors. Turn it on to show the options below. |
+| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
 | &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
 | &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
 
