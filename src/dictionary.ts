@@ -30,8 +30,12 @@ export const emptyDraft = (parents: string[] = []): Draft => ({ name: '', descri
 export function apply(dict: RawDictionary, change: Change): RawDictionary {
   const next = structuredClone(dict);
   if (change.kind === 'add') {
-    const { name, description, aliases, parents } = change.draft;
+    const { name, description, aliases, parents, children, related } = change.draft;
     put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] });
+    // A new tag has no links yet, so every child and related tag is one to add, as in an edit.
+    for (const child of children) next[child].broader = [...next[child].broader ?? [], name];
+    setList(next[name], 'related', related);
+    for (const other of related) next[other].related = [...next[other].related ?? [], name];
     return next;
   }
   if (change.kind === 'delete') {
@@ -85,14 +89,19 @@ export function changedFields(dict: RawDictionary, tag: string, draft: Draft): n
     ...(['aliases', 'parents', 'children', 'related'] as const).map(key => sameSet(before[key], draft[key]))].filter(same => !same).length;
 }
 
+// A new tag has no entry yet; this stands in for it, and a space can't be in a tag name.
+const NEW = ' new';
+
 // Tags the picker leaves out: choosing a descendant as a parent, or an ancestor as a child, would make a cycle.
-export function excluded(dict: RawDictionary, tag: string, draft: Draft, kind: 'parents' | 'children' | 'related'): Set<string> {
-  const found = new Set([tag, ...draft[kind]]);
+// A tag of undefined is a new tag, whose cycles can only come through the parents and children the draft already names.
+export function excluded(dict: RawDictionary, tag: string | undefined, draft: Draft, kind: 'parents' | 'children' | 'related'): Set<string> {
+  const found = new Set([...tag === undefined ? [] : [tag], ...draft[kind]]);
   if (kind === 'related') return found;
-  const next = apply(dict, { kind: 'edit', tag, draft: { ...draft, name: tag } }), children = new Map<string, string[]>();
+  const self = tag ?? NEW, children = new Map<string, string[]>();
+  const next = tag === undefined ? apply(dict, { kind: 'add', draft: { ...draft, name: self } }) : apply(dict, { kind: 'edit', tag, draft: { ...draft, name: tag } });
   for (const [key, entry] of Object.entries(next)) for (const parent of entry.broader ?? []) children.set(parent, [...children.get(parent) ?? [], key]);
   const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : next[item]?.broader ?? [];
-  const queue = step(tag), seen = new Set<string>();
+  const queue = step(self), seen = new Set<string>();
   while (queue.length) {
     const item = queue.pop()!;
     if (!seen.has(item)) { seen.add(item); found.add(item); queue.push(...step(item)); }
@@ -110,7 +119,10 @@ export function deletionPreview(dict: RawDictionary, tag: string): { parents: st
 // Other fields of linked tags are kept by apply, so they are no conflict.
 export function conflicts(base: RawDictionary, latest: RawDictionary, change: Change): string[] {
   const taken = (name: string, own?: string) => Object.keys(latest).some(key => key !== own && key.toLowerCase() === name.toLowerCase());
-  if (change.kind === 'add') return taken(change.draft.name) ? [change.draft.name] : [];
+  if (change.kind === 'add') {
+    const { name, parents, children, related } = change.draft;
+    return [...new Set([...taken(name) ? [name] : [], ...[...parents, ...children, ...related].filter(item => !Object.hasOwn(latest, item))])];
+  }
   const { tag } = change;
   if (!Object.hasOwn(latest, tag) || JSON.stringify(base[tag]) !== JSON.stringify(latest[tag])) return [tag];
   const was = draftOf(base, tag), now = draftOf(latest, tag);
