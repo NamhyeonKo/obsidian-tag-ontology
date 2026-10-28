@@ -22,9 +22,7 @@ interface NativeRenderer {
   getHighlightNode: () => unknown;
   worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
-  // A node's label keeps its color in its text style, which the renderer builds from colors.text.
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void; type?: string; text?: { style: { fill: unknown } } }[];
-  colors: { text: { rgb: number } };
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void }[];
   links: NativeLink[];
 }
 type RendererNode = NativeRenderer['nodes'][number];
@@ -37,8 +35,6 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, and whether the node or link being drawn right now is part of it.
   focusIds?: Set<string>; lit?: boolean;
-  // The color tag labels take, while custom colors and the tag name color are on.
-  labelColor?: number;
   overlay: HTMLElement; status: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
@@ -318,9 +314,8 @@ export class NativeGraphs {
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
-    const tagColor = settings.customColors ? hexColor(this.owner.tagColor()) : undefined;
-    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated, tagColor });
-    session.labelColor = settings.titleAccent ? tagColor?.rgb : undefined;
+    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
+      tagColor: settings.customColors ? hexColor(this.owner.tagColor()) : undefined });
     // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
     const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
     session.resolved = layer.resolved; session.kinds = layer.kinds; session.data = layer.data;
@@ -401,9 +396,6 @@ export class NativeGraphs {
       node.render = () => {
         session.lit = !session.focusIds || session.focusIds.has(node.id);
         try { original.call(node); } finally { session.lit = undefined; }
-        // The renderer sets a label's color only when it builds the text style, so tag labels take theirs here; setting the same
-        // color again changes nothing.
-        if (node.type === 'tag' && node.text) node.text.style.fill = session.labelColor ?? session.renderer.colors.text.rgb;
       };
     }
   }
@@ -856,7 +848,7 @@ export class NativeGraphs {
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
     if (s.renderer.getHighlightNode === s.ownHighlight) s.renderer.getHighlightNode = s.hovered;
-    for (const [node, render] of s.nodeRenders) { node.render = render; if (node.type === 'tag' && node.text) node.text.style.fill = s.renderer.colors.text.rgb; }
+    for (const [node, render] of s.nodeRenders) node.render = render;
     for (const [link, original] of s.links) {
       link.render = original.render;
       if (link.line && original.texture) link.line.texture = original.texture;
