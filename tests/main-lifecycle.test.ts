@@ -24,7 +24,7 @@ class NativeGraphs {
   constructor(owner?: { tagColor(): string }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
   refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
-  showPanel() { this.calls.push('panel'); }
+  showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
   renderPanel() { this.calls.push('render-panel'); }
   destroy() { this.calls.push('destroy'); }
 }
@@ -105,11 +105,11 @@ async function setup(saved?: Promise<unknown>) {
     restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
-test('opening a graph still loads the dictionary, attaches and reveals it', async () => {
+test('opening a graph still loads the dictionary, attaches and reveals it, and brings the sidebar tab forward', async () => {
   const t = await setup();
   await t.plugin.openView();
   assert.deepEqual(t.plugin.model!.roots, ['root']);
-  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true']);
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
@@ -212,7 +212,7 @@ test('opening the graph records how the load went, so a later success clears an 
   assert.match(t.plugin.error!, /^Invalid JSON: /);
   t.vault.text = dictionary; await t.plugin.openView();
   assert.equal(t.plugin.error, undefined);
-  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:false', 'panel']);
+  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:false', 'panel:true']);
 });
 
 test('a file that cannot be read is not reported as invalid JSON', async () => {
