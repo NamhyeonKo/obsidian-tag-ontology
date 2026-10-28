@@ -185,14 +185,29 @@ test('hierarchy links always show arrows, related links are dashed, other links 
   assert.equal(find('A.md', 'B.md').arrows, true);
 });
 
-test('clicking a dictionary tag expands it, saves the state and re-renders', async () => {
-  const t = await setup();
-  t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.ok(t.ids().includes('#ml'));
-  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+// A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
+const nodeClick = (t: { renderer: { onNodeClick: unknown } }, id: string) => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, id, 'tag');
+
+test('a click selects a dictionary tag without expanding it', async () => {
+  const t = await setup(); t.controller.attach();
+  nodeClick(t, '#cs'); t.tick(400);
+  assert.ok(!t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], []); assert.equal(t.owner.saves, 0);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+});
+
+test('a double click expands the tag once and a second double click does not collapse it', async () => {
+  const t = await setup(); t.controller.attach();
+  nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  assert.ok(t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
+  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
   assert.ok(t.ids().includes('#ml')); assert.equal(t.owner.saves, 1);
+});
+
+test('quick clicks on two different tags are two selections', async () => {
+  const t = await setup({ expanded: ['cs'] }); t.controller.attach();
+  nodeClick(t, '#cs'); nodeClick(t, '#ml');
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'ml'));
 });
 
 test('other nodes keep the core click behavior', async () => {
@@ -292,7 +307,7 @@ test('search reveals a tag whose expanded ancestor sits under a collapsed one', 
 test('the panel button reads the live expansion after Expand all', async () => {
   const t = await setup();
   t.controller.attach();
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
+  nodeClick(t, '#cs'); nodeClick(t, '#cs');
   t.click('Collapse in graph');
   t.click('Expand all');
   assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the label follows Expand all');
@@ -447,7 +462,7 @@ test('in a tree, a native update that moves nothing asks for no redraw', async (
   let wakes = 0; t.renderer.changed = () => { wakes++; };
   t.renderer.setData(core());
   assert.equal(wakes, 0);
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#ml', 'tag');
+  nodeClick(t, '#ml'); nodeClick(t, '#ml');
   assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
 });
 
@@ -477,7 +492,7 @@ test('Fit works on a graph too big to spread into one call', async () => {
 for (const [name, trigger] of [
   ['a native update', t => t.renderer.setData(core())],
   ['a toolbar button', t => t.click('Expand all')],
-  ['a click on a tag', t => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag')],
+  ['a double click on a tag', t => { nodeClick(t, '#cs'); nodeClick(t, '#cs'); }],
   ['a refresh', t => t.controller.refresh()],
 ] as [string, (t: Awaited<ReturnType<typeof setup>>) => void][]) {
   test(`${name} that fails to render gives the tab back to the core graph with nothing left pinned`, async () => {

@@ -57,6 +57,8 @@ type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
+// Two clicks on the same tag within this many milliseconds make a double click.
+const DOUBLE_CLICK_MS = 350;
 // The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
 const colors = new Map<string, NodeColor>();
 const hexColor = (hex: string): NodeColor => colors.get(hex) ?? colors.set(hex, { a: 1, rgb: parseInt(hex.slice(1), 16) }).get(hex)!;
@@ -89,6 +91,8 @@ export class NativeGraphs {
   private history: PanelView[] = [{ kind: 'roots' }]; private at = 0;
   private nav: Partial<Record<'back' | 'forward' | 'home' | 'add' | 'edit' | 'expand', HTMLButtonElement>> = {};
   private mode?: Mode; private saving = false; private searchBox?: HTMLInputElement;
+  // The last graph click on a dictionary tag, to tell a double click.
+  private lastClick?: { id: string; at: number };
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
@@ -174,10 +178,13 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
+        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands it.
+        const now = performance.now(), double = this.lastClick?.id === id && now - this.lastClick.at < DOUBLE_CLICK_MS;
+        this.lastClick = double ? undefined : { id, at: now };
         this.leave(() => {
           this.go({ kind: 'tag', tag });
-          // Clicking only ever expands; collapsing stays explicit so reopening a panel never hides nodes.
-          if (!this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
+          // A double click only ever expands; collapsing stays explicit, since tags under it may be expanded too.
+          if (double && !this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
           else this.showSelection();
           this.showPanel(true);
         });
