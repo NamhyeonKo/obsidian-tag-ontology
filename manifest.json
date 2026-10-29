@@ -6,6 +6,9 @@
   "description": "Link your tags the way you link notes, with parents, children and related tags, and explore them in the graph view.",
   "author": "NamhyeonKo",
   "authorUrl": "https://github.com/NamhyeonKo",
-  "fundingUrl": "https://github.com/sponsors/NamhyeonKo",
+  "fundingUrl": {
+    "Buy Me a Coffee": "https://buymeacoffee.com/namhyunko",
+    "GitHub Sponsors": "https://github.com/sponsors/NamhyeonKo"
+  },
   "isDesktopOnly": true
 }
