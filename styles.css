@@ -9,6 +9,9 @@
 .tag-ontology-icon.tag-ontology-toggle:not(.is-active) { color: var(--text-faint); }
 /* Obsidian dims aria-disabled buttons and clears the background of disabled icons, even on hover; keep the round background. */
 .tag-ontology-icon[aria-disabled="true"], .tag-ontology-icon[aria-disabled="true"]:hover { background: var(--background-secondary); }
+/* The layout buttons sit in the column like the others; the ones folded away are hidden. */
+.tag-ontology-layouts { display: contents; }
+.tag-ontology-icon[hidden] { display: none; }
 .tag-ontology-separator { width: 20px; height: 1px; margin: 0 7px; background: var(--background-modifier-border); }
 .tag-ontology-nav { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
 .tag-ontology-spacer { flex: 1; }
