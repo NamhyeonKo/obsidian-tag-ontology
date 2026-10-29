@@ -38,7 +38,7 @@ class Element {
 }
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
-  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void };
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void };
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
 const linkedGraph = (has: (tag: string) => boolean = () => false) => {
@@ -338,6 +338,13 @@ test('clickTag selects and toggles a tag without a core graph', async () => {
   assert.deepEqual([...t.owner.settings.expanded], []);
   t.controller.clickTag('cs', true);
   assert.deepEqual([...t.owner.settings.expanded], ['cs']);
+});
+
+test('Expand all and Collapse all wait for a dictionary, so a 3D toolbar shown before one loads keeps the saved expansion', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.owner.model = undefined;
+  t.controller.expandAll(); t.controller.collapseAll();
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 0);
 });
 
 test('an unlinked graph gets nothing', async () => {

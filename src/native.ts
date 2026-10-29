@@ -464,8 +464,9 @@ export class NativeGraphs {
     });
   }
 
-  collapseAll() { this.update({ expanded: [] }, 'roots'); }
-  expandAll() { this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'); }
+  // The 3D view shows its toolbar before a dictionary has loaded; until one has, there is nothing to expand or collapse.
+  collapseAll() { if (this.owner.model) this.update({ expanded: [] }, 'roots'); }
+  expandAll() { if (this.owner.model) this.update({ expanded: [...this.owner.model.entries.keys()] }, 'expand-all'); }
   toggleFilter(key: ToggleKey) { this.update({ [key]: !this.owner.settings[key] }, 'filter'); }
   checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
 
