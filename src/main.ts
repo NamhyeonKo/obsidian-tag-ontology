@@ -3,6 +3,9 @@ import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { apply, conflicts, serialize, type Change, type RawDictionary } from './dictionary.ts';
+import { vaultData } from './vault-data.ts';
+import { VIEW_3D } from './graph3d.ts';
+import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
 
@@ -128,6 +131,12 @@ export default class TagOntologyPlugin extends Plugin {
     });
   }
 
+  // The core graph's data, built from the vault for the 3D view: notes, their tags and links between included notes.
+  graphData(): NativeData {
+    const resolved = this.app.metadataCache.resolvedLinks;
+    return vaultData(this.notes().map(note => ({ ...note, links: Object.keys(resolved[note.path] ?? {}) })));
+  }
+
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
@@ -186,9 +195,11 @@ export default class TagOntologyPlugin extends Plugin {
     try {
       await this.loadModel();
       if (this.disposed) return;
-      const existing = this.app.workspace.getLeavesOfType('graph')[0];
+      // The setting picks the graph; an open tab of it is reused.
+      const type = this.settings.view === '3d' ? VIEW_3D : 'graph';
+      const existing = this.app.workspace.getLeavesOfType(type)[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
-      if (!existing) await leaf.setViewState({ type: 'graph', active: true });
+      if (!existing) await leaf.setViewState({ type, active: true });
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
@@ -220,6 +231,8 @@ export default class TagOntologyPlugin extends Plugin {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
       this.native.renderPanel();
+      // The 3D view keeps the last dictionary that loaded and shows why the new one didn't.
+      this.native.drawLinked('refresh');
       if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
     }
   }
@@ -241,7 +254,8 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const LAYOUT = { name: 'Layout', desc: 'Force and the tree layouts are on the graph toolbar. 3D is coming in a later release.' };
+const LAYOUT = { name: 'Layout', desc: 'Which graph the ribbon icon and Open graph open. Force and the tree layouts are on the 2D graph toolbar.' };
+const VIEWS = { '2d': '2D', '3d': '3D (beta)' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
@@ -261,8 +275,7 @@ class OntologySettingsTab extends PluginSettingTab {
         type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
-      // A plain dropdown can't turn off one option, so this row is drawn by hand.
-      { ...LAYOUT, render: (setting) => { this.layout(setting); } },
+      { ...LAYOUT, control: { type: 'dropdown', key: 'view', defaultValue: DEFAULT_SETTINGS.view, options: VIEWS } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
       { type: 'group', visible: () => this.owner.settings.focus, items:
@@ -282,13 +295,6 @@ class OntologySettingsTab extends PluginSettingTab {
     await this.owner.saveSettings();
   }
 
-  // Only the 2D graph exists yet: 3D (beta) is listed so it can be seen coming, but can't be chosen.
-  private layout(setting: Setting): Setting {
-    return setting.setName(LAYOUT.name).setDesc(LAYOUT.desc).addDropdown((dropdown) => {
-      dropdown.addOptions({ '2d': '2D', '3d': '3D (beta)' }).setValue('2d');
-      dropdown.selectEl.querySelector<HTMLOptionElement>('option[value="3d"]')!.disabled = true;
-    });
-  }
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
   // Showing the accent again calls onChange too, and that must not pin the accent as a picked color.
@@ -319,7 +325,9 @@ class OntologySettingsTab extends PluginSettingTab {
         await this.owner.saveSettings();
       });
     });
-    this.layout(new Setting(containerEl));
+    new Setting(containerEl).setName(LAYOUT.name).setDesc(LAYOUT.desc).addDropdown((dropdown) => {
+      dropdown.addOptions(VIEWS).setValue(this.owner.settings.view).onChange(value => this.setControlValue('view', value));
+    });
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.focus).onChange((value) => {
