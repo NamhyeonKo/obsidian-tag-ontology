@@ -246,7 +246,7 @@ scripts/deploy.mjs  # Copies the build into a local vault
 
 ## 후원
 
-Tag Ontology는 무료 오픈 소스입니다. 시간을 아껴 줬다면 [GitHub Sponsors](https://github.com/sponsors/NamhyeonKo)로 커피 한 잔을 선물해 주셔도 좋습니다.
+Tag Ontology는 무료 오픈 소스입니다. 시간을 아껴 줬다면 [커피 한 잔](https://buymeacoffee.com/namhyunko)을 선물해 주시거나 [GitHub Sponsors](https://github.com/sponsors/NamhyeonKo)로 후원해 주셔도 좋습니다.
 
 ## 감사의 말
 

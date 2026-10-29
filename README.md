@@ -245,7 +245,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional C
 
 ## Support
 
-Tag Ontology is free and open source. If it saves you time, you can buy me a coffee through [GitHub Sponsors](https://github.com/sponsors/NamhyeonKo).
+Tag Ontology is free and open source. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/namhyunko) or support it through [GitHub Sponsors](https://github.com/sponsors/NamhyeonKo).
 
 ## Acknowledgements
 
