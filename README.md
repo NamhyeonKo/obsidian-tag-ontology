@@ -113,7 +113,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
 | Related | Show or hide the dashed related links |
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
-| Force / Vertical tree / Horizontal tree | Switch the layout; the current one is highlighted |
+| Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
