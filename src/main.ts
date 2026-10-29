@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS, cssColorToHex, sanitizeSettings, isValidDictionaryPat
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { apply, conflicts, serialize, type Change, type RawDictionary } from './dictionary.ts';
 import { vaultData } from './vault-data.ts';
-import { VIEW_3D } from './graph3d.ts';
+import { Graph3DView, VIEW_3D } from './graph3d.ts';
 import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
@@ -39,6 +39,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
+    this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
