@@ -138,6 +138,10 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     });
     this.resize.observe(this.stage);
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
+    // Obsidian's accent color setting only rewrites the accent variables on <body>, with no css-change, so <body> is watched too.
+    const accentWatch = new MutationObserver(() => this.recolor());
+    accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
+    this.register(() => accentWatch.disconnect());
     this.owner.native.link(this);
     this.draw('refresh');
   }
