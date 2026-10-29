@@ -3,7 +3,7 @@ import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
 import type { Fog, LineDashedMaterial, Material, Mesh, MeshLambertMaterial, Object3D, SphereGeometry, Texture } from 'three';
 import type TagOntologyPlugin from './main.ts';
-import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData } from './layer.ts';
+import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { cssColorToHex } from './settings.ts';
 
@@ -211,6 +211,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
         if (target === this.center) this.lit.add(source);
       }
     } else if (settings.focus && tag && model && layer?.resolved.visible.has(tag)) {
+      // The selected tag looks hovered, as in 2D.
+      this.center = layer.resolved.idOf.get(tag);
       this.lit = focusIds(layer.data, layer.resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes });
     }
     for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
@@ -249,10 +251,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   }
 
   private lineColor(link: Link3D) {
-    const lit = this.lit, source = idOf(link.source), target = idOf(link.target);
-    if (!lit) return this.colors.line;
-    if (this.center) return source === this.center || target === this.center ? this.colors.accent : mix(this.colors.line, this.colors.background, 0.7);
-    return lit.has(source) && lit.has(target) ? this.colors.line : mix(this.colors.line, this.colors.background, 0.7);
+    const tone = linkTone(idOf(link.source), idOf(link.target), { center: this.center, lit: this.lit, hovered: !!this.hover });
+    return tone === 'accent' ? this.colors.accent : tone === 'faded' ? mix(this.colors.line, this.colors.background, 0.7) : this.colors.line;
   }
 
   // A node object the library builds later (after expanding) takes the highlight in effect then.

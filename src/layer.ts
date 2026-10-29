@@ -119,6 +119,18 @@ export function focusIds(data: NativeData, resolved: Resolved, model: Ontology, 
   return ids;
 }
 
+export type Tone = 'accent' | 'normal' | 'faded';
+export interface Highlight { center?: string; lit?: ReadonlySet<string>; hovered: boolean }
+
+// How a link is drawn while something is highlighted, as in the core graph. Around a hovered node only its own links take the
+// accent and every other link fades. Under Focus the selected tag looks hovered: its links take the accent, links inside what
+// Focus keeps bright stay as they are, and the rest fades.
+export function linkTone(source: string, target: string, { center, lit, hovered }: Highlight): Tone {
+  if (!lit) return 'normal';
+  if (source === center || target === center) return 'accent';
+  return !hovered && lit.has(source) && lit.has(target) ? 'normal' : 'faded';
+}
+
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
   // Hidden notes go first, so collapsing never copies them only to drop them.
   const shown = state.showNotes ? data : hideNotes(data);
