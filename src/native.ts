@@ -185,13 +185,12 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands it.
+        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands or collapses it.
         const now = performance.now(), double = this.lastClick?.id === id && now - this.lastClick.at < DOUBLE_CLICK_MS;
         this.lastClick = double ? undefined : { id, at: now };
         this.leave(() => {
           this.go({ kind: 'tag', tag });
-          // A double click only ever expands; collapsing stays explicit, since tags under it may be expanded too.
-          if (double && !this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
+          if (double) this.toggleExpanded(tag);
           else this.showSelection();
           this.showPanel(true);
         });
@@ -263,11 +262,7 @@ export class NativeGraphs {
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
-      const tag = this.selected;
-      if (!tag) return;
-      // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
-      const live = this.owner.settings.expanded;
-      this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
+      if (this.selected) this.toggleExpanded(this.selected);
     });
     this.nav.expand.addClass('tag-ontology-expand');
     const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
@@ -421,6 +416,13 @@ export class NativeGraphs {
     }
     // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
     if (moved) r.changed();
+  }
+
+  // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
+  private toggleExpanded(tag: string) {
+    // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
+    const live = this.owner.settings.expanded;
+    this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
   }
 
   private reveal(tag: string) {
