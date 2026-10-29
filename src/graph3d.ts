@@ -3,7 +3,7 @@ import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
 import type { Fog, LineDashedMaterial, Material, Mesh, MeshLambertMaterial, Object3D, SphereGeometry, Texture } from 'three';
 import type TagOntologyPlugin from './main.ts';
-import { buildLayer, edgeKey, type EdgeKind, type NativeData } from './layer.ts';
+import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { cssColorToHex } from './settings.ts';
 
@@ -23,6 +23,10 @@ type Three = typeof import('./three.ts');
 // little smaller than 2D's 1, and 2D's default link distance of 250 is 30 here.
 const NODE_SIZE = 0.8, LINK_OPACITY = 0.8, REPEL = -10 * 6, LINK_DISTANCE = 250 * 0.12, CENTER = 0.52 * 0.04;
 const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
+// A click flies the camera this close to the tag, keeping the direction it looks from.
+const FLY_DISTANCE = 90, FLY_MS = 1000;
+// Faded nodes and labels stay faintly visible, as in 2D.
+const FADED_NODE = 0.2, FADED_LABEL = 0.15;
 // Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D.
 const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
 const FONT = 'var(--font-interface)';
@@ -32,6 +36,11 @@ const TOGGLES = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'R
 
 const idOf = (end: string | Node3D) => typeof end === 'string' ? end : end.id;
 const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
+// A faded line: the line color most of the way to the background.
+const mix = (from: string, to: string, share: number) => '#' + [1, 3, 5].map(at => {
+  const a = parseInt(from.slice(at, at + 2), 16), b = parseInt(to.slice(at, at + 2), 16);
+  return Math.round(a + (b - a) * share).toString(16).padStart(2, '0');
+}).join('');
 // Like 2D, a node grows a little with its links.
 const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE;
 
@@ -44,7 +53,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private colors = FALLBACK;
   private base?: NativeData; private layer?: Layer;
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
-  private fitTimer?: number; private resize?: ResizeObserver;
+  private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
+  // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
+  private hover?: Node3D; private center?: string; private lit?: Set<string>;
 
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return VIEW_3D; }
@@ -81,15 +92,19 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       .nodeRelSize(1)
       .nodeVal(node => node.radius ** 3)
       .nodeThreeObject(node => this.nodeObject(node))
-      .linkColor(() => this.colors.line)
+      .linkColor(link => this.lineColor(link))
       .linkOpacity(LINK_OPACITY)
       // Hierarchy links always show their direction.
       .linkDirectionalArrowLength(link => link.kind === 'broader' ? ARROW : 0)
       .linkDirectionalArrowRelPos(1)
-      .linkDirectionalArrowColor(() => this.colors.line)
+      .linkDirectionalArrowColor(link => this.lineColor(link))
       // Related links are dashed, as in 2D; the dashes follow the line as it moves.
       .linkMaterial(link => link.kind === 'related' ? (link.dashes ??= new three.LineDashedMaterial({ color: this.colors.line, dashSize: DASH, gapSize: GAP })) : null)
       .linkPositionUpdate((line, _coords, link) => { if (link.kind === 'related') (line as Object3D & { computeLineDistances?: () => void }).computeLineDistances?.(); })
+      .onNodeHover(item => { this.hover = item ?? undefined; this.contentEl.toggleClass('is-pointing', !!item); this.paint(); })
+      .onNodeClick(item => this.click(item))
+      // A dragged node follows the simulation again once it is let go.
+      .onNodeDragEnd(item => { item.fx = undefined; item.fy = undefined; item.fz = undefined; })
       .cooldownTime(6000);
     // d3's forces come untyped; these are the calls used on them.
     (graph.d3Force('charge') as unknown as { strength(value: number): void }).strength(REPEL);
@@ -112,7 +127,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     this.closed = true;
     this.owner.native.unlink(this);
     this.resize?.disconnect();
-    window.clearTimeout(this.fitTimer);
+    window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (graph) {
       graph.pauseAnimation();
@@ -183,15 +198,66 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
   }
 
+  // As in 2D: the hovered node takes the accent color and so do its links, and everything not linked to it fades. With Focus on and
+  // nothing hovered, what Focus keeps around the selected tag stays bright; a selected tag collapsed out of sight fades nothing.
   paint() {
+    const graph = this.graph, layer = this.layer, model = this.owner.model, settings = this.owner.settings, tag = this.owner.native.selectedTag;
+    this.center = this.hover?.id; this.lit = undefined;
+    if (this.hover) {
+      this.lit = new Set([this.hover.id]);
+      for (const link of this.links) {
+        const source = idOf(link.source), target = idOf(link.target);
+        if (source === this.center) this.lit.add(target);
+        if (target === this.center) this.lit.add(source);
+      }
+    } else if (settings.focus && tag && model && layer?.resolved.visible.has(tag)) {
+      this.lit = focusIds(layer.data, layer.resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes });
+    }
     for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
+    for (const link of this.links) link.dashes?.color.set(this.lineColor(link));
+    graph?.linkColor(graph.linkColor()).linkDirectionalArrowColor(graph.linkDirectionalArrowColor());
   }
 
   has(tag: string) { return !!this.layer?.resolved.range.has(tag); }
 
-  focusOn(_tag: string) {}
+  // The tag may have only just come into view, so this waits until the simulation has placed it, for up to two seconds.
+  focusOn(tag: string) {
+    window.clearTimeout(this.flyTimer);
+    const id = this.layer?.resolved.idOf.get(tag), started = performance.now();
+    const attempt = () => {
+      const item = id === undefined ? undefined : this.nodes.get(id);
+      if (item?.x !== undefined) { this.flyTo(item); return; }
+      if (performance.now() - started < 2000) this.flyTimer = window.setTimeout(attempt, 100);
+    };
+    attempt();
+  }
 
+  // A click selects a dictionary tag at once and flies to it; a second click soon after expands or collapses it, as in 2D.
+  // A note opens in a new tab; a tag the dictionary lacks does nothing.
+  private click(item: Node3D) {
+    const native = this.owner.native, double = native.isDouble(item.id);
+    if (item.tag) { native.clickTag(item.tag, double); if (!double) this.flyTo(item); }
+    else if (item.type !== 'tag' && !double) native.openNote(item.id);
+  }
+
+  private flyTo(item: Node3D) {
+    const graph = this.graph;
+    if (!graph || item.x === undefined) return;
+    const camera = graph.cameraPosition(), at = { x: item.x, y: item.y ?? 0, z: item.z ?? 0 };
+    const dx = camera.x - at.x, dy = camera.y - at.y, dz = camera.z - at.z, length = Math.hypot(dx, dy, dz) || 1;
+    graph.cameraPosition({ x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE }, at, FLY_MS);
+  }
+
+  private lineColor(link: Link3D) {
+    const lit = this.lit, source = idOf(link.source), target = idOf(link.target);
+    if (!lit) return this.colors.line;
+    if (this.center) return source === this.center || target === this.center ? this.colors.accent : mix(this.colors.line, this.colors.background, 0.7);
+    return lit.has(source) && lit.has(target) ? this.colors.line : mix(this.colors.line, this.colors.background, 0.7);
+  }
+
+  // A node object the library builds later (after expanding) takes the highlight in effect then.
   private colorOf(item: Node3D) {
+    if (item.id === this.center) return this.colors.accent;
     if (item.type !== 'tag') return this.colors.note;
     return this.owner.settings.customColors ? this.owner.tagColor() : this.colors.tag;
   }
@@ -200,7 +266,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const three = this.three!, group = new three.Object3D();
     const dot = item.dot = new three.Mesh(this.ball, new three.MeshLambertMaterial({ color: this.colorOf(item), transparent: true }));
     group.add(dot);
-    // ponytail: one label texture per node; switch to a label atlas if thousands of visible nodes stutter.
+    // ponytail: every node is its own sphere and label, two draw calls each. With 10,000 notes shown a frame takes about 70 ms
+    // (measured 2026-10-30), most of it per-object overhead; an instanced sphere mesh and a label atlas would lift that.
     const label = item.label = new three.SpriteText(item.name, TEXT_HEIGHT, this.colors.text);
     label.fontFace = FONT; label.fontSize = FONT_SIZE;
     label.material.depthWrite = false; label.material.transparent = true;
@@ -238,9 +305,15 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // The fog band follows the zoom: it starts a little in front of the orbit center and ends a bit past it.
     if (fog) { const distance = camera.distanceTo((graph.controls() as { target: typeof camera }).target); fog.near = distance * 0.7; fog.far = distance * 1.7; }
     for (const item of this.nodes.values()) {
-      if (item.x === undefined || !item.label) continue;
+      if (item.x === undefined) continue;
+      const lit = !this.lit || this.lit.has(item.id);
+      if (item.dot) item.dot.material.opacity = lit ? 1 : FADED_NODE;
+      if (!item.label) continue;
       const distance = Math.hypot(camera.x - item.x, camera.y - (item.y ?? 0), camera.z - (item.z ?? 0));
-      item.label.material.opacity = Math.min(1, Math.max(0, (LABEL_FAR - distance) / (LABEL_FAR - LABEL_NEAR)));
+      const far = Math.min(1, Math.max(0, (LABEL_FAR - distance) / (LABEL_FAR - LABEL_NEAR)));
+      // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't drawn at all.
+      item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
+      item.label.visible = item.label.material.opacity > 0;
     }
   }
 
