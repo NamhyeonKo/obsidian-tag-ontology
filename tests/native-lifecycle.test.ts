@@ -203,12 +203,14 @@ test('a click selects a dictionary tag without expanding it', async () => {
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
 });
 
-test('a double click expands the tag once and a second double click does not collapse it', async () => {
-  const t = await setup(); t.controller.attach();
+test('a double click expands or collapses the tag like the panel button and keeps what is expanded below it', async () => {
+  const t = await setup({ expanded: ['ml'] }); t.controller.attach();
   nodeClick(t, '#cs'); nodeClick(t, '#cs');
-  assert.ok(t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
+  assert.ok(t.ids().includes('#DL')); assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'ml']); assert.equal(t.owner.saves, 1);
   t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
-  assert.ok(t.ids().includes('#ml')); assert.equal(t.owner.saves, 1);
+  assert.ok(!t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['ml']); assert.equal(t.owner.saves, 2);
+  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  assert.ok(t.ids().includes('#DL'), 'ml comes back expanded');
 });
 
 test('quick clicks on two different tags are two selections', async () => {
