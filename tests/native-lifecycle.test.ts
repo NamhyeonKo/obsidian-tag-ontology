@@ -29,7 +29,8 @@ class Element {
   // Every listener for an event runs, as in the DOM.
   addEventListener(event: string, fn: (event?: unknown) => void) { const prev = this.events.get(event); this.events.set(event, prev ? e => { prev(e); fn(e); } : fn); }
   removeEventListener(event: string) { this.events.delete(event); }
-  setAttribute(name: string, value: string) { this.attrs[name] = value; }
+  setAttribute(name: string, value: string) { this.attrs[name] = value; } removeAttribute(name: string) { delete this.attrs[name]; }
+  contains(el: unknown) { return this.all().includes(el as Element); }
   addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
   toggleClass(cls: string, on: boolean) { if (on) this.classes.add(cls); else this.classes.delete(cls); }
   empty() { this.children = []; } remove() { this.removed = true; }
@@ -155,6 +156,12 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const all = () => [...contentEl.all(), ...sidebar.all()];
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
   const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!({ preventDefault() {} });
+  const layoutButtons = () => contentEl.all().filter(el => el.attrs['aria-label']?.startsWith('Layout: '));
+  // Picks a layout the way a user does: the folded button opens the others, then a click on one picks it.
+  const layout = (name: string) => {
+    layoutButtons().find(el => !el.hidden)!.events.get('click')!({});
+    click(`Layout: ${name}`);
+  };
   const search = (query: string) => {
     const input = sidebar.all().find(el => el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
@@ -165,7 +172,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -203,12 +210,14 @@ test('a click selects a dictionary tag without expanding it', async () => {
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
 });
 
-test('a double click expands the tag once and a second double click does not collapse it', async () => {
-  const t = await setup(); t.controller.attach();
+test('a double click expands or collapses the tag like the panel button and keeps what is expanded below it', async () => {
+  const t = await setup({ expanded: ['ml'] }); t.controller.attach();
   nodeClick(t, '#cs'); nodeClick(t, '#cs');
-  assert.ok(t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 1);
+  assert.ok(t.ids().includes('#DL')); assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'ml']); assert.equal(t.owner.saves, 1);
   t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
-  assert.ok(t.ids().includes('#ml')); assert.equal(t.owner.saves, 1);
+  assert.ok(!t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['ml']); assert.equal(t.owner.saves, 2);
+  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  assert.ok(t.ids().includes('#DL'), 'ml comes back expanded');
 });
 
 test('quick clicks on two different tags are two selections', async () => {
@@ -238,8 +247,9 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
   t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
-  const horizontal = t.contentEl.all().find(el => el.attrs['aria-label'] === 'Layout: Horizontal tree')!;
-  assert.equal(horizontal.attrs['aria-pressed'], 'true', 'the toolbar shows a layout changed in settings');
+  const shown = t.layoutButtons().filter(el => !el.hidden);
+  assert.deepEqual(shown.map(el => el.attrs['aria-label']), ['Layout: Horizontal tree'], 'the toolbar shows a layout changed in settings');
+  assert.equal(shown[0]!.attrs['aria-pressed'], 'true');
 });
 
 test('notes and related toggles start from settings and persist', async () => {
@@ -378,20 +388,58 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']);
 });
 
-test('layout buttons switch the layout without rereading the dictionary and mark the current one', async () => {
+test('the layout buttons fold into the current one, open in their own order, and fold again after a choice', async () => {
   const t = await setup();
   t.controller.attach();
   let reloads = 0; t.owner.saveSettings = async () => { reloads++; };
   const sent = t.forwarded.length;
+  const shown = () => t.layoutButtons().filter(el => !el.hidden).map(el => el.attrs['aria-label']);
+  const active = () => t.layoutButtons().filter(el => el.classes.has('is-active')).map(el => el.attrs['aria-label']);
+  const expanded = () => t.layoutButtons().map(el => el.attrs['aria-expanded']);
+  assert.deepEqual(shown(), ['Layout: Force']); assert.deepEqual(active(), ['Layout: Force'], 'the folded button keeps the accent');
+  assert.deepEqual(expanded(), ['false', undefined, undefined]);
   t.click('Layout: Force');
-  assert.equal(t.forwarded.length, sent, 'the current layout is not drawn again');
-  t.click('Layout: Vertical tree');
+  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']); assert.deepEqual(active(), ['Layout: Force']);
+  assert.deepEqual(expanded(), ['true', undefined, undefined]);
+  t.click('Layout: Force');
+  assert.deepEqual(shown(), ['Layout: Force'], 'the current one folds them again');
+  assert.equal(t.forwarded.length, sent, 'without drawing the graph again');
+  t.layout('Vertical tree');
   assert.equal(t.owner.settings.layout, 'tree'); assert.equal(t.forwarded.length, sent + 1);
   assert.equal(reloads, 0); assert.equal(t.owner.saves, 1);
-  const pressed = (label: string) => t.contentEl.all().find(el => el.attrs['aria-label'] === label)!.attrs['aria-pressed'];
-  assert.equal(pressed('Layout: Vertical tree'), 'true'); assert.equal(pressed('Layout: Force'), 'false');
+  assert.deepEqual(shown(), ['Layout: Vertical tree']); assert.deepEqual(active(), ['Layout: Vertical tree']);
+  t.click('Layout: Vertical tree');
+  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree'], 'they open in their own order');
+  assert.deepEqual(active(), ['Layout: Vertical tree'], 'with the current one marked where it sits');
   t.click('Layout: Horizontal tree');
-  assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.equal(pressed('Layout: Horizontal tree'), 'true');
+  assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.deepEqual(shown(), ['Layout: Horizontal tree']);
+});
+
+test('a click elsewhere in the graph or Escape folds the open layout buttons', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const shown = () => t.layoutButtons().filter(el => !el.hidden).length;
+  t.click('Layout: Force');
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown', target: t.layoutButtons()[1] });
+  assert.equal(shown(), 3, 'a press on a layout button leaves them open for its click');
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown', target: t.contentEl });
+  assert.equal(shown(), 1);
+  t.click('Layout: Force');
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Enter', target: t.contentEl });
+  assert.equal(shown(), 3);
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: t.contentEl });
+  assert.equal(shown(), 1);
+  assert.equal(t.owner.settings.layout, 'force');
+  assert.ok(!t.layoutButtons()[0]!.focused, 'Escape from elsewhere leaves focus alone');
+});
+
+test('Escape from a layout button that folds away hands keyboard focus to the current one', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.click('Layout: Force');
+  const [current, vertical] = t.layoutButtons();
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: vertical });
+  assert.ok(vertical!.hidden); assert.ok(current!.focused);
 });
 
 test('tree hides notes without changing the saved setting', async () => {
@@ -416,7 +464,7 @@ test('in a tree, a node released after a drag springs back to its place, even ou
   const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
   // The drag starts with a press on the graph. The core graph unpins the node under the pointer on release, after its
   // simulation ran for the drag; it listens on the window, so the release can be anywhere, such as over the sidebar.
-  t.contentEl.events.get('pointerdown')!();
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
   node.x += 300; node.y += 100; node.fx = null; node.fy = null;
   t.win.events.get('pointerup')?.();
   t.tick(100);
@@ -424,8 +472,8 @@ test('in a tree, a node released after a drag springs back to its place, even ou
   t.tick(1000);
   assert.deepEqual([node.x, node.y, node.fx, node.fy], [home[0], home[1], home[0], home[1]]);
   // Force leaves the core behavior alone.
-  t.click('Layout: Force');
-  t.contentEl.events.get('pointerdown')!(); node.fx = null; t.win.events.get('pointerup')?.();
+  t.layout('Force');
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' }); node.fx = null; t.win.events.get('pointerup')?.();
   assert.equal(node.fx, null);
 });
 
@@ -435,7 +483,7 @@ test('a tree node springs back after its tab moved to another window', async () 
   // Obsidian keeps the leaf and the view when a tab moves to a popout window, so nothing attaches again.
   const popout = new Element(); t.contentEl.win = popout;
   const node = t.renderer.nodes.find(n => n.id === '#cs')!, home = [node.x, node.y];
-  t.contentEl.events.get('pointerdown')!();
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
   node.x += 300; node.fx = null; node.fy = null;
   popout.events.get('pointerup')?.();
   t.tick(1000);
@@ -450,7 +498,7 @@ test('force reheats the simulation only when it takes over the layout, not on ev
   // The core graph re-sends its data on every file open and metadata change, and reheats by itself when nodes or links change.
   t.renderer.setData(core()); t.controller.refresh();
   assert.equal(reheats(), 1, 'a settled graph stays still');
-  t.click('Layout: Vertical tree'); t.click('Layout: Force');
+  t.layout('Vertical tree'); t.layout('Force');
   assert.equal(reheats(), 2, 'leaving a tree releases its pinned nodes and reheats');
 });
 
@@ -483,7 +531,7 @@ test('in a tree, the reheat the core graph sends with new nodes never reaches th
   const messages = t.renderer.worker.messages as Record<string, unknown>[];
   assert.ok(messages.every(m => !('alpha' in m) && !('run' in m)), 'nothing restarts the simulation');
   assert.ok(messages.some(m => 'nodes' in m && 'links' in m), 'the worker still gets the nodes and links');
-  t.click('Layout: Force');
+  t.layout('Force');
   assert.ok(messages.slice(-2).every(m => 'alpha' in m), 'Force keeps the core reheat and adds its own');
 });
 

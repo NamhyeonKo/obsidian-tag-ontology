@@ -45,6 +45,8 @@ interface Session {
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
+  // The layout buttons fold into the current one; open, all three show.
+  layoutsOpen: boolean; fold: (event: Event) => void;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
@@ -150,7 +152,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -185,13 +187,12 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands it.
+        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands or collapses it.
         const now = performance.now(), double = this.lastClick?.id === id && now - this.lastClick.at < DOUBLE_CLICK_MS;
         this.lastClick = double ? undefined : { id, at: now };
         this.leave(() => {
           this.go({ kind: 'tag', tag });
-          // A double click only ever expands; collapsing stays explicit, since tags under it may be expanded too.
-          if (double && !this.owner.settings.expanded.includes(tag)) this.update({ expanded: [...this.owner.settings.expanded, tag] }, 'expand:' + tag);
+          if (double) this.toggleExpanded(tag);
           else this.showSelection();
           this.showPanel(true);
         });
@@ -215,11 +216,24 @@ export class NativeGraphs {
       tools.createDiv('tag-ontology-separator');
       this.iconButton(tools, 'book-open-check', 'Dictionary check', () => this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }));
       tools.createDiv('tag-ontology-separator');
+      const group = tools.createDiv('tag-ontology-layouts');
       for (const [layout, icon, name] of LAYOUTS) {
-        session.layoutButtons[layout] = this.iconButton(tools, icon, `Layout: ${name}`, () => {
-          if (this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
+        session.layoutButtons[layout] = this.iconButton(group, icon, `Layout: ${name}`, () => {
+          // Folded, the one button showing opens the others; open, a click picks a layout and folds them.
+          session.layoutsOpen = !session.layoutsOpen;
+          if (!session.layoutsOpen && this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
+          else this.syncToolbar(session);
         });
       }
+      // A press anywhere else in the graph, or Escape, folds them without changing the layout.
+      session.fold = event => {
+        const away = event.type === 'keydown' ? (event as KeyboardEvent).key === 'Escape' : !group.contains(event.target as Node);
+        if (!session.layoutsOpen || !away) return;
+        session.layoutsOpen = false; this.syncToolbar(session);
+        // Escape from a button that just folded away would drop keyboard focus, so it moves to the current layout.
+        if (event.type === 'keydown' && group.contains(event.target as Node)) session.layoutButtons[this.owner.settings.layout]?.focus();
+      };
+      for (const event of ['pointerdown', 'keydown']) view.contentEl.addEventListener(event, session.fold, { capture: true });
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
@@ -263,11 +277,7 @@ export class NativeGraphs {
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
-      const tag = this.selected;
-      if (!tag) return;
-      // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
-      const live = this.owner.settings.expanded;
-      this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
+      if (this.selected) this.toggleExpanded(this.selected);
     });
     this.nav.expand.addClass('tag-ontology-expand');
     const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
@@ -421,6 +431,13 @@ export class NativeGraphs {
     }
     // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
     if (moved) r.changed();
+  }
+
+  // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
+  private toggleExpanded(tag: string) {
+    // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
+    const live = this.owner.settings.expanded;
+    this.update({ expanded: live.includes(tag) ? live.filter(t => t !== tag) : [...live, tag] }, 'expand:' + tag);
   }
 
   private reveal(tag: string) {
@@ -806,9 +823,13 @@ export class NativeGraphs {
       button.setAttribute('aria-disabled', String(disabled));
       this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
+    // Open, the three keep their own order and the current one is marked where it sits.
     for (const [layout] of LAYOUTS) {
-      const button = session.layoutButtons[layout];
-      button?.toggleClass('is-active', settings.layout === layout); button?.setAttribute('aria-pressed', String(settings.layout === layout));
+      const button = session.layoutButtons[layout], current = layout === settings.layout;
+      if (!button) continue;
+      button.toggleClass('is-active', current); button.setAttribute('aria-pressed', String(current));
+      button.hidden = !current && !session.layoutsOpen;
+      if (current) button.setAttribute('aria-expanded', String(session.layoutsOpen)); else button.removeAttribute('aria-expanded');
     }
   }
 
@@ -850,6 +871,7 @@ export class NativeGraphs {
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    for (const event of ['pointerdown', 'keydown']) s.view.contentEl.removeEventListener(event, s.fold, { capture: true });
     s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
