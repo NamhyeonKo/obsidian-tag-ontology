@@ -267,7 +267,7 @@ Tag Ontology는 무료 오픈 소스입니다. 시간을 아껴 줬다면 [커�
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
-- 3D 보기는 [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext), [three.js](https://threejs.org)(모두 MIT)로 만들었습니다.
+- 3D 보기는 [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext), [three.js](https://threejs.org)(모두 MIT)로 만들었습니다. 함께 담긴 모든 패키지의 라이선스 문구는 `main.js` 맨 위에 있습니다.
 
 ## 라이선스
 
