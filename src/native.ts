@@ -228,7 +228,10 @@ export class NativeGraphs {
       // A press anywhere else in the graph, or Escape, folds them without changing the layout.
       session.fold = event => {
         const away = event.type === 'keydown' ? (event as KeyboardEvent).key === 'Escape' : !group.contains(event.target as Node);
-        if (session.layoutsOpen && away) { session.layoutsOpen = false; this.syncToolbar(session); }
+        if (!session.layoutsOpen || !away) return;
+        session.layoutsOpen = false; this.syncToolbar(session);
+        // Escape from a button that just folded away would drop keyboard focus, so it moves to the current layout.
+        if (event.type === 'keydown' && group.contains(event.target as Node)) session.layoutButtons[this.owner.settings.layout]?.focus();
       };
       for (const event of ['pointerdown', 'keydown']) view.contentEl.addEventListener(event, session.fold, { capture: true });
       this.syncToolbar(session);

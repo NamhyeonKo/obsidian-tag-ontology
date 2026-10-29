@@ -425,11 +425,21 @@ test('a click elsewhere in the graph or Escape folds the open layout buttons', a
   t.contentEl.events.get('pointerdown')!({ type: 'pointerdown', target: t.contentEl });
   assert.equal(shown(), 1);
   t.click('Layout: Force');
-  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Enter' });
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Enter', target: t.contentEl });
   assert.equal(shown(), 3);
-  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape' });
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: t.contentEl });
   assert.equal(shown(), 1);
   assert.equal(t.owner.settings.layout, 'force');
+  assert.ok(!t.layoutButtons()[0]!.focused, 'Escape from elsewhere leaves focus alone');
+});
+
+test('Escape from a layout button that folds away hands keyboard focus to the current one', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.click('Layout: Force');
+  const [current, vertical] = t.layoutButtons();
+  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: vertical });
+  assert.ok(vertical!.hidden); assert.ok(current!.focused);
 });
 
 test('tree hides notes without changing the saved setting', async () => {
