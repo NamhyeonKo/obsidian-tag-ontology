@@ -53,6 +53,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private colors = FALLBACK;
   private base?: NativeData; private layer?: Layer;
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
+  // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
+  private shape?: string;
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
@@ -153,7 +155,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       graph.renderer().forceContextLoss(); graph.renderer().dispose();
       graph._destructor();
     }
-    this.graph = undefined; this.nodes.clear(); this.links = [];
+    this.graph = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
     this.contentEl.empty();
     return Promise.resolve();
   }
@@ -166,10 +168,10 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     if (operation === 'refresh' || !this.base) this.base = this.owner.graphData();
     const layer = this.layer = buildLayer(this.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes, showRelated: settings.showRelated });
     const data = layer.data.nodes, degree = new Map<string, number>(), next = new Map<string, Node3D>(), fresh: Node3D[] = [];
-    this.links = [];
+    const links: Link3D[] = [];
     for (const [id, node] of Object.entries(data)) for (const target of Object.keys(node.links)) {
       if (!Object.hasOwn(data, target)) continue;
-      this.links.push({ source: id, target, kind: layer.kinds.get(edgeKey(id, target)) ?? 'note' });
+      links.push({ source: id, target, kind: layer.kinds.get(edgeKey(id, target)) ?? 'note' });
       degree.set(id, (degree.get(id) ?? 0) + 1); degree.set(target, (degree.get(target) ?? 0) + 1);
     }
     for (const [id, node] of Object.entries(data)) {
@@ -186,7 +188,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     if (fresh.length && this.nodes.size) {
       const near = new Map<string, string[]>();
       const add = (from: string, to: string) => { const list = near.get(from); if (list) list.push(to); else near.set(from, [to]); };
-      for (const link of this.links) { add(idOf(link.source), idOf(link.target)); add(idOf(link.target), idOf(link.source)); }
+      for (const link of links) { add(idOf(link.source), idOf(link.target)); add(idOf(link.target), idOf(link.source)); }
       for (const item of fresh) {
         const anchor = this.nodes.get((near.get(item.id) ?? []).find(id => this.nodes.has(id)) ?? '');
         if (anchor?.x === undefined) continue;
@@ -195,7 +197,10 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       }
     }
     this.nodes = next;
-    graph.graphData({ nodes: [...next.values()], links: this.links });
+    // Notes are edited far more often than their tags and links change. Handing the library the same graph again would heat
+    // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
+    const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
+    if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); }
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
     this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
