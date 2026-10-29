@@ -63,6 +63,17 @@ type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
+// A graph NativeGraphs drives besides the core graph tabs (the 3D view): it layers the shared state itself.
+export interface LinkedGraph {
+  // Layer again; 'refresh' also rebuilds the graph's own data, as nothing else tells it about note edits.
+  draw(operation: string): void;
+  // The selection or what Focus keeps bright changed.
+  paint(): void;
+  // The tag is in this graph's part of the hierarchy.
+  has(tag: string): boolean;
+  // Bring a tag the sidebar revealed into view.
+  focusOn(tag: string): void;
+}
 // Two clicks on the same tag within this many milliseconds make a double click.
 const DOUBLE_CLICK_MS = 350;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
@@ -94,6 +105,7 @@ class ChoiceModal extends Modal {
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
+  private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
   // One sidebar panel serves every graph tab: a tag's details, the dictionary check, or the root tags until either is chosen.
   private panel?: HTMLElement;
@@ -187,34 +199,26 @@ export class NativeGraphs {
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        // A click selects at once and never waits for a second one; a second click on the same tag soon after expands or collapses it.
-        const now = performance.now(), double = this.lastClick?.id === id && now - this.lastClick.at < DOUBLE_CLICK_MS;
-        this.lastClick = double ? undefined : { id, at: now };
-        this.leave(() => {
-          this.go({ kind: 'tag', tag });
-          if (double) this.toggleExpanded(tag);
-          else this.showSelection();
-          this.showPanel(true);
-        });
+        this.clickTag(tag, this.isDouble(id));
       };
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (!session.focusIds ? null : session.drawing === undefined ? FADED : session.drawing);
       // A column of round icon buttons keeps the core graph settings on the right uncovered.
-      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.update({ expanded: [] }, 'roots'));
-      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'));
+      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.collapseAll());
+      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.expandAll());
       this.iconButton(tools, 'scan', 'Fit', () => this.fit(session));
       tools.createDiv('tag-ontology-separator');
       for (const [key, icon, name] of TOGGLES) {
         session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && this.owner.settings.layout !== 'force') return;
-          this.update({ [key]: !this.owner.settings[key] }, 'filter');
+          this.toggleFilter(key);
         });
         session.toggles[key].addClass('tag-ontology-toggle');
       }
       tools.createDiv('tag-ontology-separator');
-      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }));
+      this.iconButton(tools, 'book-open-check', 'Dictionary check', () => this.checkDictionary());
       tools.createDiv('tag-ontology-separator');
       const group = tools.createDiv('tag-ontology-layouts');
       for (const [layout, icon, name] of LAYOUTS) {
@@ -263,8 +267,13 @@ export class NativeGraphs {
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
+    this.drawLinked('refresh');
     this.renderPanel();
   }
+
+  link(view: LinkedGraph) { this.linked.add(view); }
+  unlink(view: LinkedGraph) { this.linked.delete(view); }
+  drawLinked(operation: string) { for (const view of this.linked) view.draw(operation); }
 
   // Called by the sidebar view whenever Obsidian opens it.
   mount(el: HTMLElement) {
@@ -308,6 +317,7 @@ export class NativeGraphs {
     Object.assign(this.owner.settings, patch);
     void this.owner.saveState();
     for (const session of this.sessions.values()) this.render(session, operation);
+    this.drawLinked(operation);
     this.renderPanel();
   }
 
@@ -434,6 +444,31 @@ export class NativeGraphs {
   }
 
   // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
+  get selectedTag() { return this.selected; }
+
+  // True when this click on the node follows another on it within DOUBLE_CLICK_MS; the click after a double click starts over.
+  // A click selects at once and never waits for a second one.
+  isDouble(id: string): boolean {
+    const now = performance.now(), double = this.lastClick?.id === id && now - this.lastClick.at < DOUBLE_CLICK_MS;
+    this.lastClick = double ? undefined : { id, at: now };
+    return double;
+  }
+
+  // A click on a dictionary tag in any graph: select it, and on a double click expand or collapse it.
+  clickTag(tag: string, double: boolean) {
+    this.leave(() => {
+      this.go({ kind: 'tag', tag });
+      if (double) this.toggleExpanded(tag);
+      else this.showSelection();
+      this.showPanel(true);
+    });
+  }
+
+  collapseAll() { this.update({ expanded: [] }, 'roots'); }
+  expandAll() { this.update({ expanded: [...this.owner.model!.entries.keys()] }, 'expand-all'); }
+  toggleFilter(key: ToggleKey) { this.update({ [key]: !this.owner.settings[key] }, 'filter'); }
+  checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
+
   private toggleExpanded(tag: string) {
     // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
     const live = this.owner.settings.expanded;
@@ -446,8 +481,10 @@ export class NativeGraphs {
     if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
     this.go({ kind: 'tag', tag });
     // Expansion is shared by every graph tab; with no graph open it is saved for the next one.
-    const sessions = [...this.sessions.values()];
-    if (sessions.length && !sessions.some(s => s.resolved?.range.has(tag))) { new Notice('Not in the current graph.'); this.showSelection(); return; }
+    const sessions = [...this.sessions.values()], linked = [...this.linked];
+    if (sessions.length + linked.length && !sessions.some(s => s.resolved?.range.has(tag)) && !linked.some(view => view.has(tag))) {
+      new Notice('Not in the current graph.'); this.showSelection(); return;
+    }
     // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
     const expanded = new Set(this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
     while (pending.length) {
@@ -467,12 +504,14 @@ export class NativeGraphs {
       };
       center(); this.follow(session, center);
     }
+    for (const view of this.linked) view.focusOn(tag);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
   private showSelection() {
     this.renderPanel();
     for (const session of this.sessions.values()) this.paint(session);
+    for (const view of this.linked) view.paint();
   }
 
   // Node and link drawing read what Focus keeps bright every frame, so a new selection needs no new data. A redraw runs
@@ -833,7 +872,7 @@ export class NativeGraphs {
     }
   }
 
-  private openNote(path: string) {
+  openNote(path: string) {
     const file = this.owner.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Reload the dictionary and try again.'); return; }
     void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));

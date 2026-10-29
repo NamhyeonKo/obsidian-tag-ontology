@@ -37,7 +37,14 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void };
+type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void };
+interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
+// Stands in for the 3D view: it records what the sidebar state asks of it.
+const linkedGraph = (has: (tag: string) => boolean = () => false) => {
+  const calls: string[] = [];
+  return { calls, has, draw(operation: string) { calls.push('draw:' + operation); }, paint() { calls.push('paint'); }, focusOn(tag: string) { calls.push('focus:' + tag); } };
+};
 
 const raw: RawDictionary = {
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -285,6 +292,61 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   assert.deepEqual(t.notices, ['Not in the current graph.']);
   assert.deepEqual(t.ids(), before); assert.equal(t.owner.saves, 0);
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'overfitting'));
+});
+
+test('a linked graph redraws on every update and refresh, note edits included', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view);
+  t.click('Expand all'); t.controller.refresh(false);
+  assert.deepEqual(view.calls.filter(call => call.startsWith('draw:')), ['draw:expand-all', 'draw:refresh']);
+});
+
+test('a linked graph repaints when the selection changes', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view);
+  nodeClick(t, '#cs');
+  assert.ok(view.calls.includes('paint'));
+});
+
+test('reveal reaches a tag only a linked graph has, and brings it into view', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph(tag => tag === 'overfitting');
+  t.controller.link(view);
+  t.suggests[0]!.onChoose('overfitting');
+  assert.deepEqual(t.notices, []);
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'ml', 'overfitting']);
+  assert.ok(view.calls.includes('focus:overfitting'));
+});
+
+test('reveal still says "Not in the current graph." when no graph has the tag, linked ones included', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.controller.link(linkedGraph());
+  t.suggests[0]!.onChoose('overfitting');
+  assert.deepEqual(t.notices, ['Not in the current graph.']);
+});
+
+test('clickTag selects and toggles a tag without a core graph', async () => {
+  const t = await setup();
+  t.controller.clickTag('cs', false);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+  assert.deepEqual([...t.owner.settings.expanded], []);
+  t.controller.clickTag('cs', true);
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']);
+});
+
+test('an unlinked graph gets nothing', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view); t.controller.unlink(view);
+  t.click('Expand all'); nodeClick(t, '#cs');
+  assert.deepEqual(view.calls, []);
 });
 
 test('rendering before any core data does nothing', async () => {
