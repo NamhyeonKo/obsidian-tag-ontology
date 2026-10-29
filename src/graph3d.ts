@@ -83,8 +83,16 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     this.status.setText('Loading the graph…');
     const three = this.three = await import('./three.ts');
     if (this.closed) return;
+    let created: Graph;
+    try { created = new three.ForceGraph3D(this.stage, { controlType: 'orbit' }) as unknown as Graph; }
+    catch (error) {
+      // Without WebGL (hardware acceleration off, or a GPU Chromium blocks) there is nothing to draw on.
+      console.error('Tag Ontology:', error);
+      this.status.setText('Could not start the graph. It needs hardware acceleration, which is in the advanced settings.');
+      return;
+    }
     this.ball = new three.SphereGeometry(1, 48, 32);
-    const graph = this.graph = (new three.ForceGraph3D(this.stage, { controlType: 'orbit' }) as unknown as Graph)
+    const graph = this.graph = created
       .backgroundColor(this.colors.background)
       .showNavInfo(false)
       .nodeLabel(() => '')
