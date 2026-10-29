@@ -123,7 +123,12 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
     // Fog and label fading follow the camera; three calls this before drawing every frame of the library's own loop.
     graph.scene().onBeforeRender = () => this.frame();
-    this.resize = new ResizeObserver(() => { if (this.stage) graph.width(this.stage.clientWidth).height(this.stage.clientHeight); });
+    // A tab in the background has no size; the library would keep drawing it every frame, so it pauses until shown again.
+    this.resize = new ResizeObserver(() => {
+      const width = this.stage?.clientWidth ?? 0, height = this.stage?.clientHeight ?? 0;
+      if (!width || !height) { graph.pauseAnimation(); return; }
+      graph.width(width).height(height).resumeAnimation();
+    });
     this.resize.observe(this.stage);
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
     this.owner.native.link(this);
