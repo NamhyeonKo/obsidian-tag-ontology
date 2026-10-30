@@ -42,6 +42,11 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
+    this.addCommand({ id: 'open-3d-graph', name: OPEN_3D, checkCallback: (checking) => {
+      if (!this.settings.enable3d) return false;
+      if (!checking) void this.openView('3d');
+      return true;
+    } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews({ notify: true });
     } });
@@ -194,13 +199,13 @@ export default class TagOntologyPlugin extends Plugin {
     await this.refreshViews({ notify: true });
   }
 
-  async openView(): Promise<void> {
+  async openView(graph: '2d' | '3d' = '2d'): Promise<void> {
     if (this.disposed) return;
     try {
       await this.loadModel();
       if (this.disposed) return;
-      // The setting picks the graph; an open tab of it is reused.
-      const type = this.settings.view === '3d' ? VIEW_3D : 'graph';
+      // An open tab of the graph is reused.
+      const type = graph === '3d' ? VIEW_3D : 'graph';
       const existing = this.app.workspace.getLeavesOfType(type)[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type, active: true });
@@ -210,6 +215,8 @@ export default class TagOntologyPlugin extends Plugin {
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
+      // Revealing a tab that was already open only brings it to the front, and keys would still go to the active tab.
+      if (existing && !this.disposed) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     } catch (error) {
       if (this.disposed) return;
       new Notice(`Could not open the graph: ${reason(error)}`);
@@ -230,6 +237,8 @@ export default class TagOntologyPlugin extends Plugin {
 
   private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
     if (this.disposed) return;
+    // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
+    if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
     try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
     catch (error) {
       if (this.disposed) return;
@@ -258,8 +267,9 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const LAYOUT = { name: 'Layout', desc: 'Which graph the ribbon icon and Open graph open. Force and the tree layouts are on the 2D graph toolbar.' };
-const VIEWS = { '2d': '2D', '3d': '3D (beta)' };
+// UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
+const OPEN_3D = 'Open 3D graph';
+const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
@@ -279,7 +289,7 @@ class OntologySettingsTab extends PluginSettingTab {
         type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
-      { ...LAYOUT, control: { type: 'dropdown', key: 'view', defaultValue: DEFAULT_SETTINGS.view, options: VIEWS } },
+      { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
       { type: 'group', visible: () => this.owner.settings.focus, items:
@@ -328,8 +338,8 @@ class OntologySettingsTab extends PluginSettingTab {
         await this.owner.saveSettings();
       });
     });
-    new Setting(containerEl).setName(LAYOUT.name).setDesc(LAYOUT.desc).addDropdown((dropdown) => {
-      dropdown.addOptions(VIEWS).setValue(this.owner.settings.view).onChange(value => this.setControlValue('view', value));
+    new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
     });
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {

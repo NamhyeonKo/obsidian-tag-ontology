@@ -6,7 +6,7 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
+    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
@@ -55,10 +55,12 @@ test('reads the CSS colors a theme gives back as hex', () => {
   for (const css of ['', 'red', 'color-mix(in srgb, red, blue)']) assert.equal(cssColorToHex(css), undefined, css);
 });
 
-test('view defaults to 2d and keeps only 2d or 3d', () => {
-  assert.equal(DEFAULT_SETTINGS.view, '2d');
-  assert.equal(sanitizeSettings({ view: '3d' }, '.obsidian').view, '3d');
-  for (const view of ['4d', 3, undefined]) assert.equal(sanitizeSettings({ view }, '.obsidian').view, '2d');
+test('the 3D view is on by default and only a saved false turns it off', () => {
+  assert.equal(DEFAULT_SETTINGS.enable3d, true);
+  assert.equal(sanitizeSettings({ enable3d: false }, '.obsidian').enable3d, false);
+  for (const enable3d of ['no', 0, undefined]) assert.equal(sanitizeSettings({ enable3d }, '.obsidian').enable3d, true);
+  // Up to 0.8.2 a Layout setting picked which graph the ribbon opened; it opens the 2D graph now, so the key is dropped.
+  assert.equal(Object.hasOwn(sanitizeSettings({ view: '3d' }, '.obsidian'), 'view'), false);
 });
 
 test('label settings default to perspective on and size 0.8, and keep only valid values', () => {
