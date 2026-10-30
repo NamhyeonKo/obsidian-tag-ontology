@@ -33,3 +33,11 @@ export function labelBounds(size: number, perspective: boolean): { min: number; 
 export function cameraDepth(camera: Point, forward: Point, point: Point): number {
   return (point.x - camera.x) * forward.x + (point.y - camera.y) * forward.y + (point.z - camera.z) * forward.z;
 }
+
+// Where a node let go is, this far into easing back home (0 at the drop, 1 when done). It goes a little past home and settles,
+// like a spring, on the same curve as a node let go in the 2D tree layouts.
+export function springBack(from: Point, home: Point, progress: number): Point {
+  if (progress >= 1) return home;
+  const k = 1 + 2.2 * (progress - 1) ** 3 + 1.2 * (progress - 1) ** 2;
+  return { x: from.x + (home.x - from.x) * k, y: from.y + (home.y - from.y) * k, z: from.z + (home.z - from.z) * k };
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale } from '../src/geometry3d.ts';
+import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack } from '../src/geometry3d.ts';
 
 const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≈ ${expected}`);
 
@@ -56,4 +56,16 @@ test("a point's depth is how far it is along the way the camera looks, not its s
   assert.equal(cameraDepth(camera, forward, { x: 0, y: 0, z: -10 }), 10);
   // Off to the side at the same depth: 14.1 away, but it projects at the size of a point 10 ahead.
   assert.equal(cameraDepth(camera, forward, { x: 10, y: 0, z: -10 }), 10);
+});
+
+test('a node let go eases from where it was dropped back home, overshooting a little like a spring', () => {
+  const from = { x: 10, y: -4, z: 2 }, home = { x: 0, y: 0, z: 0 };
+  const start = springBack(from, home, 0);
+  close(start.x, 10); close(start.y, -4); close(start.z, 2);
+  assert.deepEqual(springBack(from, home, 1), home);
+  assert.deepEqual(springBack(from, home, 1.5), home, 'and stays home after the time is up');
+  // Most of the way through it has gone past home, at most about a twentieth of the way, and comes back.
+  const past = springBack(from, home, 0.6), back = springBack(from, home, 0.9);
+  assert.ok(past.x < -0.4 && past.x > -0.6, `x ${past.x}`); assert.ok(past.y > 0.16 && past.y < 0.24, `y ${past.y}`);
+  assert.ok(back.x < 0 && back.x > past.x, `x ${back.x}`);
 });
