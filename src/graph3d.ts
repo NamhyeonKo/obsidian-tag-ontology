@@ -450,8 +450,11 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const forward = this.forward ? view.getWorldDirection(this.forward) : undefined;
     let radius = 0;
     const now = performance.now();
-    for (const [item, { from, start }] of this.springs) {
-      const home = this.homes.get(item)!, done = now - start >= SPRING_MS || this.nodes.get(item.id) !== item;
+    for (const [item, spring] of this.springs) {
+      // Pressed again while easing back, it holds still under the pointer, and eases on from there if let go without a move.
+      // The library marks a node it is dragging from the press on, before the first move calls grab().
+      if ((item as { __initialFixedPos?: unknown }).__initialFixedPos) { spring.from = { x: item.x ?? 0, y: item.y ?? 0, z: item.z ?? 0 }; spring.start = now; continue; }
+      const { from, start } = spring, home = this.homes.get(item)!, done = now - start >= SPRING_MS || this.nodes.get(item.id) !== item;
       const at = springBack(from, home, (now - start) / SPRING_MS);
       item.x = item.fx = at.x; item.y = item.fy = at.y; item.z = item.fz = at.z;
       // The scene's positions were already worked out for this frame, so the node's own are brought up to date.
