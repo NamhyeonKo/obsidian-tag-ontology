@@ -91,6 +91,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
+    // Back to the core graph, under the core graph's own icon.
+    tools.createDiv('tag-ontology-separator');
+    this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
     this.labelPanel(root);
     this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
