@@ -14,7 +14,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
-![Tag Ontology demo](assets/0.8.1/demo.gif)
+![Tag Ontology demo](assets/0.9.0/demo.gif)
 
 ## Features
 
@@ -33,15 +33,17 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 | Sidebar tab | Dictionary check |
 | --- | --- |
-| ![Sidebar tab showing a tag with its parents, children, related tags and note counts](assets/0.7.6/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.7.6/dictionary-check.png) |
+| ![Sidebar tab showing a tag with its parents, children, related tags and note counts](assets/0.9.0/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.9.0/dictionary-check.png) |
+| **Collapsed to the roots** | **Expanded** |
+| ![Every tag collapsed to its root, with each note linked to the root above its tags](assets/0.9.0/collapsed.png) | ![Every tag expanded, with each note linked to its own tags](assets/0.9.0/expanded.png) |
 | **Vertical tree** | **Horizontal tree** |
-| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.7.6/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.7.6/tree-horizontal.png) |
+| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.9.0/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.9.0/tree-horizontal.png) |
 | **Original theme** | **Keep the selected tag focused** |
-| ![With custom colors off, tags keep the graph's own colors](assets/0.7.6/original-theme.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.7.6/focus.png) |
+| ![With custom colors off, tags keep the graph's own colors](assets/0.9.0/original-theme.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.9.0/focus.png) |
 | **Edit a tag** | **New tag** |
-| ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.7.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.7.0/new-tag.png) |
+| ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.9.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.9.0/new-tag.png) |
 | **Search suggestions** | **Delete a tag** |
-| ![Sidebar search suggesting a tag by name and another by alias](assets/0.7.6/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.7.0/delete-tag.png) |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.9.0/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.9.0/delete-tag.png) |
 
 ## How it works
 
@@ -126,6 +128,8 @@ The round buttons on the left of the graph show their name when you hover them:
 ### 3D view (beta)
 
 The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3D view in its own tab. The button at the bottom of the 3D toolbar brings you back to the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
+
+![The 3D view: tags and notes in three dimensions, with the back of the graph fading into the background](assets/0.9.0/view-3d.png)
 
 - Drag empty space to orbit, right-drag to pan and scroll to zoom.
 - Drag a node to move it on its own. Let go and it springs back to its place, as in the tree layouts. The layout settles after the view opens and after expanding, then holds still.
