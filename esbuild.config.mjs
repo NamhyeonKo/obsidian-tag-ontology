@@ -5,8 +5,9 @@ await build({
   entryPoints: ['src/main.ts'],
   bundle: true,
   external: ['obsidian'],
-  // three-render-objects imports the WebGPU renderer, which the 3D view never uses (see src/webgpu-stub.ts).
-  alias: { 'three/webgpu': './src/webgpu-stub.ts' },
+  // three-render-objects imports the WebGPU renderer and three-forcegraph the ngraph engine, which the 3D view never uses
+  // (see the stubs).
+  alias: { 'three/webgpu': './src/webgpu-stub.ts', 'ngraph.forcelayout': './src/ngraph-stub.ts' },
   format: 'cjs',
   target: 'es2021',
   outfile: 'main.js',
