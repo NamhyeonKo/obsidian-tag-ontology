@@ -89,8 +89,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   let frameId = 0, clock = 0;
   const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
   const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
+  const errors: unknown[][] = [];
   const context = createContext({
-    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone,
+    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone, console: { error: (...args: unknown[]) => errors.push(args) },
     window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
@@ -179,7 +180,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -345,6 +346,18 @@ test('Expand all and Collapse all wait for a dictionary, so a 3D toolbar shown b
   t.owner.model = undefined;
   t.controller.expandAll(); t.controller.collapseAll();
   assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 0);
+});
+
+test('a linked graph that throws while drawing is logged and leaves the sidebar and the other graphs drawn', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.controller.clickTag('cs', false);
+  const broken = { ...linkedGraph(), draw() { throw new Error('boom'); } }, view = linkedGraph();
+  t.controller.link(broken); t.controller.link(view);
+  t.click('Expand all');
+  assert.ok(view.calls.includes('draw:expand-all'));
+  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the sidebar shows cs expanded');
+  assert.equal(String((t.errors[0]?.[1] as Error | undefined)?.message), 'boom');
 });
 
 test('an unlinked graph gets nothing', async () => {

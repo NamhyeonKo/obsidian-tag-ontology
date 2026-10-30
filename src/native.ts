@@ -273,7 +273,12 @@ export class NativeGraphs {
 
   link(view: LinkedGraph) { this.linked.add(view); }
   unlink(view: LinkedGraph) { this.linked.delete(view); }
-  drawLinked(operation: string) { for (const view of this.linked) view.draw(operation); }
+  // One graph failing to draw mustn't keep the others or the sidebar from updating.
+  drawLinked(operation: string) {
+    for (const view of this.linked) {
+      try { view.draw(operation); } catch (error) { console.error('Tag Ontology:', error); }
+    }
+  }
 
   // Called by the sidebar view whenever Obsidian opens it.
   mount(el: HTMLElement) {
