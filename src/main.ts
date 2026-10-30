@@ -42,7 +42,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
-    this.addCommand({ id: 'open-3d-graph', name: 'Open 3D graph', checkCallback: (checking) => {
+    this.addCommand({ id: 'open-3d-graph', name: OPEN_3D, checkCallback: (checking) => {
       if (!this.settings.enable3d) return false;
       if (!checking) void this.openView('3d');
       return true;
@@ -267,6 +267,8 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
+// UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
+const OPEN_3D = 'Open 3D graph';
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
