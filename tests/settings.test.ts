@@ -7,6 +7,7 @@ test('sanitizes saved settings to the supported fields', () => {
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
+    perspectiveLabels: true, labelSize: 1,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -58,4 +59,12 @@ test('view defaults to 2d and keeps only 2d or 3d', () => {
   assert.equal(DEFAULT_SETTINGS.view, '2d');
   assert.equal(sanitizeSettings({ view: '3d' }, '.obsidian').view, '3d');
   for (const view of ['4d', 3, undefined]) assert.equal(sanitizeSettings({ view }, '.obsidian').view, '2d');
+});
+
+test('label settings default to perspective on and size 1, and keep only valid values', () => {
+  assert.equal(DEFAULT_SETTINGS.perspectiveLabels, true); assert.equal(DEFAULT_SETTINGS.labelSize, 1);
+  const kept = sanitizeSettings({ labelSize: 1.5, perspectiveLabels: false }, '.obsidian');
+  assert.equal(kept.labelSize, 1.5); assert.equal(kept.perspectiveLabels, false);
+  for (const labelSize of [3, 0.2, 'big', Number.NaN]) assert.equal(sanitizeSettings({ labelSize }, '.obsidian').labelSize, 1);
+  assert.equal(sanitizeSettings({ perspectiveLabels: 'no' }, '.obsidian').perspectiveLabels, true);
 });

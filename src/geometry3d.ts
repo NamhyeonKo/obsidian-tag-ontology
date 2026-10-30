@@ -21,3 +21,9 @@ export function fogRange(distance: number, radius: number): { near: number; far:
 export function labelScale(pixels: number, min: number, max: number): number {
   return pixels < min ? min / pixels : pixels > max ? max / pixels : 1;
 }
+
+// The on-screen label height range, in pixels, for a label size: about 2D's label size at 1, growing up to twice that when
+// close with perspective, or one size at any distance without.
+export function labelBounds(size: number, perspective: boolean): { min: number; max: number } {
+  return { min: 12 * size, max: (perspective ? 24 : 12) * size };
+}

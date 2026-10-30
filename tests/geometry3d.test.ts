@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrowAt, fogRange, labelScale } from '../src/geometry3d.ts';
+import { arrowAt, fogRange, labelBounds, labelScale } from '../src/geometry3d.ts';
 
 const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≈ ${expected}`);
 
@@ -43,4 +43,10 @@ test('a label smaller than the minimum on screen grows to it, and one past the m
   assert.equal(labelScale(3, 12, 24), 4);
   assert.equal(labelScale(48, 12, 24), 0.5);
   assert.equal(labelScale(16, 12, 24), 1);
+});
+
+test('label bounds grow with the label size, and without perspective a label has one size', () => {
+  assert.deepEqual(labelBounds(1, true), { min: 12, max: 24 });
+  assert.deepEqual(labelBounds(1.5, true), { min: 18, max: 36 });
+  assert.deepEqual(labelBounds(2, false), { min: 24, max: 24 });
 });
