@@ -278,6 +278,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private flyTo(item: Node3D) {
     const graph = this.graph;
     if (!graph || item.x === undefined) return;
+    // A tag the user asked for wins over a fit still waiting for the layout.
+    window.clearTimeout(this.fitTimer);
     const camera = graph.cameraPosition(), at = { x: item.x, y: item.y ?? 0, z: item.z ?? 0 };
     const dx = camera.x - at.x, dy = camera.y - at.y, dz = camera.z - at.z, length = Math.hypot(dx, dy, dz) || 1;
     graph.cameraPosition({ x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE }, at, FLY_MS);
