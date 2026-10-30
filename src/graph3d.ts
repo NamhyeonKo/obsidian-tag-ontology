@@ -1,11 +1,12 @@
 import { ItemView, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
-import type { Fog, LineDashedMaterial, Material, Mesh, MeshLambertMaterial, Object3D, SphereGeometry, Texture } from 'three';
+import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, SphereGeometry, Texture } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { cssColorToHex } from './settings.ts';
+import { arrowAt } from './links3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -14,7 +15,7 @@ interface Node3D {
   x?: number; y?: number; z?: number; fx?: number; fy?: number; fz?: number;
   dot?: Mesh<SphereGeometry, MeshLambertMaterial>; label?: SpriteText;
 }
-interface Link3D { source: string | Node3D; target: string | Node3D; kind: EdgeKind | 'note'; dashes?: LineDashedMaterial }
+interface Link3D { source: string | Node3D; target: string | Node3D; kind: EdgeKind | 'note' }
 type Graph = ForceGraph3DInstance<Node3D, Link3D>;
 type Layer = ReturnType<typeof buildLayer>;
 type Three = typeof import('./three.ts');
@@ -60,6 +61,11 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
+  // Every link is drawn by three objects, solid lines, dashed related lines and the hierarchy arrows, instead of one object
+  // each: with thousands of links, one draw call per link was most of a frame.
+  private lines?: LineSegments<BufferGeometry, LineBasicMaterial>; private dashes?: LineSegments<BufferGeometry, LineDashedMaterial>;
+  private arrows?: InstancedMesh<ConeGeometry, MeshLambertMaterial>; private cone?: ConeGeometry; private arrowMaterial?: MeshLambertMaterial;
+  private solid: Link3D[] = []; private related: Link3D[] = []; private pointed: Link3D[] = [];
 
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return VIEW_3D; }
@@ -104,15 +110,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       .nodeRelSize(1)
       .nodeVal(node => node.radius ** 3)
       .nodeThreeObject(node => this.nodeObject(node))
-      .linkColor(link => this.lineColor(link))
-      .linkOpacity(LINK_OPACITY)
-      // Hierarchy links always show their direction.
-      .linkDirectionalArrowLength(link => link.kind === 'broader' ? ARROW : 0)
-      .linkDirectionalArrowRelPos(1)
-      .linkDirectionalArrowColor(link => this.lineColor(link))
-      // Related links are dashed, as in 2D; the dashes follow the line as it moves.
-      .linkMaterial(link => link.kind === 'related' ? (link.dashes ??= new three.LineDashedMaterial({ color: this.colors.line, dashSize: DASH, gapSize: GAP })) : null)
-      .linkPositionUpdate((line, _coords, link) => { if (link.kind === 'related') (line as Object3D & { computeLineDistances?: () => void }).computeLineDistances?.(); })
+      // The links still pull on the layout, but this view draws them itself (see placeLinks).
+      .linkVisibility(false)
       .onNodeHover(item => { this.hover = item ?? undefined; this.contentEl.toggleClass('is-pointing', !!item); this.paint(); })
       .onNodeClick(item => this.click(item))
       // A dragged node follows the simulation again once it is let go.
@@ -125,6 +124,13 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       .distance(LINK_DISTANCE).strength(link => 1 / Math.max(1, Math.min(this.degreeOf(link.source), this.degreeOf(link.target))));
     graph.d3Force('gravity', this.gravity());
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
+    // Related links are dashed, as in 2D. Hierarchy links always show their direction with an arrow. The objects span the whole
+    // graph and move every frame, so they are never culled.
+    this.lines = new three.LineSegments(new three.BufferGeometry(), new three.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LINK_OPACITY }));
+    this.dashes = new three.LineSegments(new three.BufferGeometry(), new three.LineDashedMaterial({ vertexColors: true, transparent: true, opacity: LINK_OPACITY, dashSize: DASH, gapSize: GAP }));
+    this.cone = new three.ConeGeometry(ARROW / 4, ARROW, 8);
+    this.arrowMaterial = new three.MeshLambertMaterial({ transparent: true, opacity: LINK_OPACITY });
+    for (const object of [this.lines, this.dashes]) { object.frustumCulled = false; graph.scene().add(object); }
     // Fog and label fading follow the camera; three calls this before drawing every frame of the library's own loop.
     graph.scene().onBeforeRender = () => this.frame();
     // A tab in the background has no size; the library would keep drawing it every frame, so it pauses until shown again.
@@ -160,7 +166,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
         geometry?.dispose();
         for (const each of [material ?? []].flat()) { (each as Material & { map?: Texture }).map?.dispose(); each.dispose(); }
       });
-      this.ball?.dispose();
+      this.ball?.dispose(); this.arrows?.dispose();
       graph.renderer().forceContextLoss(); graph.renderer().dispose();
       graph._destructor();
     }
@@ -209,7 +215,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // Notes are edited far more often than their tags and links change. Handing the library the same graph again would heat
     // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
     const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
-    if (shape !== this.shape) { this.shape = shape; this.links = links; this.unsettled ||= this.paused; graph.graphData({ nodes: [...next.values()], links }); }
+    if (shape !== this.shape) { this.shape = shape; this.links = links; this.unsettled ||= this.paused; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
     this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
@@ -243,8 +249,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       this.lit = focusIds(layer.data, layer.resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes });
     }
     for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
-    for (const link of this.links) link.dashes?.color.set(this.lineColor(link));
-    graph?.linkColor(graph.linkColor()).linkDirectionalArrowColor(graph.linkDirectionalArrowColor());
+    if (graph) this.colorLinks();
   }
 
   has(tag: string) { return !!this.layer?.resolved.range.has(tag); }
@@ -310,6 +315,72 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     item.label?.position.set(0, -(item.radius + 0.6), 0);
   }
 
+  // New buffers for a new set of links: one segment each in the solid or the dashed lines, and an arrow for each hierarchy link.
+  private buildLinks() {
+    const three = this.three!, scene = this.graph!.scene();
+    this.solid = this.links.filter(link => link.kind !== 'related');
+    this.related = this.links.filter(link => link.kind === 'related');
+    this.pointed = this.links.filter(link => link.kind === 'broader');
+    for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
+      object.geometry.dispose();
+      object.geometry = new three.BufferGeometry();
+      object.geometry.setAttribute('position', new three.BufferAttribute(new Float32Array(list.length * 6), 3));
+      object.geometry.setAttribute('color', new three.BufferAttribute(new Float32Array(list.length * 6), 3));
+    }
+    if (this.arrows) { scene.remove(this.arrows); this.arrows.dispose(); }
+    this.arrows = new three.InstancedMesh(this.cone, this.arrowMaterial, Math.max(1, this.pointed.length));
+    this.arrows.count = this.pointed.length; this.arrows.frustumCulled = false;
+    scene.add(this.arrows);
+    this.placeLinks();
+  }
+
+  // Every frame, as the layout moves the nodes.
+  private placeLinks() {
+    const three = this.three, arrows = this.arrows;
+    if (!three || !arrows) return;
+    const at = (end: string | Node3D) => (typeof end === 'string' ? this.nodes.get(end) : end) ?? { x: 0, y: 0, z: 0, radius: 0 };
+    for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
+      const position = object.geometry.getAttribute('position') as InstanceType<Three['BufferAttribute']>, values = position.array as Float32Array;
+      list.forEach((link, index) => {
+        const from = at(link.source), to = at(link.target);
+        values.set([from.x ?? 0, from.y ?? 0, from.z ?? 0, to.x ?? 0, to.y ?? 0, to.z ?? 0], index * 6);
+      });
+      position.needsUpdate = true;
+    }
+    if (this.related.length) this.dashes!.computeLineDistances();
+    const placed = new three.Object3D(), up = new three.Vector3(0, 1, 0), direction = new three.Vector3();
+    this.pointed.forEach((link, index) => {
+      const from = at(link.source), to = at(link.target);
+      const arrow = arrowAt({ x: from.x ?? 0, y: from.y ?? 0, z: from.z ?? 0 }, { x: to.x ?? 0, y: to.y ?? 0, z: to.z ?? 0 }, to.radius, ARROW);
+      // Nodes overlapping leave no line to put an arrow on, so it shrinks to nothing.
+      placed.scale.setScalar(arrow ? 1 : 0);
+      if (arrow) {
+        placed.position.set(arrow.center.x, arrow.center.y, arrow.center.z);
+        placed.quaternion.setFromUnitVectors(up, direction.set(arrow.direction.x, arrow.direction.y, arrow.direction.z));
+      }
+      placed.updateMatrix();
+      arrows.setMatrixAt(index, placed.matrix);
+    });
+    arrows.instanceMatrix.needsUpdate = true;
+  }
+
+  // Link colors follow the highlight, like the nodes'.
+  private colorLinks() {
+    const three = this.three, arrows = this.arrows;
+    if (!three || !arrows) return;
+    const color = new three.Color();
+    for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
+      const attribute = object.geometry.getAttribute('color') as InstanceType<Three['BufferAttribute']>, values = attribute.array as Float32Array;
+      list.forEach((link, index) => {
+        color.set(this.lineColor(link));
+        values.set([color.r, color.g, color.b, color.r, color.g, color.b], index * 6);
+      });
+      attribute.needsUpdate = true;
+    }
+    this.pointed.forEach((link, index) => arrows.setColorAt(index, color.set(this.lineColor(link))));
+    if (arrows.instanceColor) arrows.instanceColor.needsUpdate = true;
+  }
+
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
   // The 2D graph pulls every node toward the middle; this does the same on all three axes.
@@ -331,6 +402,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const camera = graph.camera().position, fog = graph.scene().fog as Fog | null;
     // The fog band follows the zoom: it starts a little in front of the orbit center and ends a bit past it.
     if (fog) { const distance = camera.distanceTo((graph.controls() as { target: typeof camera }).target); fog.near = distance * 0.7; fog.far = distance * 1.7; }
+    this.placeLinks();
     for (const item of this.nodes.values()) {
       if (item.x === undefined) continue;
       const lit = !this.lit || this.lit.has(item.id);
@@ -360,8 +432,6 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     graph.backgroundColor(this.colors.background);
     (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
     for (const item of this.nodes.values()) if (item.label) item.label.color = this.colors.text;
-    for (const link of this.links) link.dashes?.color.set(this.colors.line);
-    graph.linkColor(graph.linkColor()).linkDirectionalArrowColor(graph.linkDirectionalArrowColor());
     this.paint();
   }
 

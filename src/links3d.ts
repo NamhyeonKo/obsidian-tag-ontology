@@ -1,0 +1,10 @@
+export interface Point { x: number; y: number; z: number }
+
+// Where a link's arrow goes: pointing from the source to the target, with its tip on the target node's surface, as the 2D
+// graph draws it. None while the nodes overlap, as there is no line left to put it on.
+export function arrowAt(from: Point, to: Point, radius: number, length: number): { center: Point; direction: Point } | undefined {
+  const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, distance = Math.hypot(dx, dy, dz);
+  if (distance <= radius) return undefined;
+  const direction = { x: dx / distance, y: dy / distance, z: dz / distance }, back = radius + length / 2;
+  return { center: { x: to.x - direction.x * back, y: to.y - direction.y * back, z: to.z - direction.z * back }, direction };
+}
