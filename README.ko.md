@@ -14,7 +14,7 @@ Tag Ontology는 사이드바 탭에서 태그마다 상위·하위·연관 태�
 
 > **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 자동으로 켜 드립니다.
 
-![Tag Ontology 데모](assets/0.8.1/demo.gif)
+![Tag Ontology 데모](assets/0.9.0/demo.gif)
 
 ## 기능
 
