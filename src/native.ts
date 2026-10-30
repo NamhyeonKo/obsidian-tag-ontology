@@ -45,6 +45,8 @@ interface Session {
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
+  // The separator and button that open the 3D view, shown while it is on in the settings.
+  open3d: HTMLElement[];
   // The layout buttons fold into the current one; open, all three show.
   layoutsOpen: boolean; fold: (event: Event) => void;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
@@ -164,7 +166,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -238,6 +240,7 @@ export class NativeGraphs {
         if (event.type === 'keydown' && group.contains(event.target as Node)) session.layoutButtons[this.owner.settings.layout]?.focus();
       };
       for (const event of ['pointerdown', 'keydown']) view.contentEl.addEventListener(event, session.fold, { capture: true });
+      session.open3d = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'box', 'Open in 3D (beta)', () => { void this.owner.openView('3d'); })];
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
@@ -868,6 +871,7 @@ export class NativeGraphs {
       button.setAttribute('aria-disabled', String(disabled));
       this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
+    for (const el of session.open3d) el.hidden = !settings.enable3d;
     // Open, the three keep their own order and the current one is marked where it sits.
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout], current = layout === settings.layout;

@@ -145,6 +145,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
@@ -466,8 +467,22 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)']);
+});
+
+test('the 3D button at the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  t.click('Open in 3D (beta)');
+  assert.deepEqual(t.owner.opened, ['3d']);
+  t.owner.settings.enable3d = false; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  t.owner.settings.enable3d = true; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
 });
 
 test('the layout buttons fold into the current one, open in their own order, and fold again after a choice', async () => {
