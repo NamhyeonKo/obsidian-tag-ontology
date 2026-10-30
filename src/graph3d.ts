@@ -6,7 +6,7 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { cssColorToHex } from './settings.ts';
-import { arrowAt, fogRange, labelScale } from './geometry3d.ts';
+import { arrowAt, fogRange, labelBounds, labelScale } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -28,9 +28,9 @@ const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
 const FLY_DISTANCE = 90, FLY_MS = 1000;
 // Faded nodes and labels stay faintly visible, as in 2D.
 const FADED_NODE = 0.2, FADED_LABEL = 0.15;
-// Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. On screen they
-// are never smaller than about 2D's label size and grow a little when the camera is close.
-const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650, LABEL_MIN_PX = 12, LABEL_MAX_PX = 24;
+// Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. Their size on
+// screen follows the label settings (see labelBounds).
+const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
 const FONT = 'var(--font-interface)';
 // Used when a theme leaves a graph color unset or in a format cssColorToHex can't read.
 const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
@@ -408,6 +408,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const view = graph.camera() as PerspectiveCamera, camera = view.position, target = (graph.controls() as { target: typeof camera }).target;
     // How many pixels tall a TEXT_HEIGHT label is on screen at distance 1.
     const pixels = graph.height() / (2 * Math.tan(view.fov * Math.PI / 360)) * TEXT_HEIGHT;
+    const bounds = labelBounds(this.owner.settings.labelSize, this.owner.settings.perspectiveLabels);
     let radius = 0;
     this.placeLinks();
     for (const item of this.nodes.values()) {
@@ -421,7 +422,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't drawn at all.
       item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
       item.label.visible = item.label.material.opacity > 0;
-      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / distance, LABEL_MIN_PX, LABEL_MAX_PX);
+      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / distance, bounds.min, bounds.max);
       item.label.scale.set(base.x * scale, base.y * scale, 1);
     }
     // The fog follows the zoom and the graph's size: what is in front of the orbit center stays clear, the back fades.
