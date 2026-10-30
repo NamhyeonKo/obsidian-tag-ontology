@@ -479,17 +479,28 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const close = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-close' });
     const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
     setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
+    // A collapsible section with its rows laid out like the core panel's: a toggle beside its name, a slider under it.
     const section = panel.createDiv('tree-item graph-control-section');
-    section.createDiv('tree-item-self').createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
+    const heading = section.createDiv('tree-item-self mod-collapsible');
+    const icon = heading.createDiv('tree-item-icon collapse-icon');
+    setIcon(icon, 'right-triangle');
+    heading.createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
     const body = section.createDiv('tree-item-children');
+    heading.addEventListener('click', () => {
+      const collapsed = !section.hasClass('is-collapsed');
+      // As in the core panel, the icon carries the state too, which turns it.
+      section.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
+    });
     let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
     const perspective = new Setting(body).setName('Perspective labels').addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
       if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
     }));
+    perspective.settingEl.addClass('mod-toggle');
     setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
     // The labels follow the slider while it is dragged.
     new Setting(body).setName('Label size').addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
-      .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }));
+      .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }))
+      .settingEl.addClass('mod-slider');
     // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
     open.addEventListener('click', () => {
       toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
