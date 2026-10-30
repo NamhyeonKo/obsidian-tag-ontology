@@ -35,12 +35,13 @@ class NativeGraphs {
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
   const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [];
-  const commands = new Map<string, () => void>();
+  // Each command's action, and whether the command palette offers it.
+  const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
   const timers = new Map<number, () => void>();
   // The theme's accent variable, and the observers watching <body>'s style for the accent color setting.
@@ -79,7 +80,10 @@ async function setup(saved?: Promise<unknown>) {
     registerView() { ui.push('register-view'); }
     addRibbonIcon() {} addSettingTab() {} registerEvent() {}
     register(cleanup: () => void) { cleanups.push(cleanup); }
-    addCommand(command: { id: string; callback: () => void }) { commands.set(command.id, command.callback); }
+    addCommand({ id, callback, checkCallback }: { id: string; callback?: () => void; checkCallback?: (checking: boolean) => boolean }) {
+      commands.set(id, callback ?? (() => { checkCallback!(false); }));
+      offered.set(id, () => checkCallback?.(true) ?? true);
+    }
   }
   const context = createContext({ performance, console: { error: (...args: unknown[]) => errors.push(args) },
     document: { body: {} }, getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--color-accent' ? theme.accent : '' }),
@@ -111,7 +115,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
-  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
+  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), runTimers, reads: () => reads,
     restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -123,22 +127,40 @@ test('opening a graph still loads the dictionary, attaches and reveals it, and b
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
-test('with the 3D view set, opening shows a 3D tab and the sidebar', async () => {
+test('opening the 3D view shows a 3D tab and the sidebar', async () => {
   const t = await setup();
-  t.plugin.settings.view = '3d';
-  await t.plugin.openView();
+  await t.plugin.openView('3d');
   assert.deepEqual(t.types, ['tag-ontology-3d']);
   assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true']);
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
-test('with a 3D tab open, opening reuses it', async () => {
+test('with a 3D tab open, opening the 3D view reuses it', async () => {
   const t = await setup();
-  t.plugin.settings.view = '3d';
   t.open.set('tag-ontology-3d', [t.leaf]);
-  await t.plugin.openView();
+  await t.plugin.openView('3d');
   assert.deepEqual(t.types, []);
   assert.deepEqual(t.ui, ['reveal']);
+});
+
+test('Open graph opens the 2D graph even with a 3D tab open', async () => {
+  const t = await setup();
+  t.open.set('tag-ontology-3d', [t.leaf]);
+  t.commands.get('open-graph')!(); await settle();
+  assert.deepEqual(t.types, ['graph']);
+});
+
+test('Open 3D graph is offered only while the 3D view is on, and turning it off closes the 3D tabs', async () => {
+  const t = await setup();
+  assert.equal(t.offered.get('open-3d-graph')!(), true);
+  t.commands.get('open-3d-graph')!(); await settle();
+  assert.deepEqual(t.types, ['tag-ontology-3d']);
+  const tab = { closed: false, detach() { tab.closed = true; } };
+  t.open.set('tag-ontology-3d', [tab]);
+  t.plugin.settings.enable3d = false;
+  await t.plugin.saveSettings();
+  assert.equal(t.offered.get('open-3d-graph')!(), false);
+  assert.equal(tab.closed, true, 'so the tab does not load three.js again on the next start');
 });
 
 test('graphData links notes to included notes only', async () => {
