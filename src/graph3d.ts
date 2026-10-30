@@ -57,8 +57,6 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
   private shape?: string;
-  // Paused while the tab has no size; a graph handed over meanwhile still needs its layout run when the tab shows again.
-  private paused = false; private unsettled = false;
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
@@ -117,7 +115,10 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       .onNodeClick(item => this.click(item))
       // A dragged node follows the simulation again once it is let go.
       .onNodeDragEnd(item => { item.fx = undefined; item.fy = undefined; item.fz = undefined; })
-      .cooldownTime(6000);
+      // The layout stops once it has cooled down rather than after a set time on the clock, so a tab paused in the background
+      // carries on where it left off when shown again.
+      .cooldownTime(Infinity)
+      .d3AlphaMin(0.001);
     // d3's forces come untyped; these are the calls used on them.
     (graph.d3Force('charge') as unknown as { strength(value: number): void }).strength(REPEL);
     // Like d3's default, a link between busy nodes pulls less.
@@ -137,11 +138,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // A tab in the background has no size; the library would keep drawing it every frame, so it pauses until shown again.
     this.resize = new ResizeObserver(() => {
       const width = this.stage?.clientWidth ?? 0, height = this.stage?.clientHeight ?? 0;
-      if (!width || !height) { this.paused = true; graph.pauseAnimation(); return; }
+      if (!width || !height) { graph.pauseAnimation(); return; }
       graph.width(width).height(height).resumeAnimation();
-      // The layout's time limit runs on the clock, so after a long pause it would stop on the first frame.
-      if (this.paused && this.unsettled) graph.d3ReheatSimulation();
-      this.paused = false; this.unsettled = false;
     });
     this.resize.observe(this.stage);
     // A fit still waiting for the layout to spread gives way once the user moves the camera, as in 2D.
@@ -218,7 +216,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // Notes are edited far more often than their tags and links change. Handing the library the same graph again would heat
     // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
     const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
-    if (shape !== this.shape) { this.shape = shape; this.links = links; this.unsettled ||= this.paused; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
+    if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
     this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
