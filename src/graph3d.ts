@@ -1,12 +1,12 @@
 import { ItemView, Setting, debounce, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
-import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture } from 'three';
+import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { LABEL_SIZE, cssColorToHex } from './settings.ts';
-import { arrowAt, fogRange, labelBounds, labelScale } from './geometry3d.ts';
+import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -49,6 +49,8 @@ const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE
 export class Graph3DView extends ItemView implements LinkedGraph {
   private graph?: Graph;
   private three?: Three; private ball?: SphereGeometry; private closed = false;
+  // Where the camera looks, refreshed every frame.
+  private forward?: Vector3;
   private stage?: HTMLElement; private status?: HTMLElement;
   private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
   private colors = FALLBACK;
@@ -103,6 +105,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       return;
     }
     this.ball = new three.SphereGeometry(1, 48, 32);
+    this.forward = new three.Vector3();
     const graph = this.graph = created
       .backgroundColor(this.colors.background)
       .showNavInfo(false)
@@ -411,6 +414,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // How many pixels tall a TEXT_HEIGHT label is on screen at distance 1.
     const pixels = graph.height() / (2 * Math.tan(view.fov * Math.PI / 360)) * TEXT_HEIGHT;
     const bounds = labelBounds(this.owner.settings.labelSize, this.owner.settings.perspectiveLabels);
+    const forward = this.forward ? view.getWorldDirection(this.forward) : undefined;
     let radius = 0;
     this.placeLinks();
     for (const item of this.nodes.values()) {
@@ -424,7 +428,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't drawn at all.
       item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
       item.label.visible = item.label.material.opacity > 0;
-      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / distance, bounds.min, bounds.max);
+      // The size on screen follows the depth along the view, not the straight distance, which is longer off to the side.
+      const depth = forward ? Math.max(0.001, cameraDepth(camera, forward, { x: item.x, y: item.y ?? 0, z: item.z ?? 0 })) : distance;
+      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / depth, bounds.min, bounds.max);
       item.label.scale.set(base.x * scale, base.y * scale, 1);
     }
     // The fog follows the zoom and the graph's size: what is in front of the orbit center stays clear, the back fades.

@@ -27,3 +27,9 @@ export function labelScale(pixels: number, min: number, max: number): number {
 export function labelBounds(size: number, perspective: boolean): { min: number; max: number } {
   return { min: 12 * size, max: (perspective ? 24 : 12) * size };
 }
+
+// How far a point is along the way the camera looks: what sets its size on screen, unlike its straight distance, which is
+// longer off to the side of the view.
+export function cameraDepth(camera: Point, forward: Point, point: Point): number {
+  return (point.x - camera.x) * forward.x + (point.y - camera.y) * forward.y + (point.z - camera.z) * forward.z;
+}

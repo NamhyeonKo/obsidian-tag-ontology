@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrowAt, fogRange, labelBounds, labelScale } from '../src/geometry3d.ts';
+import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale } from '../src/geometry3d.ts';
 
 const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≈ ${expected}`);
 
@@ -49,4 +49,11 @@ test('label bounds grow with the label size, and without perspective a label has
   assert.deepEqual(labelBounds(1, true), { min: 12, max: 24 });
   assert.deepEqual(labelBounds(1.5, true), { min: 18, max: 36 });
   assert.deepEqual(labelBounds(2, false), { min: 24, max: 24 });
+});
+
+test("a point's depth is how far it is along the way the camera looks, not its straight distance", () => {
+  const camera = { x: 0, y: 0, z: 0 }, forward = { x: 0, y: 0, z: -1 };
+  assert.equal(cameraDepth(camera, forward, { x: 0, y: 0, z: -10 }), 10);
+  // Off to the side at the same depth: 14.1 away, but it projects at the size of a point 10 ahead.
+  assert.equal(cameraDepth(camera, forward, { x: 10, y: 0, z: -10 }), 10);
 });
