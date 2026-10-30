@@ -19,7 +19,7 @@ export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: 'Tag-Dictionary.json', layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
-  perspectiveLabels: true, labelSize: 1,
+  perspectiveLabels: true, labelSize: 0.8,
 };
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
   const parts = path.split('/');

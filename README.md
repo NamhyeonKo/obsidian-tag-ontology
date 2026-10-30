@@ -129,7 +129,7 @@ With **Layout** set to 3D in the settings, the ribbon icon and **Open graph** op
 - Drag to orbit, right-drag to pan and scroll to zoom.
 - Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
 - The toolbar has Collapse all, Expand all, Fit, Notes, Related and Dictionary check. There are no tree layouts in 3D.
-- The gear at the top right opens the label settings. **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2) makes every label bigger or smaller. They apply to every 3D tab and are saved with the plugin's settings.
+- The gear at the top right opens the label settings. **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2, 0.8 by default) makes every label bigger or smaller. They apply to every 3D tab and are saved with the plugin's settings.
 - The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
 
 ### Commands
