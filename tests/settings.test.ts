@@ -6,7 +6,7 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true,
+    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -52,4 +52,10 @@ test('reads the CSS colors a theme gives back as hex', () => {
   assert.equal(cssColorToHex('hsl(258, 88%, 66%)'), '#8a5cf5');
   assert.equal(cssColorToHex(' hsl(0, 100%, 50%) '), '#ff0000');
   for (const css of ['', 'red', 'color-mix(in srgb, red, blue)']) assert.equal(cssColorToHex(css), undefined, css);
+});
+
+test('view defaults to 2d and keeps only 2d or 3d', () => {
+  assert.equal(DEFAULT_SETTINGS.view, '2d');
+  assert.equal(sanitizeSettings({ view: '3d' }, '.obsidian').view, '3d');
+  for (const view of ['4d', 3, undefined]) assert.equal(sanitizeSettings({ view }, '.obsidian').view, '2d');
 });

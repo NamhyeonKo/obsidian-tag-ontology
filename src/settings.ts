@@ -9,10 +9,12 @@ export interface Settings {
   // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
   // it and the notes on the selected tag (and on its descendants, with those on).
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
+  // Which graph the ribbon icon and Open graph open: the core graph with the hierarchy layered on, or the 3D view.
+  view: '2d' | '3d';
 }
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: 'Tag-Dictionary.json', layout: 'force', expanded: [], showNotes: true, showRelated: true,
-  customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true,
+  customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
 };
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
   const parts = path.split('/');
@@ -38,6 +40,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
+    view: value.view === '3d' ? '3d' : '2d',
   };
 }
 

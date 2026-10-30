@@ -6,7 +6,9 @@ import { transform } from 'esbuild';
 import { Ontology, isIncludedNote } from '../src/ontology.ts';
 import * as settings from '../src/settings.ts';
 import * as dictionaryModule from '../src/dictionary.ts';
+import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
+import type { NativeData } from '../src/layer.ts';
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -26,13 +28,14 @@ class NativeGraphs {
   refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
   showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
   renderPanel() { this.calls.push('render-panel'); }
+  drawLinked() { this.calls.push('draw-linked'); }
   destroy() { this.calls.push('destroy'); }
 }
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>;
+  onload(): Promise<void>; onunload(): void; openView(): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -45,7 +48,8 @@ async function setup(saved?: Promise<unknown>) {
   let watching = 0;
   let ready = () => {}, timer = 0, reads = 0;
   class File {}
-  const leaf = { async setViewState() { ui.push('create'); } };
+  const types: string[] = [], open = new Map<string, unknown[]>();
+  const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
     text: dictionary, writes: [] as string[],
@@ -59,13 +63,17 @@ async function setup(saved?: Promise<unknown>) {
     async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
     on(name: string, callback: (file: { path: string }) => void) { events.set(name, callback); },
   };
+  // Like Obsidian's, on() hands back a ref that offref() takes to stop listening.
+  const metaEvents = new Map<string, () => void>();
+  const metadataCache = { on(name: string, callback: () => void) { metaEvents.set(name, callback); return { name }; }, offref(ref: { name: string }) { metaEvents.delete(ref.name); },
+    getFileCache: () => ({}), resolvedLinks: {} as Record<string, Record<string, number>> };
   const workspace = {
-    getLeavesOfType: (): typeof leaf[] => [], getLeaf: () => leaf,
+    getLeavesOfType: (type: string) => open.get(type) ?? [], getLeaf: () => leaf,
     async revealLeaf() { ui.push('reveal'); },
     on() {}, onLayoutReady(callback: () => void) { ready = callback; },
   };
   class Plugin {
-    app = { vault, workspace, metadataCache: { on() {} } };
+    app = { vault, workspace, metadataCache };
     loadData() { return saved ?? Promise.resolve({}); }
     async saveData() {}
     registerView() { ui.push('register-view'); }
@@ -89,6 +97,8 @@ async function setup(saved?: Promise<unknown>) {
       : specifier === './ontology.ts' ? { Ontology, isIncludedNote }
       : specifier === './settings.ts' ? { ...settings }
       : specifier === './dictionary.ts' ? { ...dictionaryModule }
+      : specifier === './vault-data.ts' ? { vaultData }
+      : specifier === './graph3d.ts' ? { VIEW_3D: 'tag-ontology-3d', Graph3DView: class {} }
       : { NativeGraphs, PANEL_VIEW: 'tag-ontology-panel' };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -101,7 +111,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
-  return { plugin, loaded, vault, workspace, leaf, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
+  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
     restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -111,6 +121,33 @@ test('opening a graph still loads the dictionary, attaches and reveals it, and b
   assert.deepEqual(t.plugin.model!.roots, ['root']);
   assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true']);
   assert.deepEqual(t.ui, ['create', 'reveal']);
+});
+
+test('with the 3D view set, opening shows a 3D tab and the sidebar', async () => {
+  const t = await setup();
+  t.plugin.settings.view = '3d';
+  await t.plugin.openView();
+  assert.deepEqual(t.types, ['tag-ontology-3d']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true']);
+  assert.deepEqual(t.ui, ['create', 'reveal']);
+});
+
+test('with a 3D tab open, opening reuses it', async () => {
+  const t = await setup();
+  t.plugin.settings.view = '3d';
+  t.open.set('tag-ontology-3d', [t.leaf]);
+  await t.plugin.openView();
+  assert.deepEqual(t.types, []);
+  assert.deepEqual(t.ui, ['reveal']);
+});
+
+test('graphData links notes to included notes only', async () => {
+  const t = await setup();
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }, { path: 'B.md' }];
+  t.metadataCache.resolvedLinks = { 'A.md': { 'B.md': 1, 'pic.png': 1 } };
+  const { nodes } = t.plugin.graphData();
+  assert.deepEqual(nodes['A.md'].links, { 'B.md': true });
+  assert.deepEqual(nodes['B.md'].links, {});
 });
 
 for (const action of ['refresh', 'open'] as const) {
@@ -171,7 +208,7 @@ test('a manual reload reports failure and keeps the last valid model and graph',
   assert.match(t.notices[0], /dictionary/i);
   assert.equal(t.errors.length, 1);
   assert.equal(t.plugin.model, previous);
-  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel', 'draw-linked']);
 });
 
 test('a settings change reports a dictionary reload failure', async () => {
@@ -191,7 +228,7 @@ test('a background reload failure only logs and keeps the last valid model', asy
   assert.deepEqual(t.notices, []);
   assert.equal(t.errors.length, 1);
   assert.equal(t.plugin.model, previous);
-  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel', 'draw-linked']);
 });
 
 test('a broken dictionary at startup is reported, and the sidebar keeps the reason until it loads', async () => {
@@ -199,11 +236,12 @@ test('a broken dictionary at startup is reported, and the sidebar keeps the reas
   t.vault.text = '{ broken'; t.ready(); await settle();
   assert.match(t.plugin.error!, /^Invalid JSON: /);
   assert.deepEqual(t.notices, [`Could not load the tag dictionary: ${t.plugin.error}`]);
-  assert.deepEqual(t.plugin.native.calls, ['render-panel']);
+  // The 3D view hears about the failure too, so a tab restored at startup shows why it is empty.
+  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'draw-linked']);
   t.vault.text = dictionary;
   t.events.get('modify')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
   assert.equal(t.plugin.error, undefined);
-  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'refresh:true']);
+  assert.deepEqual(t.plugin.native.calls, ['render-panel', 'draw-linked', 'refresh:true']);
 });
 
 test('opening the graph records how the load went, so a later success clears an earlier failure', async () => {
@@ -248,6 +286,15 @@ test('note edits still skip graph redraws and a coalesced dictionary edit still 
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'refresh:false', 'refresh:true']);
   assert.equal(t.reads(), 3);
+});
+
+test('every time Obsidian has resolved the links, the views refresh, so the 3D view gets note links resolved after a note edit', async () => {
+  const t = await setup();
+  t.ready(); await settle(); t.plugin.native.calls.length = 0;
+  t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
+  // Resolving can finish after the refresh that a note edit scheduled, so a later one counts too.
+  t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'refresh:false']);
 });
 
 test('unload cancels a scheduled refresh', async () => {

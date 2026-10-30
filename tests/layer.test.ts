@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Ontology } from '../src/ontology.ts';
-import { addEdges, applyCollapse, buildLayer, edgeKey, focusIds, hideNotes, resolveTags, type FocusScope, type NativeData } from '../src/layer.ts';
+import { addEdges, applyCollapse, buildLayer, edgeKey, focusIds, hideNotes, linkTone, resolveTags, type FocusScope, type NativeData } from '../src/layer.ts';
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -151,4 +151,21 @@ test('focus keeps the tag, its related tags and the chosen branch', () => {
   assert.deepEqual(focus(['cs', 'ml'], 'dl', { notes: false }), ['#DL', '#ml', '#overfitting']);
   // dl and overfitting are hidden: their notes now link to ml itself, and ml never stands in for them.
   assert.deepEqual(focus(['cs'], 'ml'), ['#cs', '#ml', 'A.md', 'D.md']);
+});
+
+test('linkTone keeps every link as it is while nothing is highlighted', () => {
+  assert.equal(linkTone('a', 'b', { hovered: false }), 'normal');
+});
+
+test('linkTone: around a hovered node only its own links take the accent, and every other link fades', () => {
+  const hover = { center: 'a', lit: new Set(['a', 'b', 'c']), hovered: true };
+  assert.equal(linkTone('a', 'b', hover), 'accent'); assert.equal(linkTone('c', 'a', hover), 'accent');
+  assert.equal(linkTone('b', 'c', hover), 'faded'); assert.equal(linkTone('x', 'y', hover), 'faded');
+});
+
+test('linkTone: under Focus the selected tag looks hovered, links inside what stays bright are kept, and the rest fades', () => {
+  const focus = { center: 'a', lit: new Set(['a', 'b', 'c']), hovered: false };
+  assert.equal(linkTone('a', 'b', focus), 'accent');
+  assert.equal(linkTone('b', 'c', focus), 'normal');
+  assert.equal(linkTone('c', 'x', focus), 'faded');
 });
