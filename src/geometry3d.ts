@@ -15,3 +15,9 @@ export function arrowAt(from: Point, to: Point, radius: number, length: number):
 export function fogRange(distance: number, radius: number): { near: number; far: number } {
   return { near: distance, far: distance + Math.max(1, radius * 2) };
 }
+
+// How much to scale a label that would be this many pixels tall on screen, so it stays readable from afar and stops growing
+// when close.
+export function labelScale(pixels: number, min: number, max: number): number {
+  return pixels < min ? min / pixels : pixels > max ? max / pixels : 1;
+}
