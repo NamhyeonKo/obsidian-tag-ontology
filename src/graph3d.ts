@@ -1,11 +1,11 @@
-import { ItemView, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, debounce, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
 import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
-import { cssColorToHex } from './settings.ts';
+import { LABEL_SIZE, cssColorToHex } from './settings.ts';
 import { arrowAt, fogRange, labelBounds, labelScale } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
@@ -88,6 +88,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
+    this.labelPanel(root);
     this.colors = this.readColors();
     this.status.setText('Loading the graph…');
     const three = this.three = await import('./three.ts');
@@ -447,6 +448,27 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
     for (const item of this.nodes.values()) if (item.label) item.label.color = this.colors.text;
     this.paint();
+  }
+
+  // The label settings, in a panel opened with a gear at the top right, built like the 2D graph's settings panel. Every 3D tab
+  // reads them each frame, so a change shows at once everywhere; saving waits until the slider stops moving.
+  private labelPanel(root: HTMLElement) {
+    const settings = this.owner.settings, save = debounce(() => void this.owner.saveState(), 500, true);
+    const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
+    const close = panel.createDiv('clickable-icon graph-controls-button mod-close'), open = panel.createDiv('clickable-icon graph-controls-button mod-open');
+    setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
+    open.addEventListener('click', () => panel.removeClass('is-close'));
+    close.addEventListener('click', () => panel.addClass('is-close'));
+    const section = panel.createDiv('tree-item graph-control-section');
+    section.createDiv('tree-item-self').createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
+    const body = section.createDiv('tree-item-children');
+    const perspective = new Setting(body).setName('Perspective labels').addToggle(toggle => toggle.setValue(settings.perspectiveLabels).onChange(value => {
+      settings.perspectiveLabels = value; save();
+    }));
+    setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
+    // The labels follow the slider while it is dragged.
+    new Setting(body).setName('Label size').addSlider(slider => slider.setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
+      .setValue(settings.labelSize).onChange(value => { settings.labelSize = value; save(); }));
   }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
