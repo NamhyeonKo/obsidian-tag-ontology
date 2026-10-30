@@ -31,7 +31,6 @@ const FADED_NODE = 0.2, FADED_LABEL = 0.15;
 // Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. Their size on
 // screen follows the label settings (see labelBounds).
 const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
-const FONT = 'var(--font-interface)';
 // Used when a theme leaves a graph color unset or in a format cssColorToHex can't read.
 const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
 const TOGGLES = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']] as const;
@@ -53,6 +52,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private stage?: HTMLElement; private status?: HTMLElement;
   private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
   private colors = FALLBACK;
+  // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
+  private font = 'sans-serif';
   private base?: NativeData; private layer?: Layer;
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
@@ -89,7 +90,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
     this.labelPanel(root);
-    this.colors = this.readColors();
+    this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
     const three = this.three = await import('./three.ts');
     if (this.closed) return;
@@ -306,7 +307,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // With 999 tags and 730 notes all expanded a frame takes about 4 ms; with many thousands of notes shown an instanced sphere
     // mesh and a label atlas would be next.
     const label = item.label = new three.SpriteText(item.name, TEXT_HEIGHT, this.colors.text);
-    label.fontFace = FONT; label.fontSize = FONT_SIZE;
+    label.fontFace = this.font; label.fontSize = FONT_SIZE;
     label.material.depthWrite = false; label.material.transparent = true;
     // Hangs from its top edge just under the node, so it never covers the node at any size.
     label.center.set(0.5, 1);
@@ -440,13 +441,19 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     };
   }
 
+  private readFont() {
+    return getComputedStyle(this.contentEl).getPropertyValue('--font-interface').trim() || 'sans-serif';
+  }
+
   private recolor() {
     const graph = this.graph;
     if (!graph) return;
     this.colors = this.readColors();
+    const font = this.readFont(), refont = font !== this.font;
+    this.font = font;
     graph.backgroundColor(this.colors.background);
     (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
-    for (const item of this.nodes.values()) if (item.label) item.label.color = this.colors.text;
+    for (const item of this.nodes.values()) if (item.label) { item.label.color = this.colors.text; if (refont) item.label.fontFace = font; }
     this.paint();
   }
 
