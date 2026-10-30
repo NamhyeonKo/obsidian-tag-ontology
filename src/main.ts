@@ -64,10 +64,9 @@ export default class TagOntologyPlugin extends Plugin {
       if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
-    // The 3D view takes note links from resolvedLinks, which can still be filling in when it first draws at startup. Once every
-    // link has been resolved the views refresh one time; later resolves follow edits, which refresh through 'changed'.
-    const resolved = this.app.metadataCache.on('resolved', () => { this.app.metadataCache.offref(resolved); this.scheduleRefresh(); });
-    this.registerEvent(resolved);
+    // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
+    // scheduled, so every time the links are resolved the views refresh too (coalesced with the edit's own refresh).
+    this.registerEvent(this.app.metadataCache.on('resolved', () => this.scheduleRefresh()));
   }
 
   // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.

@@ -288,13 +288,13 @@ test('note edits still skip graph redraws and a coalesced dictionary edit still 
   assert.equal(t.reads(), 3);
 });
 
-test('the first time Obsidian has resolved every link, the views refresh once, so a 3D view drawn earlier gets its note links', async () => {
+test('every time Obsidian has resolved the links, the views refresh, so the 3D view gets note links resolved after a note edit', async () => {
   const t = await setup();
   t.ready(); await settle(); t.plugin.native.calls.length = 0;
   t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
-  assert.deepEqual(t.plugin.native.calls, ['refresh:false']);
-  // Later resolves follow note edits, which refresh through their own events.
-  assert.equal(t.metaEvents.has('resolved'), false);
+  // Resolving can finish after the refresh that a note edit scheduled, so a later one counts too.
+  t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'refresh:false']);
 });
 
 test('unload cancels a scheduled refresh', async () => {
