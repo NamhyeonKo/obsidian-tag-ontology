@@ -24,7 +24,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
-- **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Choose it under **Layout** in the settings.
+- **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
@@ -117,6 +117,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Related | Show or hide the dashed related links |
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
 | Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
+| Open in 3D (beta) | Open the 3D view, or bring an open 3D tab forward. Hidden while **Enable 3D view** is off |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
@@ -124,19 +125,21 @@ The round buttons on the left of the graph show their name when you hover them:
 
 ### 3D view (beta)
 
-With **Layout** set to 3D in the settings, the ribbon icon and **Open graph** open the 3D view instead of the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
+The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3D view in its own tab. The button at the bottom of the 3D toolbar brings you back to the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
 
 - Drag to orbit, right-drag to pan and scroll to zoom.
 - Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
-- The toolbar has Collapse all, Expand all, Fit, Notes, Related and Dictionary check. There are no tree layouts in 3D.
+- The toolbar has Collapse all, Expand all, Fit, Notes, Related, Dictionary check and Open in 2D. There are no tree layouts in 3D.
 - The gear at the top right opens the label settings. **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2, 0.8 by default) makes every label bigger or smaller. They apply to every 3D tab and are saved with the plugin's settings.
 - The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
+- If the 3D view is slow or you don't use it, turn off **Enable 3D view (beta)** in the settings. Its button, its command and its open tabs go away, and the 2D graph is unchanged.
 
 ### Commands
 
 | Command | Description |
 | --- | --- |
-| Tag Ontology: Open graph | Open the ontology in the core Graph view, or in the 3D view when Layout is 3D. Reuses an open tab. |
+| Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open tab. |
+| Tag Ontology: Open 3D graph | Open the 3D view. Reuses an open tab. Only offered while **Enable 3D view (beta)** is on. |
 | Tag Ontology: Reload dictionary | Reload the dictionary and the note index. |
 
 ### Settings
@@ -144,7 +147,7 @@ With **Layout** set to 3D in the settings, the ribbon icon and **Open graph** op
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
-| Layout | 2D or 3D (beta): which graph the ribbon icon and Open graph open. Force and the tree layouts are on the 2D graph toolbar. |
+| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
