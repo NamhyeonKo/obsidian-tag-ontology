@@ -1,4 +1,4 @@
-import { ItemView, Setting, debounce, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, debounce, setIcon, setTooltip, type SliderComponent, type ToggleComponent, type WorkspaceLeaf } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
 import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
@@ -471,18 +471,23 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
     const close = panel.createDiv('clickable-icon graph-controls-button mod-close'), open = panel.createDiv('clickable-icon graph-controls-button mod-open');
     setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
-    open.addEventListener('click', () => panel.removeClass('is-close'));
-    close.addEventListener('click', () => panel.addClass('is-close'));
     const section = panel.createDiv('tree-item graph-control-section');
     section.createDiv('tree-item-self').createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
     const body = section.createDiv('tree-item-children');
-    const perspective = new Setting(body).setName('Perspective labels').addToggle(toggle => toggle.setValue(owner.settings.perspectiveLabels).onChange(value => {
-      owner.settings.perspectiveLabels = value; save();
+    let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
+    const perspective = new Setting(body).setName('Perspective labels').addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
+      if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
     }));
     setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
     // The labels follow the slider while it is dragged.
-    new Setting(body).setName('Label size').addSlider(slider => slider.setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
-      .setValue(owner.settings.labelSize).onChange(value => { owner.settings.labelSize = value; save(); }));
+    new Setting(body).setName('Label size').addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
+      .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }));
+    // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
+    open.addEventListener('click', () => {
+      toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
+      panel.removeClass('is-close');
+    });
+    close.addEventListener('click', () => panel.addClass('is-close'));
   }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
