@@ -215,6 +215,8 @@ export default class TagOntologyPlugin extends Plugin {
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
+      // Revealing a tab that was already open only brings it to the front, and keys would still go to the active tab.
+      if (existing && !this.disposed) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     } catch (error) {
       if (this.disposed) return;
       new Notice(`Could not open the graph: ${reason(error)}`);

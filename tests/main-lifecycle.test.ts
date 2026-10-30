@@ -71,6 +71,7 @@ async function setup(saved?: Promise<unknown>) {
   const workspace = {
     getLeavesOfType: (type: string) => open.get(type) ?? [], getLeaf: () => leaf,
     async revealLeaf() { ui.push('reveal'); },
+    setActiveLeaf(_leaf: unknown, { focus }: { focus: boolean }) { ui.push(focus ? 'focus' : 'active'); },
     on() {}, onLayoutReady(callback: () => void) { ready = callback; },
   };
   class Plugin {
@@ -135,12 +136,13 @@ test('opening the 3D view shows a 3D tab and the sidebar', async () => {
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
-test('with a 3D tab open, opening the 3D view reuses it', async () => {
+test('with a 3D tab open, opening the 3D view reuses it and makes it the active tab', async () => {
   const t = await setup();
   t.open.set('tag-ontology-3d', [t.leaf]);
   await t.plugin.openView('3d');
   assert.deepEqual(t.types, []);
-  assert.deepEqual(t.ui, ['reveal']);
+  // Revealing only brings the tab to the front; keys like Ctrl+W would still go to the tab that was active.
+  assert.deepEqual(t.ui, ['reveal', 'focus']);
 });
 
 test('Open graph opens the 2D graph even with a 3D tab open', async () => {
