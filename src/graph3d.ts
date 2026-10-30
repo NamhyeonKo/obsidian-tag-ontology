@@ -90,7 +90,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const native = this.owner.native;
     this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll());
     this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll());
-    this.button(tools, 'scan', 'Fit', () => this.graph?.zoomToFit(600, 40));
+    // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
+    this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.graph?.zoomToFit(600, 40); });
     tools.createDiv('tag-ontology-separator');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
