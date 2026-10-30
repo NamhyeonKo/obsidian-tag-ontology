@@ -143,6 +143,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       this.paused = false; this.unsettled = false;
     });
     this.resize.observe(this.stage);
+    // A fit still waiting for the layout to spread gives way once the user moves the camera, as in 2D.
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => window.clearTimeout(this.fitTimer), { capture: true });
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
     // Obsidian's accent color setting only rewrites the accent variables on <body>, with no css-change, so <body> is watched too.
     const accentWatch = new MutationObserver(() => this.recolor());
