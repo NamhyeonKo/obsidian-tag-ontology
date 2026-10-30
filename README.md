@@ -127,7 +127,8 @@ The round buttons on the left of the graph show their name when you hover them:
 
 The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3D view in its own tab. The button at the bottom of the 3D toolbar brings you back to the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
 
-- Drag to orbit, right-drag to pan and scroll to zoom.
+- Drag empty space to orbit, right-drag to pan and scroll to zoom.
+- Drag a node to move it on its own. Let go and it springs back to its place, as in the tree layouts. The layout settles after the view opens and after expanding, then holds still.
 - Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
 - The toolbar has Collapse all, Expand all, Fit, Notes, Related, Dictionary check and Open in 2D. There are no tree layouts in 3D.
 - The gear at the top right opens the label settings. **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2, 0.8 by default) makes every label bigger or smaller. They apply to every 3D tab and are saved with the plugin's settings.
