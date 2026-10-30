@@ -475,7 +475,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // The settings tab replaces the settings object on every change, so each change writes to the current one.
     const owner = this.owner, save = debounce(() => void owner.saveState(), 500, true);
     const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
-    const close = panel.createDiv('clickable-icon graph-controls-button mod-close'), open = panel.createDiv('clickable-icon graph-controls-button mod-open');
+    // Real buttons, unlike the core panel's, so the keyboard reaches them.
+    const close = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-close' });
+    const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
     setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
     const section = panel.createDiv('tree-item graph-control-section');
     section.createDiv('tree-item-self').createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
