@@ -14,7 +14,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
-![Tag Ontology demo](assets/0.8.1/demo.gif)
+![Tag Ontology demo](assets/0.9.0/demo.gif)
 
 ## Features
 
@@ -24,6 +24,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
+- **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
@@ -32,19 +33,23 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 | Sidebar tab | Dictionary check |
 | --- | --- |
-| ![Sidebar tab showing a tag with its parents, children, related tags and note counts](assets/0.7.6/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.7.6/dictionary-check.png) |
+| ![Sidebar tab showing a tag with its parents, children, related tags and note counts](assets/0.9.0/tag-panel.png) | ![Dictionary check listing unregistered and unused tags in the sidebar tab](assets/0.9.0/dictionary-check.png) |
+| **Collapsed to the roots** | **Expanded** |
+| ![Every tag collapsed to its root, with each note linked to the root above its tags](assets/0.9.0/collapsed.png) | ![Every tag expanded, with each note linked to its own tags](assets/0.9.0/expanded.png) |
 | **Vertical tree** | **Horizontal tree** |
-| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.7.6/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.7.6/tree-horizontal.png) |
+| ![Vertical tree: each tag under its deepest parent, parents centered over their children](assets/0.9.0/tree-vertical.png) | ![Horizontal tree: the same tree with levels running left to right](assets/0.9.0/tree-horizontal.png) |
 | **Original theme** | **Keep the selected tag focused** |
-| ![With custom colors off, tags keep the graph's own colors](assets/0.7.6/original-theme.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.7.6/focus.png) |
+| ![With custom colors off, tags keep the graph's own colors](assets/0.9.0/original-theme.png) | ![The selected tag and its links stay bright while the rest fades](assets/0.9.0/focus.png) |
 | **Edit a tag** | **New tag** |
-| ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.7.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.7.0/new-tag.png) |
+| ![Edit form in the sidebar with name, description, aliases, parents, children and related tags, and one change not saved](assets/0.9.0/edit-tag.png) | ![New tag form suggesting a tag the notes use but the dictionary lacks, with its note count](assets/0.9.0/new-tag.png) |
 | **Search suggestions** | **Delete a tag** |
-| ![Sidebar search suggesting a tag by name and another by alias](assets/0.7.6/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.7.0/delete-tag.png) |
+| ![Sidebar search suggesting a tag by name and another by alias](assets/0.9.0/search-suggestions.png) | ![Delete dialog listing where the children go, the related tags it leaves and the notes that keep the tag](assets/0.9.0/delete-tag.png) |
 
 ## How it works
 
 Tag Ontology works inside the core Graph view. It takes the graph Obsidian has already built with your filters and color groups, collapses the dictionary tags and adds the hierarchy and related links between them. Tags that are not in the dictionary stay ordinary tag nodes. The local graph is not affected, and disabling the plugin returns the Graph view to normal.
+
+The 3D view (beta) is a separate tab. It builds the same notes and tags from the vault, layers the dictionary onto them with the same code, and draws them with three.js.
 
 The hierarchy you build in the sidebar tab is saved in the dictionary file. See [Advanced: the dictionary file](#advanced-the-dictionary-file) if you want to read or edit it directly.
 
@@ -114,16 +119,32 @@ The round buttons on the left of the graph show their name when you hover them:
 | Related | Show or hide the dashed related links |
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
 | Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
+| Open in 3D (beta) | Open the 3D view, or bring an open 3D tab forward. Hidden while **Enable 3D view** is off |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
 - Everything else keeps the core behavior: clicking a note opens it, and clicking a tag that is not in the dictionary opens search.
 
+### 3D view (beta)
+
+The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3D view in its own tab. The button at the bottom of the 3D toolbar brings you back to the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
+
+![The 3D view: tags and notes in three dimensions, with the back of the graph fading into the background](assets/0.9.0/view-3d.png)
+
+- Drag empty space to orbit, right-drag to pan and scroll to zoom.
+- Drag a node to move it on its own. Let go and it springs back to its place, as in the tree layouts. The layout settles after the view opens and after expanding, then holds still.
+- Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
+- The toolbar has Collapse all, Expand all, Fit, Notes, Related, Dictionary check and Open in 2D. There are no tree layouts in 3D.
+- The gear at the top right opens the label settings. **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2, 0.8 by default) makes every label bigger or smaller. They apply to every 3D tab and are saved with the plugin's settings.
+- The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
+- If the 3D view is slow or you don't use it, turn off **Enable 3D view (beta)** in the settings. Its button, its command and its open tabs go away, and the 2D graph is unchanged.
+
 ### Commands
 
 | Command | Description |
 | --- | --- |
-| Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open graph tab. |
+| Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open tab. |
+| Tag Ontology: Open 3D graph | Open the 3D view. Reuses an open tab. Only offered while **Enable 3D view (beta)** is on. |
 | Tag Ontology: Reload dictionary | Reload the dictionary and the note index. |
 
 ### Settings
@@ -131,7 +152,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
-| Layout | 2D. 3D (beta) is listed but can't be chosen yet. Force and the tree layouts are on the graph toolbar. |
+| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
@@ -199,6 +220,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 - On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
 - Labels get dense when every tag is expanded, especially in Force.
 - Untested together with other plugins that patch the Graph view.
+- The 3D view uses WebGL and bundles three.js, so the plugin file is about 0.9 MB. three.js loads only when a 3D view opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
 
 ## Roadmap
 
@@ -231,6 +253,9 @@ src/
 ├── dictionary.ts   # Pure functions that apply sidebar edits to the dictionary JSON and write it
 ├── search.ts       # Suggestion popover for the search box and the edit forms
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
+├── graph3d.ts      # The 3D view: draws the same layered data with 3d-force-graph
+├── three.ts        # three.js and 3d-force-graph, imported only when a 3D view opens
+├── vault-data.ts   # Builds the core graph's data shape from the vault for the 3D view
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
@@ -250,6 +275,7 @@ Tag Ontology is free and open source. If it saves you time, you can [buy me a co
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
+- The 3D view is built on [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext) and [three.js](https://threejs.org), all MIT. The licence notices of every bundled package are at the top of `main.js`.
 
 ## License
 

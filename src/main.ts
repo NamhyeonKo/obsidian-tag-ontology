@@ -3,6 +3,9 @@ import { Ontology, isIncludedNote, type Note } from './ontology.ts';
 import { DEFAULT_SETTINGS, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { apply, conflicts, serialize, type Change, type RawDictionary } from './dictionary.ts';
+import { vaultData } from './vault-data.ts';
+import { Graph3DView, VIEW_3D } from './graph3d.ts';
+import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
 
@@ -36,8 +39,14 @@ export default class TagOntologyPlugin extends Plugin {
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
+    this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
+    this.addCommand({ id: 'open-3d-graph', name: OPEN_3D, checkCallback: (checking) => {
+      if (!this.settings.enable3d) return false;
+      if (!checking) void this.openView('3d');
+      return true;
+    } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews({ notify: true });
     } });
@@ -60,6 +69,9 @@ export default class TagOntologyPlugin extends Plugin {
       if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
+    // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
+    // scheduled, so every time the links are resolved the views refresh too (coalesced with the edit's own refresh).
+    this.registerEvent(this.app.metadataCache.on('resolved', () => this.scheduleRefresh()));
   }
 
   // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.
@@ -128,6 +140,12 @@ export default class TagOntologyPlugin extends Plugin {
     });
   }
 
+  // The core graph's data, built from the vault for the 3D view: notes, their tags and links between included notes.
+  graphData(): NativeData {
+    const resolved = this.app.metadataCache.resolvedLinks;
+    return vaultData(this.notes().map(note => ({ ...note, links: Object.keys(resolved[note.path] ?? {}) })));
+  }
+
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
@@ -181,20 +199,24 @@ export default class TagOntologyPlugin extends Plugin {
     await this.refreshViews({ notify: true });
   }
 
-  async openView(): Promise<void> {
+  async openView(graph: '2d' | '3d' = '2d'): Promise<void> {
     if (this.disposed) return;
     try {
       await this.loadModel();
       if (this.disposed) return;
-      const existing = this.app.workspace.getLeavesOfType('graph')[0];
+      // An open tab of the graph is reused.
+      const type = graph === '3d' ? VIEW_3D : 'graph';
+      const existing = this.app.workspace.getLeavesOfType(type)[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
-      if (!existing) await leaf.setViewState({ type: 'graph', active: true });
+      if (!existing) await leaf.setViewState({ type, active: true });
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
+      // Revealing a tab that was already open only brings it to the front, and keys would still go to the active tab.
+      if (existing && !this.disposed) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     } catch (error) {
       if (this.disposed) return;
       new Notice(`Could not open the graph: ${reason(error)}`);
@@ -215,11 +237,15 @@ export default class TagOntologyPlugin extends Plugin {
 
   private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
     if (this.disposed) return;
+    // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
+    if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
     try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
       this.native.renderPanel();
+      // A 3D view with no dictionary loaded yet says why, as the sidebar does.
+      this.native.drawLinked('refresh');
       if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
     }
   }
@@ -241,7 +267,9 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const LAYOUT = { name: 'Layout', desc: 'Force and the tree layouts are on the graph toolbar. 3D is coming in a later release.' };
+// UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
+const OPEN_3D = 'Open 3D graph';
+const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
@@ -261,8 +289,7 @@ class OntologySettingsTab extends PluginSettingTab {
         type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
-      // A plain dropdown can't turn off one option, so this row is drawn by hand.
-      { ...LAYOUT, render: (setting) => { this.layout(setting); } },
+      { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
       { type: 'group', visible: () => this.owner.settings.focus, items:
@@ -280,14 +307,6 @@ class OntologySettingsTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown): Promise<void> {
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
-  }
-
-  // Only the 2D graph exists yet: 3D (beta) is listed so it can be seen coming, but can't be chosen.
-  private layout(setting: Setting): Setting {
-    return setting.setName(LAYOUT.name).setDesc(LAYOUT.desc).addDropdown((dropdown) => {
-      dropdown.addOptions({ '2d': '2D', '3d': '3D (beta)' }).setValue('2d');
-      dropdown.selectEl.querySelector<HTMLOptionElement>('option[value="3d"]')!.disabled = true;
-    });
   }
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
@@ -319,7 +338,9 @@ class OntologySettingsTab extends PluginSettingTab {
         await this.owner.saveSettings();
       });
     });
-    this.layout(new Setting(containerEl));
+    new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
+    });
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.focus).onChange((value) => {

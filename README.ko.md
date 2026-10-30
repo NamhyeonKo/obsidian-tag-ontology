@@ -14,7 +14,7 @@ Tag Ontology는 사이드바 탭에서 태그마다 상위·하위·연관 태�
 
 > **시작하기:** 계층은 태그 노드로 만들어지므로 그래프 설정의 **필터 → Tags**가 켜져 있어야 합니다. 처음 설치하면 자동으로 켜 드립니다.
 
-![Tag Ontology 데모](assets/0.8.1/demo.gif)
+![Tag Ontology 데모](assets/0.9.0/demo.gif)
 
 ## 기능
 
@@ -24,6 +24,7 @@ Tag Ontology는 사이드바 탭에서 태그마다 상위·하위·연관 태�
 - **하위 포함 노트 수.** 태그마다 *직접* 달린 노트 수와, *하위 태그까지 포함한* 노트 수를 보여 줍니다.
 - **다중 부모와 연관 관계.** 실선 화살표는 상위에서 하위로 향하고, 점선은 연관 태그를 잇습니다.
 - **세 가지 배치.** Force, 세로 트리, 가로 트리.
+- **3D 보기 (beta).** 같은 계층을 입체로 봅니다. 주위를 돌려 보고, 태그를 클릭하면 그 태그로 날아갑니다. 그래프 도구 모음 맨 아래 버튼으로 엽니다.
 - **사이드바 탭.** 파일·검색 탭 옆의 탭에서 태그 이름이나 별칭으로 찾고, 태그 정보를 보고, 사전 대조를 합니다. 여기서 태그를 고르면 열린 그래프가 그 태그를 가운데로 옮깁니다.
 - **사전 대조.** vault에서 쓰이지만 사전에 없는 태그와, 사전에는 있지만 아직 아무 노트도 쓰지 않는 태그를 보여 줍니다. 보고만 하고 아무것도 바꾸지 않습니다.
 - **사용자 색상(선택).** 그래프와 사이드바의 모든 태그를 한 가지 색(따로 고르지 않으면 강조색)으로 칠합니다.
@@ -32,19 +33,23 @@ Tag Ontology는 사이드바 탭에서 태그마다 상위·하위·연관 태�
 
 | 사이드바 탭 | 사전 대조 |
 | --- | --- |
-| ![상위·하위·연관 태그와 노트 수가 표시된 사이드바 탭](assets/0.7.6/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 사이드바 탭에 보여 주는 사전 대조](assets/0.7.6/dictionary-check.png) |
+| ![상위·하위·연관 태그와 노트 수가 표시된 사이드바 탭](assets/0.9.0/tag-panel.png) | ![미등록 태그와 쓰이지 않는 태그를 사이드바 탭에 보여 주는 사전 대조](assets/0.9.0/dictionary-check.png) |
+| **루트까지 접기** | **모두 펼치기** |
+| ![모든 태그를 루트까지 접어 노트가 태그 위의 루트에 이어진 그래프](assets/0.9.0/collapsed.png) | ![모든 태그를 펼쳐 노트가 자기 태그에 이어진 그래프](assets/0.9.0/expanded.png) |
 | **세로 트리** | **가로 트리** |
-| ![세로 트리: 태그마다 가장 깊은 부모 밑에 놓이고 부모는 자식들 가운데에 놓임](assets/0.7.6/tree-vertical.png) | ![가로 트리: 같은 트리를 왼쪽에서 오른쪽으로 깊어지게 눕힌 모양](assets/0.7.6/tree-horizontal.png) |
+| ![세로 트리: 태그마다 가장 깊은 부모 밑에 놓이고 부모는 자식들 가운데에 놓임](assets/0.9.0/tree-vertical.png) | ![가로 트리: 같은 트리를 왼쪽에서 오른쪽으로 깊어지게 눕힌 모양](assets/0.9.0/tree-horizontal.png) |
 | **원래 테마** | **선택한 태그 포커스 유지** |
-| ![사용자 색상을 끄면 태그가 그래프 원래 색을 그대로 씀](assets/0.7.6/original-theme.png) | ![선택한 태그와 연결선만 밝고 나머지는 흐려진 그래프](assets/0.7.6/focus.png) |
+| ![사용자 색상을 끄면 태그가 그래프 원래 색을 그대로 씀](assets/0.9.0/original-theme.png) | ![선택한 태그와 연결선만 밝고 나머지는 흐려진 그래프](assets/0.9.0/focus.png) |
 | **태그 편집** | **새 태그** |
-| ![이름·설명·별칭·상위·하위·연관 태그 칸과 저장 안 한 변경 1개가 보이는 사이드바 편집 양식](assets/0.7.0/edit-tag.png) | ![노트에서 쓰이지만 사전에 없는 태그를 노트 수와 함께 추천하는 새 태그 양식](assets/0.7.0/new-tag.png) |
+| ![이름·설명·별칭·상위·하위·연관 태그 칸과 저장 안 한 변경 1개가 보이는 사이드바 편집 양식](assets/0.9.0/edit-tag.png) | ![노트에서 쓰이지만 사전에 없는 태그를 노트 수와 함께 추천하는 새 태그 양식](assets/0.9.0/new-tag.png) |
 | **검색 추천** | **태그 삭제** |
-| ![이름과 별칭으로 태그를 추천하는 사이드바 검색창](assets/0.7.6/search-suggestions.png) | ![하위 태그가 옮겨 갈 곳, 빠지는 연관 태그, 태그를 유지하는 노트를 보여 주는 삭제 확인 창](assets/0.7.0/delete-tag.png) |
+| ![이름과 별칭으로 태그를 추천하는 사이드바 검색창](assets/0.9.0/search-suggestions.png) | ![하위 태그가 옮겨 갈 곳, 빠지는 연관 태그, 태그를 유지하는 노트를 보여 주는 삭제 확인 창](assets/0.9.0/delete-tag.png) |
 
 ## 동작 방식
 
 Tag Ontology는 기본 그래프 뷰 안에서 동작합니다. Obsidian이 필터와 색상 그룹을 적용해 만든 그래프를 받아, 사전 태그를 접고 태그 사이에 계층·연관 선을 더합니다. 사전에 없는 태그는 일반 태그 노드로 그대로 둡니다. 로컬 그래프에는 영향이 없고, 플러그인을 끄면 그래프 뷰가 원래대로 돌아옵니다.
+
+3D 보기(beta)는 따로 열리는 탭입니다. vault에서 같은 노트와 태그를 모아, 같은 코드로 사전을 얹고, three.js로 그립니다.
 
 사이드바 탭에서 만든 계층은 사전 파일에 저장됩니다. 파일을 직접 보거나 고치고 싶다면 [고급: 사전 파일](#고급-사전-파일)을 참고하세요.
 
@@ -116,17 +121,33 @@ UI는 영어로 표시됩니다.
 | Related | 점선 연관 관계 보이기/숨기기 |
 | Dictionary check | 사전에 없는 태그와 쓰이지 않는 태그를 사이드바 탭에 보기 |
 | Force / Vertical tree / Horizontal tree | 현재 배치만 강조되어 보임. 누르면 세 가지가 이 순서대로 펼쳐지고, 하나를 누르면 바뀜 |
+| Open in 3D (beta) | 3D 보기를 열거나, 열린 3D 탭을 앞으로 가져오기. **Enable 3D view**를 끄면 숨겨짐 |
 
 - 트리 배치에서는 각 태그가 부모 밑에 놓이고, 태그 관계가 잘 보이도록 노트는 숨깁니다.
 - 그래프에서 태그를 클릭하면 사이드바 탭에 그 태그가 표시됩니다. 더블 클릭하면 펼쳐지고 다시 더블 클릭하면 접혀서, 탭 맨 위의 버튼과 같습니다. 그 아래에 펼쳐 둔 태그는 다음에도 펼친 채로 남습니다.
 - 나머지는 기본 동작을 따릅니다. 노트를 클릭하면 열리고, 사전에 없는 태그를 클릭하면 검색이 열립니다.
 - 기본 그래프는 많이 축소하면 라벨과 화살표를 숨깁니다. 확대하면 보입니다.
 
+### 3D 보기 (beta)
+
+그래프 도구 모음 맨 아래 버튼이나 **Open 3D graph** 명령으로 3D 보기를 새 탭에 엽니다. 3D 도구 모음 맨 아래 버튼을 누르면 기본 그래프로 돌아갑니다. 펼친 태그, Notes·Related 토글, 색, Focus, 사이드바 탭을 2D 그래프와 함께 쓰므로, 한쪽에서 펼친 태그는 다른 쪽에서도 펼쳐집니다.
+
+![3D 보기: 태그와 노트가 입체로 놓이고, 뒤쪽은 배경으로 흐려짐](assets/0.9.0/view-3d.png)
+
+- 빈 곳을 드래그하면 돌리고, 오른쪽 드래그로 옮기고, 스크롤로 확대·축소합니다.
+- 노드를 끌면 그 노드만 움직이고, 놓으면 트리 배치처럼 제자리로 돌아갑니다. 배치는 보기를 열 때와 펼친 뒤에 자리를 잡고 나면 움직이지 않습니다.
+- 태그를 클릭하면 선택하고 그 태그로 날아가며, 더블 클릭하면 펼치거나 접습니다. 노트를 클릭하면 엽니다. 사이드바에서 태그를 골라도 그 태그로 날아갑니다. 사전에 없는 태그를 클릭하면 3D에서는 아무 일도 없습니다(2D에서는 검색이 열립니다).
+- 툴바에는 Collapse all, Expand all, Fit, Notes, Related, Dictionary check, Open in 2D가 있습니다. 3D에는 트리 배치가 없습니다.
+- 오른쪽 위 톱니바퀴를 누르면 라벨 설정이 열립니다. **Perspective labels**(기본 켬)는 가까이 갈수록 라벨이 커지게 하고, 끄면 거리와 상관없이 같은 크기로 보입니다. **Label size**(0.5~2, 기본 0.8)로 라벨 전체 크기를 키우거나 줄입니다. 모든 3D 탭에 적용되고 플러그인 설정과 함께 저장됩니다.
+- 3D 보기는 노트와 태그를 vault에서 직접 모으므로, 기본 그래프의 필터·색상 그룹·첨부파일 설정은 적용되지 않습니다.
+- 3D 보기가 느리거나 쓰지 않으면 설정에서 **Enable 3D view (beta)**를 끄세요. 3D 버튼과 명령, 열린 3D 탭이 사라지고 2D 그래프는 그대로입니다.
+
 ### 명령
 
 | 명령 | 설명 |
 | --- | --- |
-| Tag Ontology: Open graph | 기본 그래프 뷰에서 온톨로지를 엽니다. 이미 열린 그래프 탭이 있으면 그 탭을 씁니다. |
+| Tag Ontology: Open graph | 기본 그래프 뷰에서 온톨로지를 엽니다. 이미 열린 탭이 있으면 그 탭을 씁니다. |
+| Tag Ontology: Open 3D graph | 3D 보기를 엽니다. 이미 열린 탭이 있으면 그 탭을 씁니다. **Enable 3D view (beta)**가 켜져 있을 때만 보입니다. |
 | Tag Ontology: Reload dictionary | 사전과 노트 색인을 다시 불러옵니다. |
 
 ### 설정
@@ -134,7 +155,7 @@ UI는 영어로 표시됩니다.
 | 설정 | 설명 |
 | --- | --- |
 | Dictionary path | 태그 사전 경로. vault 기준 상대 경로의 `.json` 파일이며 기본값은 `Tag-Dictionary.json`입니다. |
-| Layout | 2D. 3D (beta)는 목록에 보이지만 아직 고를 수 없습니다. Force와 트리 레이아웃은 그래프 툴바에서 고릅니다. |
+| Enable 3D view (beta) | 그래프 도구 모음의 3D 버튼과 Open 3D graph 명령을 보입니다. 끄면 열린 3D 탭을 닫습니다. 기본 켬. |
 | Keep the selected tag focused | 선택한 태그와 바로 옆 태그(상위·하위·연관 태그)는 밝게 두고 나머지는 흐리게 합니다. 선택한 태그와 그 연결선은 마우스를 올린 것처럼 보입니다. 기본값은 꺼짐이며, 켜면 아래 항목이 나타납니다. |
 | &nbsp;&nbsp;Its descendants | 아래의 모든 하위 태그도 펼쳐서 보이는 데까지 밝게 둡니다. 기본값은 켜짐입니다. |
 | &nbsp;&nbsp;Include notes | 선택한 태그의 노트도 밝게 두고, Its descendants가 켜져 있으면 하위 태그의 노트도 밝게 둡니다. 바로 옆 태그의 노트는 흐리게 남습니다. 기본값은 켜짐입니다. |
@@ -200,6 +221,7 @@ UI는 영어로 표시됩니다.
 - 큰 vault에서 노트를 켠 채 모든 태그를 펼치면 노드와 링크 수천 개를 다시 그리므로 잠깐 멈출 수 있습니다.
 - 모든 태그를 펼치면 라벨이 빽빽해집니다. 특히 Force에서 그렇습니다.
 - 그래프 뷰를 고치는 다른 플러그인과 함께 쓰는 경우는 검증하지 않았습니다.
+- 3D 보기는 WebGL을 쓰고 three.js를 함께 담아서 플러그인 파일이 약 0.9MB입니다. three.js는 3D 보기를 열 때만 불러옵니다. 노트를 수천 개 넘게 보이면 3D 보기가 느려집니다. 노트를 숨기면 빠릅니다.
 
 ## 로드맵
 
@@ -232,6 +254,9 @@ src/
 ├── dictionary.ts   # Pure functions that apply sidebar edits to the dictionary JSON and write it
 ├── search.ts       # Suggestion popover for the search box and the edit forms
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
+├── graph3d.ts      # The 3D view: draws the same layered data with 3d-force-graph
+├── three.ts        # three.js and 3d-force-graph, imported only when a 3D view opens
+├── vault-data.ts   # Builds the core graph's data shape from the vault for the 3D view
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
@@ -251,6 +276,7 @@ Tag Ontology는 무료 오픈 소스입니다. 시간을 아껴 줬다면 [커�
 ## 감사의 말
 
 - 기본 그래프 렌더러에 사용자 데이터를 공급하는 방식은 [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags)에서 아이디어를 얻었습니다. 해당 플러그인을 설치할 필요는 없습니다.
+- 3D 보기는 [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext), [three.js](https://threejs.org)(모두 MIT)로 만들었습니다. 함께 담긴 모든 패키지의 라이선스 문구는 `main.js` 맨 위에 있습니다.
 
 ## 라이선스
 

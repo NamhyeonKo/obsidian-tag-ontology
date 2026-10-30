@@ -9,8 +9,8 @@
 .tag-ontology-icon.tag-ontology-toggle:not(.is-active) { color: var(--text-faint); }
 /* Obsidian dims aria-disabled buttons and clears the background of disabled icons, even on hover; keep the round background. */
 .tag-ontology-icon[aria-disabled="true"], .tag-ontology-icon[aria-disabled="true"]:hover { background: var(--background-secondary); }
-/* The layout buttons sit in the column like the others; the ones folded away are hidden. */
-.tag-ontology-layouts { display: contents; }
+/* The layout buttons stack with the column's spacing and move to a new column together; the ones folded away are hidden. */
+.tag-ontology-layouts { display: flex; flex-direction: column; gap: 8px; }
 .tag-ontology-icon[hidden] { display: none; }
 .tag-ontology-separator { width: 20px; height: 1px; margin: 0 7px; background: var(--background-modifier-border); }
 .tag-ontology-nav { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
@@ -41,6 +41,12 @@
 .tag-ontology-panel li { padding: 4px 0; overflow-wrap: anywhere; }
 .tag-ontology-panel li a { cursor: pointer; text-decoration: none; color: var(--text-normal); }
 .tag-ontology-panel li a:hover { color: var(--text-accent); text-decoration: underline; }
+/* The 3D view: the WebGL canvas fills the tab under the same toolbar and status line as 2D. */
+.tag-ontology-3d { position: relative; padding: 0; overflow: hidden; }
+.tag-ontology-3d-stage { position: absolute; inset: 0; }
+.tag-ontology-3d.is-pointing { cursor: pointer; }
+/* The label panel's open and close buttons are real buttons; they keep the core panel's icon look. */
+.tag-ontology-3d-controls button.graph-controls-button { background: none; box-shadow: none; border: none; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }
 .tag-ontology-status { font-size: var(--font-ui-smaller); }
 .tag-ontology-form label { display: block; margin: 14px 0 4px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }

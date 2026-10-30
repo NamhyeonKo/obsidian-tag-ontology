@@ -37,7 +37,14 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void };
+type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void };
+interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
+// Stands in for the 3D view: it records what the sidebar state asks of it.
+const linkedGraph = (has: (tag: string) => boolean = () => false) => {
+  const calls: string[] = [];
+  return { calls, has, draw(operation: string) { calls.push('draw:' + operation); }, paint() { calls.push('paint'); }, focusOn(tag: string) { calls.push('focus:' + tag); } };
+};
 
 const raw: RawDictionary = {
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -82,8 +89,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   let frameId = 0, clock = 0;
   const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
   const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
+  const errors: unknown[][] = [];
   const context = createContext({
-    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone,
+    performance: { now: () => clock }, devicePixelRatio: 1, structuredClone, console: { error: (...args: unknown[]) => errors.push(args) },
     window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
@@ -137,6 +145,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
@@ -172,7 +181,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -287,6 +296,80 @@ test('searching a tag outside the current graph opens the panel with a notice', 
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'overfitting'));
 });
 
+test('a linked graph redraws on every update and refresh, note edits included', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view);
+  t.click('Expand all'); t.controller.refresh(false);
+  assert.deepEqual(view.calls.filter(call => call.startsWith('draw:')), ['draw:expand-all', 'draw:refresh']);
+});
+
+test('a linked graph repaints when the selection changes', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view);
+  nodeClick(t, '#cs');
+  assert.ok(view.calls.includes('paint'));
+});
+
+test('reveal reaches a tag only a linked graph has, and brings it into view', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph(tag => tag === 'overfitting');
+  t.controller.link(view);
+  t.suggests[0]!.onChoose('overfitting');
+  assert.deepEqual(t.notices, []);
+  assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'ml', 'overfitting']);
+  assert.ok(view.calls.includes('focus:overfitting'));
+});
+
+test('reveal still says "Not in the current graph." when no graph has the tag, linked ones included', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.controller.link(linkedGraph());
+  t.suggests[0]!.onChoose('overfitting');
+  assert.deepEqual(t.notices, ['Not in the current graph.']);
+});
+
+test('clickTag selects and toggles a tag without a core graph', async () => {
+  const t = await setup();
+  t.controller.clickTag('cs', false);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+  assert.deepEqual([...t.owner.settings.expanded], []);
+  t.controller.clickTag('cs', true);
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']);
+});
+
+test('Expand all and Collapse all wait for a dictionary, so a 3D toolbar shown before one loads keeps the saved expansion', async () => {
+  const t = await setup({ expanded: ['cs'] });
+  t.owner.model = undefined;
+  t.controller.expandAll(); t.controller.collapseAll();
+  assert.deepEqual([...t.owner.settings.expanded], ['cs']); assert.equal(t.owner.saves, 0);
+});
+
+test('a linked graph that throws while drawing is logged and leaves the sidebar and the other graphs drawn', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.controller.clickTag('cs', false);
+  const broken = { ...linkedGraph(), draw() { throw new Error('boom'); } }, view = linkedGraph();
+  t.controller.link(broken); t.controller.link(view);
+  t.click('Expand all');
+  assert.ok(view.calls.includes('draw:expand-all'));
+  assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the sidebar shows cs expanded');
+  assert.equal(String((t.errors[0]?.[1] as Error | undefined)?.message), 'boom');
+});
+
+test('an unlinked graph gets nothing', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const view = linkedGraph();
+  t.controller.link(view); t.controller.unlink(view);
+  t.click('Expand all'); nodeClick(t, '#cs');
+  assert.deepEqual(view.calls, []);
+});
+
 test('rendering before any core data does nothing', async () => {
   const t = await setup({}, false);
   t.controller.attach();
@@ -384,8 +467,22 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)']);
+});
+
+test('the 3D button at the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  t.click('Open in 3D (beta)');
+  assert.deepEqual(t.owner.opened, ['3d']);
+  t.owner.settings.enable3d = false; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  t.owner.settings.enable3d = true; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
 });
 
 test('the layout buttons fold into the current one, open in their own order, and fold again after a choice', async () => {

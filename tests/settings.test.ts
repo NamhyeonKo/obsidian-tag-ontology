@@ -6,7 +6,8 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true,
+    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+    perspectiveLabels: true, labelSize: 0.8,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -52,4 +53,20 @@ test('reads the CSS colors a theme gives back as hex', () => {
   assert.equal(cssColorToHex('hsl(258, 88%, 66%)'), '#8a5cf5');
   assert.equal(cssColorToHex(' hsl(0, 100%, 50%) '), '#ff0000');
   for (const css of ['', 'red', 'color-mix(in srgb, red, blue)']) assert.equal(cssColorToHex(css), undefined, css);
+});
+
+test('the 3D view is on by default and only a saved false turns it off', () => {
+  assert.equal(DEFAULT_SETTINGS.enable3d, true);
+  assert.equal(sanitizeSettings({ enable3d: false }, '.obsidian').enable3d, false);
+  for (const enable3d of ['no', 0, undefined]) assert.equal(sanitizeSettings({ enable3d }, '.obsidian').enable3d, true);
+  // Up to 0.8.2 a Layout setting picked which graph the ribbon opened; it opens the 2D graph now, so the key is dropped.
+  assert.equal(Object.hasOwn(sanitizeSettings({ view: '3d' }, '.obsidian'), 'view'), false);
+});
+
+test('label settings default to perspective on and size 0.8, and keep only valid values', () => {
+  assert.equal(DEFAULT_SETTINGS.perspectiveLabels, true); assert.equal(DEFAULT_SETTINGS.labelSize, 0.8);
+  const kept = sanitizeSettings({ labelSize: 1.5, perspectiveLabels: false }, '.obsidian');
+  assert.equal(kept.labelSize, 1.5); assert.equal(kept.perspectiveLabels, false);
+  for (const labelSize of [3, 0.2, 'big', Number.NaN]) assert.equal(sanitizeSettings({ labelSize }, '.obsidian').labelSize, 0.8);
+  assert.equal(sanitizeSettings({ perspectiveLabels: 'no' }, '.obsidian').perspectiveLabels, true);
 });
