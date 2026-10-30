@@ -11,10 +11,15 @@ export interface Settings {
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
   // Which graph the ribbon icon and Open graph open: the core graph with the hierarchy layered on, or the 3D view.
   view: '2d' | '3d';
+  // 3D labels: with perspective they grow as the camera comes closer, between 12 and 24 px times labelSize; without, they
+  // stay 12 px times labelSize.
+  perspectiveLabels: boolean; labelSize: number;
 }
+export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: 'Tag-Dictionary.json', layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, view: '2d',
+  perspectiveLabels: true, labelSize: 0.8,
 };
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
   const parts = path.split('/');
@@ -26,7 +31,7 @@ export function isValidDictionaryPath(path: string, configDir: string): boolean 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
-  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
+  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'perspectiveLabels') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
   const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
@@ -41,6 +46,8 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     customColors: flag('customColors'), tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
     view: value.view === '3d' ? '3d' : '2d',
+    perspectiveLabels: flag('perspectiveLabels'),
+    labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
   };
 }
 

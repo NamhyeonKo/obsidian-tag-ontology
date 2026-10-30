@@ -1,12 +1,12 @@
-import { ItemView, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, debounce, setIcon, setTooltip, type SliderComponent, type ToggleComponent, type WorkspaceLeaf } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
-import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture } from 'three';
+import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
-import { cssColorToHex } from './settings.ts';
-import { arrowAt, fogRange, labelScale } from './geometry3d.ts';
+import { LABEL_SIZE, cssColorToHex } from './settings.ts';
+import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -28,10 +28,9 @@ const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
 const FLY_DISTANCE = 90, FLY_MS = 1000;
 // Faded nodes and labels stay faintly visible, as in 2D.
 const FADED_NODE = 0.2, FADED_LABEL = 0.15;
-// Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. On screen they
-// are never smaller than about 2D's label size and grow a little when the camera is close.
-const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650, LABEL_MIN_PX = 12, LABEL_MAX_PX = 24;
-const FONT = 'var(--font-interface)';
+// Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. Their size on
+// screen follows the label settings (see labelBounds).
+const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
 // Used when a theme leaves a graph color unset or in a format cssColorToHex can't read.
 const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
 const TOGGLES = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']] as const;
@@ -50,9 +49,13 @@ const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE
 export class Graph3DView extends ItemView implements LinkedGraph {
   private graph?: Graph;
   private three?: Three; private ball?: SphereGeometry; private closed = false;
+  // Where the camera looks, refreshed every frame.
+  private forward?: Vector3;
   private stage?: HTMLElement; private status?: HTMLElement;
   private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
   private colors = FALLBACK;
+  // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
+  private font = 'sans-serif';
   private base?: NativeData; private layer?: Layer;
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
@@ -88,7 +91,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
-    this.colors = this.readColors();
+    this.labelPanel(root);
+    this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
     const three = this.three = await import('./three.ts');
     if (this.closed) return;
@@ -101,6 +105,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       return;
     }
     this.ball = new three.SphereGeometry(1, 48, 32);
+    this.forward = new three.Vector3();
     const graph = this.graph = created
       .backgroundColor(this.colors.background)
       .showNavInfo(false)
@@ -305,7 +310,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // With 999 tags and 730 notes all expanded a frame takes about 4 ms; with many thousands of notes shown an instanced sphere
     // mesh and a label atlas would be next.
     const label = item.label = new three.SpriteText(item.name, TEXT_HEIGHT, this.colors.text);
-    label.fontFace = FONT; label.fontSize = FONT_SIZE;
+    label.fontFace = this.font; label.fontSize = FONT_SIZE;
     label.material.depthWrite = false; label.material.transparent = true;
     // Hangs from its top edge just under the node, so it never covers the node at any size.
     label.center.set(0.5, 1);
@@ -408,6 +413,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const view = graph.camera() as PerspectiveCamera, camera = view.position, target = (graph.controls() as { target: typeof camera }).target;
     // How many pixels tall a TEXT_HEIGHT label is on screen at distance 1.
     const pixels = graph.height() / (2 * Math.tan(view.fov * Math.PI / 360)) * TEXT_HEIGHT;
+    const bounds = labelBounds(this.owner.settings.labelSize, this.owner.settings.perspectiveLabels);
+    const forward = this.forward ? view.getWorldDirection(this.forward) : undefined;
     let radius = 0;
     this.placeLinks();
     for (const item of this.nodes.values()) {
@@ -421,7 +428,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't drawn at all.
       item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
       item.label.visible = item.label.material.opacity > 0;
-      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / distance, LABEL_MIN_PX, LABEL_MAX_PX);
+      // The size on screen follows the depth along the view, not the straight distance, which is longer off to the side.
+      const depth = forward ? Math.max(0.001, cameraDepth(camera, forward, { x: item.x, y: item.y ?? 0, z: item.z ?? 0 })) : distance;
+      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / depth, bounds.min, bounds.max);
       item.label.scale.set(base.x * scale, base.y * scale, 1);
     }
     // The fog follows the zoom and the graph's size: what is in front of the orbit center stays clear, the back fades.
@@ -438,14 +447,66 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     };
   }
 
+  private readFont() {
+    return getComputedStyle(this.contentEl).getPropertyValue('--font-interface').trim() || 'sans-serif';
+  }
+
   private recolor() {
     const graph = this.graph;
     if (!graph) return;
     this.colors = this.readColors();
+    const font = this.readFont(), refont = font !== this.font;
+    this.font = font;
     graph.backgroundColor(this.colors.background);
     (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
-    for (const item of this.nodes.values()) if (item.label) item.label.color = this.colors.text;
+    for (const item of this.nodes.values()) {
+      const label = item.label;
+      if (!label) continue;
+      label.color = this.colors.text;
+      // A new font redraws the label at a new width, so its unscaled size is read again.
+      if (refont) { label.fontFace = font; label.userData.base = { x: label.scale.x, y: label.scale.y }; }
+    }
     this.paint();
+  }
+
+  // The label settings, in a panel opened with a gear at the top right, built like the 2D graph's settings panel. Every 3D tab
+  // reads them each frame, so a change shows at once everywhere; saving waits until the slider stops moving.
+  private labelPanel(root: HTMLElement) {
+    // The settings tab replaces the settings object on every change, so each change writes to the current one.
+    const owner = this.owner, save = debounce(() => void owner.saveState(), 500, true);
+    const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
+    // Real buttons, unlike the core panel's, so the keyboard reaches them.
+    const close = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-close' });
+    const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
+    setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
+    // A collapsible section with its rows laid out like the core panel's: a toggle beside its name, a slider under it.
+    const section = panel.createDiv('tree-item graph-control-section');
+    const heading = section.createDiv('tree-item-self mod-collapsible');
+    const icon = heading.createDiv('tree-item-icon collapse-icon');
+    setIcon(icon, 'right-triangle');
+    heading.createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
+    const body = section.createDiv('tree-item-children');
+    heading.addEventListener('click', () => {
+      const collapsed = !section.hasClass('is-collapsed');
+      // As in the core panel, the icon carries the state too, which turns it.
+      section.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
+    });
+    let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
+    const perspective = new Setting(body).setName('Perspective labels').addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
+      if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
+    }));
+    perspective.settingEl.addClass('mod-toggle');
+    setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
+    // The labels follow the slider while it is dragged.
+    new Setting(body).setName('Label size').addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
+      .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }))
+      .settingEl.addClass('mod-slider');
+    // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
+    open.addEventListener('click', () => {
+      toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
+      panel.removeClass('is-close');
+    });
+    close.addEventListener('click', () => panel.addClass('is-close'));
   }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void) {

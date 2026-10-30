@@ -45,6 +45,8 @@
 .tag-ontology-3d { position: relative; padding: 0; overflow: hidden; }
 .tag-ontology-3d-stage { position: absolute; inset: 0; }
 .tag-ontology-3d.is-pointing { cursor: pointer; }
+/* The label panel's open and close buttons are real buttons; they keep the core panel's icon look. */
+.tag-ontology-3d-controls button.graph-controls-button { background: none; box-shadow: none; border: none; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }
 .tag-ontology-status { font-size: var(--font-ui-smaller); }
 .tag-ontology-form label { display: block; margin: 14px 0 4px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }
