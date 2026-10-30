@@ -459,7 +459,13 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     this.font = font;
     graph.backgroundColor(this.colors.background);
     (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
-    for (const item of this.nodes.values()) if (item.label) { item.label.color = this.colors.text; if (refont) item.label.fontFace = font; }
+    for (const item of this.nodes.values()) {
+      const label = item.label;
+      if (!label) continue;
+      label.color = this.colors.text;
+      // A new font redraws the label at a new width, so its unscaled size is read again.
+      if (refont) { label.fontFace = font; label.userData.base = { x: label.scale.x, y: label.scale.y }; }
+    }
     this.paint();
   }
 
