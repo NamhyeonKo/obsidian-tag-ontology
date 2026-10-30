@@ -460,7 +460,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   // The label settings, in a panel opened with a gear at the top right, built like the 2D graph's settings panel. Every 3D tab
   // reads them each frame, so a change shows at once everywhere; saving waits until the slider stops moving.
   private labelPanel(root: HTMLElement) {
-    const settings = this.owner.settings, save = debounce(() => void this.owner.saveState(), 500, true);
+    // The settings tab replaces the settings object on every change, so each change writes to the current one.
+    const owner = this.owner, save = debounce(() => void owner.saveState(), 500, true);
     const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
     const close = panel.createDiv('clickable-icon graph-controls-button mod-close'), open = panel.createDiv('clickable-icon graph-controls-button mod-open');
     setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open label settings');
@@ -469,13 +470,13 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const section = panel.createDiv('tree-item graph-control-section');
     section.createDiv('tree-item-self').createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: 'Labels' });
     const body = section.createDiv('tree-item-children');
-    const perspective = new Setting(body).setName('Perspective labels').addToggle(toggle => toggle.setValue(settings.perspectiveLabels).onChange(value => {
-      settings.perspectiveLabels = value; save();
+    const perspective = new Setting(body).setName('Perspective labels').addToggle(toggle => toggle.setValue(owner.settings.perspectiveLabels).onChange(value => {
+      owner.settings.perspectiveLabels = value; save();
     }));
     setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
     // The labels follow the slider while it is dragged.
     new Setting(body).setName('Label size').addSlider(slider => slider.setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
-      .setValue(settings.labelSize).onChange(value => { settings.labelSize = value; save(); }));
+      .setValue(owner.settings.labelSize).onChange(value => { owner.settings.labelSize = value; save(); }));
   }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
