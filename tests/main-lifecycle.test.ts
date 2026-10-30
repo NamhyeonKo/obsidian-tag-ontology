@@ -63,7 +63,10 @@ async function setup(saved?: Promise<unknown>) {
     async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
     on(name: string, callback: (file: { path: string }) => void) { events.set(name, callback); },
   };
-  const metadataCache = { on() {}, getFileCache: () => ({}), resolvedLinks: {} as Record<string, Record<string, number>> };
+  // Like Obsidian's, on() hands back a ref that offref() takes to stop listening.
+  const metaEvents = new Map<string, () => void>();
+  const metadataCache = { on(name: string, callback: () => void) { metaEvents.set(name, callback); return { name }; }, offref(ref: { name: string }) { metaEvents.delete(ref.name); },
+    getFileCache: () => ({}), resolvedLinks: {} as Record<string, Record<string, number>> };
   const workspace = {
     getLeavesOfType: (type: string) => open.get(type) ?? [], getLeaf: () => leaf,
     async revealLeaf() { ui.push('reveal'); },
@@ -108,7 +111,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
-  return { plugin, loaded, vault, workspace, metadataCache, leaf, types, open, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
+  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, events, ready: () => ready(), runTimers, reads: () => reads,
     restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -283,6 +286,15 @@ test('note edits still skip graph redraws and a coalesced dictionary edit still 
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'refresh:false', 'refresh:true']);
   assert.equal(t.reads(), 3);
+});
+
+test('the first time Obsidian has resolved every link, the views refresh once, so a 3D view drawn earlier gets its note links', async () => {
+  const t = await setup();
+  t.ready(); await settle(); t.plugin.native.calls.length = 0;
+  t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false']);
+  // Later resolves follow note edits, which refresh through their own events.
+  assert.equal(t.metaEvents.has('resolved'), false);
 });
 
 test('unload cancels a scheduled refresh', async () => {
