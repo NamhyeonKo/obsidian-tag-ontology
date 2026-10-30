@@ -448,7 +448,6 @@ export class NativeGraphs {
     if (moved) r.changed();
   }
 
-  // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
   get selectedTag() { return this.selected; }
 
   // True when this click on the node follows another on it within DOUBLE_CLICK_MS; the click after a double click starts over.
@@ -475,6 +474,7 @@ export class NativeGraphs {
   toggleFilter(key: ToggleKey) { this.update({ [key]: !this.owner.settings[key] }, 'filter'); }
   checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
 
+  // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
   private toggleExpanded(tag: string) {
     // Read the live state: Expand all or another tab may have changed it since the bar was drawn.
     const live = this.owner.settings.expanded;

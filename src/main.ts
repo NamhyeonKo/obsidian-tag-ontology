@@ -236,7 +236,7 @@ export default class TagOntologyPlugin extends Plugin {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
       this.native.renderPanel();
-      // The 3D view keeps the last dictionary that loaded and shows why the new one didn't.
+      // A 3D view with no dictionary loaded yet says why, as the sidebar does.
       this.native.drawLinked('refresh');
       if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
     }
@@ -299,7 +299,6 @@ class OntologySettingsTab extends PluginSettingTab {
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
   }
-
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
   // Showing the accent again calls onChange too, and that must not pin the accent as a picked color.

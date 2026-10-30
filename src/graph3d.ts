@@ -300,8 +300,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const three = this.three!, group = new three.Object3D();
     const dot = item.dot = new three.Mesh(this.ball, new three.MeshLambertMaterial({ color: this.colorOf(item), transparent: true }));
     group.add(dot);
-    // ponytail: every node is its own sphere and label, two draw calls each. With 10,000 notes shown a frame takes about 70 ms
-    // (measured 2026-10-30), most of it per-object overhead; an instanced sphere mesh and a label atlas would lift that.
+    // ponytail: every node is still its own sphere and label, two draw calls each (links are drawn together, see placeLinks).
+    // With 999 tags and 730 notes all expanded a frame takes about 4 ms; with many thousands of notes shown an instanced sphere
+    // mesh and a label atlas would be next.
     const label = item.label = new three.SpriteText(item.name, TEXT_HEIGHT, this.colors.text);
     label.fontFace = FONT; label.fontSize = FONT_SIZE;
     label.material.depthWrite = false; label.material.transparent = true;

@@ -127,7 +127,7 @@ The round buttons on the left of the graph show their name when you hover them:
 With **Layout** set to 3D in the settings, the ribbon icon and **Open graph** open the 3D view instead of the core graph. It shares the expanded tags, the Notes and Related toggles, colors, Focus and the sidebar tab with the 2D graph, so a tag you expand in one is expanded in the other.
 
 - Drag to orbit, right-drag to pan and scroll to zoom.
-- Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too.
+- Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
 - The toolbar has Collapse all, Expand all, Fit, Notes, Related and Dictionary check. There are no tree layouts in 3D.
 - The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
 
@@ -211,7 +211,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 - On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
 - Labels get dense when every tag is expanded, especially in Force.
 - Untested together with other plugins that patch the Graph view.
-- The 3D view uses WebGL and bundles three.js, so the plugin file is about 1.4 MB. three.js loads only when a 3D view opens. With thousands of notes shown the 3D view slows down (about 70 ms a frame with 10,000 notes); hiding notes keeps it fast.
+- The 3D view uses WebGL and bundles three.js, so the plugin file is about 0.9 MB. three.js loads only when a 3D view opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
 
 ## Roadmap
 
