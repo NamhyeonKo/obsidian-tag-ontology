@@ -6,7 +6,7 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { cssColorToHex } from './settings.ts';
-import { arrowAt } from './links3d.ts';
+import { arrowAt, fogRange } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -402,12 +402,12 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private frame() {
     const graph = this.graph;
     if (!graph) return;
-    const camera = graph.camera().position, fog = graph.scene().fog as Fog | null;
-    // The fog band follows the zoom: it starts a little in front of the orbit center and ends a bit past it.
-    if (fog) { const distance = camera.distanceTo((graph.controls() as { target: typeof camera }).target); fog.near = distance * 0.7; fog.far = distance * 1.7; }
+    const camera = graph.camera().position, target = (graph.controls() as { target: typeof camera }).target;
+    let radius = 0;
     this.placeLinks();
     for (const item of this.nodes.values()) {
       if (item.x === undefined) continue;
+      radius = Math.max(radius, Math.hypot(item.x - target.x, (item.y ?? 0) - target.y, (item.z ?? 0) - target.z));
       const lit = !this.lit || this.lit.has(item.id);
       if (item.dot) item.dot.material.opacity = lit ? 1 : FADED_NODE;
       if (!item.label) continue;
@@ -417,6 +417,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
       item.label.visible = item.label.material.opacity > 0;
     }
+    // The fog follows the zoom and the graph's size: what is in front of the orbit center stays clear, the back fades.
+    const fog = graph.scene().fog as Fog | null;
+    if (fog) { const band = fogRange(camera.distanceTo(target), radius); fog.near = band.near; fog.far = band.far; }
   }
 
   // Obsidian's graph colors from the theme in use; a theme change repaints with them.

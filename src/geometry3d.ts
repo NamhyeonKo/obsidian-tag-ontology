@@ -8,3 +8,10 @@ export function arrowAt(from: Point, to: Point, radius: number, length: number):
   const direction = { x: dx / distance, y: dy / distance, z: dz / distance }, back = radius + length / 2;
   return { center: { x: to.x - direction.x * back, y: to.y - direction.y * back, z: to.z - direction.z * back }, direction };
 }
+
+// The depth fog's band for a camera this far from the orbit center, around a graph reaching this far from it. Everything in
+// front of the center stays clear and the back of the graph blends at most halfway into the background, so zooming in
+// never makes the nodes behind disappear.
+export function fogRange(distance: number, radius: number): { near: number; far: number } {
+  return { near: distance, far: distance + Math.max(1, radius * 2) };
+}
