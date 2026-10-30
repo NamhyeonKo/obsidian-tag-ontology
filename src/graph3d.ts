@@ -6,7 +6,7 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import type { LinkedGraph } from './native.ts';
 import { LABEL_SIZE, cssColorToHex } from './settings.ts';
-import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale } from './geometry3d.ts';
+import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -26,6 +26,8 @@ const NODE_SIZE = 0.8, LINK_OPACITY = 0.8, REPEL = -10 * 6, LINK_DISTANCE = 250 
 const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
 // A click flies the camera this close to the tag, keeping the direction it looks from.
 const FLY_DISTANCE = 90, FLY_MS = 1000;
+// A node let go eases back home in this long, as in the 2D tree layouts.
+const SPRING_MS = 450;
 // Faded nodes and labels stay faintly visible, as in 2D.
 const FADED_NODE = 0.2, FADED_LABEL = 0.15;
 // Labels hang under their node and fade out between these camera distances, as they do when zooming out in 2D. Their size on
@@ -63,6 +65,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
+  // Where each dragged node was before it was grabbed, and the nodes let go that are easing back there.
+  private homes = new Map<Node3D, Point>(); private springs = new Map<Node3D, { from: Point; start: number }>();
   // Every link is drawn by three objects, solid lines, dashed related lines and the hierarchy arrows, instead of one object
   // each: with thousands of links, one draw call per link was most of a frame.
   private lines?: LineSegments<BufferGeometry, LineBasicMaterial>; private dashes?: LineSegments<BufferGeometry, LineDashedMaterial>;
@@ -124,8 +128,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       .linkVisibility(false)
       .onNodeHover(item => { this.hover = item ?? undefined; this.contentEl.toggleClass('is-pointing', !!item); this.paint(); })
       .onNodeClick(item => this.click(item))
-      // A dragged node follows the simulation again once it is let go.
-      .onNodeDragEnd(item => { item.fx = undefined; item.fy = undefined; item.fz = undefined; })
+      // As in the 2D tree layouts, a drag moves only the grabbed node, and letting go eases it back.
+      .onNodeDrag((item, translate) => this.grab(item, translate))
+      .onNodeDragEnd(item => this.release(item))
       // The layout stops once it has cooled down rather than after a set time on the clock, so a tab paused in the background
       // carries on where it left off when shown again.
       .cooldownTime(Infinity)
@@ -398,6 +403,25 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     if (arrows.instanceColor) arrows.instanceColor.needsUpdate = true;
   }
 
+  // On every drag move the library asks the layout to warm up. A settled layout stays still anyway, but one still settling (just
+  // opened or expanded) would run the whole simulation on the main thread each frame, about 10 ms with 1,700 nodes, and pull
+  // every other node along. With no steps allowed it stops before taking one, so only the grabbed node moves.
+  private grab(item: Node3D, translate: Point) {
+    this.graph?.cooldownTicks(0);
+    // The first move remembers where the node was; grabbed again while easing back, it keeps that place and stops easing.
+    if (!this.homes.has(item)) this.homes.set(item, { x: (item.x ?? 0) - translate.x, y: (item.y ?? 0) - translate.y, z: (item.z ?? 0) - translate.z });
+    this.springs.delete(item);
+  }
+
+  // The library unpins a node let go; it stays pinned while it eases back, so the layout doesn't carry it off. The library
+  // then cools the layout down, and it goes on settling if it was before the drag.
+  private release(item: Node3D) {
+    this.graph?.cooldownTicks(Infinity);
+    const from = { x: item.x ?? 0, y: item.y ?? 0, z: item.z ?? 0 };
+    item.fx = from.x; item.fy = from.y; item.fz = from.z;
+    this.springs.set(item, { from, start: performance.now() });
+  }
+
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
   // The 2D graph pulls every node toward the middle; this does the same on all three axes.
@@ -422,6 +446,16 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const bounds = labelBounds(this.owner.settings.labelSize, this.owner.settings.perspectiveLabels);
     const forward = this.forward ? view.getWorldDirection(this.forward) : undefined;
     let radius = 0;
+    const now = performance.now();
+    for (const [item, { from, start }] of this.springs) {
+      const home = this.homes.get(item)!, done = now - start >= SPRING_MS || this.nodes.get(item.id) !== item;
+      const at = springBack(from, home, (now - start) / SPRING_MS);
+      item.x = item.fx = at.x; item.y = item.fy = at.y; item.z = item.fz = at.z;
+      // The scene's positions were already worked out for this frame, so the node's own are brought up to date.
+      const object = item.dot?.parent;
+      object?.position.set(at.x, at.y, at.z); object?.updateMatrixWorld();
+      if (done) { item.fx = item.fy = item.fz = undefined; this.springs.delete(item); this.homes.delete(item); }
+    }
     this.placeLinks();
     for (const item of this.nodes.values()) {
       if (item.x === undefined) continue;
