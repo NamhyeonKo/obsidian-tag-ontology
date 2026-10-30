@@ -75,6 +75,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   getIcon(): string { return 'box'; }
 
   async onOpen(): Promise<void> {
+    // With the 3D view off, a tab the workspace brings back on start closes before it loads three.js. The plugin closes the
+    // tabs open when it is turned off.
+    if (!this.owner.settings.enable3d) { this.leaf.detach(); return; }
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
