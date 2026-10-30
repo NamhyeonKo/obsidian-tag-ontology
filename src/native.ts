@@ -77,7 +77,7 @@ export interface LinkedGraph {
   focusOn(tag: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
-const DOUBLE_CLICK_MS = 350;
+export const DOUBLE_CLICK_MS = 350;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
 const sameSet = (a?: Set<string>, b?: Set<string>) => a === b || (!!a && !!b && a.size === b.size && [...a].every(id => b.has(id)));

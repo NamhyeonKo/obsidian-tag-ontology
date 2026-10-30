@@ -4,7 +4,7 @@ import type SpriteText from 'three-spritetext';
 import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
-import type { LinkedGraph } from './native.ts';
+import { DOUBLE_CLICK_MS, type LinkedGraph } from './native.ts';
 import { LABEL_SIZE, cssColorToHex } from './settings.ts';
 import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
@@ -90,7 +90,8 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     const native = this.owner.native;
     this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll());
     this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll());
-    this.button(tools, 'scan', 'Fit', () => this.graph?.zoomToFit(600, 40));
+    // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
+    this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.graph?.zoomToFit(600, 40); });
     tools.createDiv('tag-ontology-separator');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
@@ -158,8 +159,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
       graph.width(width).height(height).resumeAnimation();
     });
     this.resize.observe(this.stage);
-    // A fit still waiting for the layout to spread gives way once the user moves the camera, as in 2D.
-    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => window.clearTimeout(this.fitTimer), { capture: true });
+    // A fit still waiting for the layout to spread, or a flight waiting for a second click, gives way once the user moves the
+    // camera, as in 2D. A second click cancels the flight with its press.
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer); }, { capture: true });
     // Letting go of a dragged node, the library sends the page a made-up touch pointerup, which the orbit controls can't match to
     // the mouse, so they throw. The real pointerup comes right after and ends them, so the made-up one is stopped.
     this.registerDomEvent(this.contentEl.doc, 'pointerup', event => { if (!event.isTrusted && event.pointerType === 'touch') event.stopImmediatePropagation(); }, { capture: true });
@@ -286,11 +288,15 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     attempt();
   }
 
-  // A click selects a dictionary tag at once and flies to it; a second click soon after expands or collapses it, as in 2D.
-  // A note opens in a new tab; a tag the dictionary lacks does nothing.
+  // A click selects a dictionary tag at once; a second click soon after expands or collapses it, as in 2D. The flight to it
+  // waits until a second click can no longer come: flying at once moved a tag off to the side out from under the pointer, so
+  // the second click missed it. A note opens in a new tab; a tag the dictionary lacks does nothing.
   private click(item: Node3D) {
     const native = this.owner.native, double = native.isDouble(item.id);
-    if (item.tag) { native.clickTag(item.tag, double); if (!double) this.flyTo(item); }
+    if (item.tag) {
+      native.clickTag(item.tag, double);
+      if (!double) this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
+    }
     else if (item.type !== 'tag' && !double) native.openNote(item.id);
   }
 
