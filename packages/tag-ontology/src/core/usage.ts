@@ -19,7 +19,7 @@ const SIMILAR = 0.85;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const byPathAndTag = (a: { path: string; tag: string }, b: { path: string; tag: string }) => compare(a.path, b.path) || compare(a.tag, b.tag);
 
-function commonLength(a: string, b: string): number {
+function commonLength(a: readonly string[], b: readonly string[]): number {
   let previous = new Array<number>(b.length + 1).fill(0);
   for (let i = 0; i < a.length; i++) {
     const row = [0];
@@ -31,9 +31,10 @@ function commonLength(a: string, b: string): number {
 
 function similar(a: string, b: string): boolean {
   if (a.replaceAll('-', '') === b.replaceAll('-', '')) return true;
-  const total = a.length + b.length;
+  // By character (code point), as Python counts: a letter outside the BMP is two UTF-16 units of a string.
+  const x = [...a], y = [...b], total = x.length + y.length;
   // There can't be more characters in common than the shorter name has, which rules out most pairs before the table.
-  return 2 * Math.min(a.length, b.length) >= SIMILAR * total && 2 * commonLength(a, b) >= SIMILAR * total;
+  return 2 * Math.min(x.length, y.length) >= SIMILAR * total && 2 * commonLength(x, y) >= SIMILAR * total;
 }
 
 // Letters and digits only, ignoring case, so "Deep Learning" and deep-learning name the same concept.

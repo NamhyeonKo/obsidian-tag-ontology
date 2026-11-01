@@ -81,3 +81,9 @@ test('similar tags look like a typo: equal without hyphens, or close by the shar
 test('a dictionary with errors is refused, as by the model', () => {
   assert.throws(() => usage({ a: { description: 'A', broader: ['gone'] } }, []), /unknown tag gone/);
 });
+
+test('similar names are compared by character, not by UTF-16 unit', () => {
+  // 𠮷 is one character outside the BMP, two UTF-16 units. By characters the pair shares 6 of 7 each: 12 / 14 ≥ 0.85.
+  const result = usage({ 'abcdef吉': { description: 'X', broader: [] } }, [{ path: 'a.md', tags: ['abcdef𠮷'] }]);
+  assert.deepEqual(result.unregistered.map(item => item.similar), [['abcdef吉']]);
+});
