@@ -19,6 +19,7 @@ const SEVERITY = {
   'unplaced': 'warning',
   'redundant-broader': 'warning',
   'invalid-frontmatter': 'warning',
+  'invalid-change': 'error',
 } as const satisfies Record<string, Severity>;
 
 export type IssueCode = keyof typeof SEVERITY;
@@ -32,6 +33,8 @@ export interface Issue {
   field?: EntryField;
   target?: string;
   path?: string;
+  // plan/apply: the index of the change in the changes file.
+  change?: number;
   message: string;
 }
 
@@ -56,7 +59,7 @@ export const compareIssues = (a: Issue, b: Issue) => RANK[a.severity] - RANK[b.s
   || compare(a.tag, b.tag) || compare(a.path, b.path) || compare(a.code, b.code) || compare(a.target, b.target);
 
 // An issue with the severity its code always has.
-export const issue = (code: IssueCode, message: string, at: Pick<Issue, 'tag' | 'field' | 'target' | 'path'> = {}): Issue =>
+export const issue = (code: IssueCode, message: string, at: Pick<Issue, 'tag' | 'field' | 'target' | 'path' | 'change'> = {}): Issue =>
   ({ code, severity: SEVERITY[code], ...at, message });
 
 export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
@@ -160,6 +163,12 @@ export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
   }
   return issues.sort(compareIssues);
 }
+
+// Problems with the shape of the file itself. With only other issues, changes can still apply to it.
+export const isShapeIssue = (found: Issue) => found.code === 'invalid-dictionary' || found.code === 'invalid-entry' || found.code === 'invalid-field';
+
+// TypeScript can't see what validate() checked, so this tells it: with no shape issue, the value is a RawDictionary.
+export const isWellFormed = (raw: unknown, issues = validate(raw)): raw is RawDictionary => !issues.some(isShapeIssue);
 
 // The plugin opens exactly the dictionaries without errors; this throws the first one and tells TypeScript the shape holds.
 export function assertDictionary(raw: unknown): asserts raw is RawDictionary {
