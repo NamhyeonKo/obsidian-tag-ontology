@@ -102,11 +102,9 @@ With `--json`, stdout holds exactly one JSON document, UTF-8, ending in a newlin
 | `change` | number | `plan`/`apply`: index of the change in the changes file |
 | `message` | string | always; for people, may change |
 
-The same objects come from the library: `Issue` is exported by `tag-ontology`.
+The same objects come from the library: `validate(raw, { names })` in `tag-ontology` returns them, already sorted.
 
 ### Issue codes
-
-> **Draft.** The list is settled together with the validator (`core/validate.ts`).
 
 An **error** is something that stops the plugin from opening the dictionary. Everything else is a **warning**, and fails only with `--strict`.
 
@@ -117,16 +115,16 @@ An **error** is something that stops the plugin from opening the dictionary. Eve
 | `invalid-field` | error | `aliases`, `broader` or `related` isn't an array of strings, or `facet` isn't a string. | `tag`, `field` |
 | `unknown-reference` | error | `broader` or `related` names a tag that isn't in the dictionary. | `tag`, `field`, `target` |
 | `self-reference` | error | A tag lists itself in `broader` or `related`. | `tag`, `field` |
-| `broader-cycle` | error | Following `broader` from a tag leads back to it. One issue per tag on the cycle. | `tag` |
-| `invalid-change` | error | `plan`/`apply`: a change names a tag that isn't in the dictionary, or adds or renames to a name that is taken (ignoring case) or isn't a valid Obsidian tag. | `change`, `tag` |
+| `broader-cycle` | error | Following `broader` from a tag leads back to it. One issue per tag on a cycle; tags below a cycle get none, and a tag listing itself is a `self-reference` instead. | `tag` |
+| `invalid-change` | error | `plan`/`apply` (added with them): a change names a tag that isn't in the dictionary, or adds or renames to a name that is taken (ignoring case) or isn't a valid Obsidian tag. | `change`, `tag` |
 | `empty-description` | warning | The description is empty or only whitespace. | `tag`, `field` |
 | `invalid-name` | warning | The tag name isn't a valid Obsidian tag: empty, has whitespace, has characters other than letters, digits, `_`, `-` and `/`, or is digits only. | `tag` |
-| `name-format` | warning | Only with `--names kebab`: the name isn't lowercase letters and digits separated by single hyphens (`[a-z0-9]+(-[a-z0-9]+)*`). | `tag` |
-| `name-collision` | warning | Two names in the dictionary, tag names or aliases, are equal ignoring case. Reported on the entry holding the later one in tag order. | `tag`, `field`, `target` |
+| `name-format` | warning | Only with `--names kebab`, and only for names Obsidian accepts: the name isn't lowercase letters and digits separated by single hyphens (`[a-z0-9]+(-[a-z0-9]+)*`). | `tag` |
+| `name-collision` | warning | Two names in the dictionary, tag names or aliases, are equal ignoring case, including an alias equal to its own tag. Tag names are taken first, then aliases, each in tag order; the issue is on the entry holding the later name (`field` is `aliases` when that name is an alias), and `target` is the tag holding the first. | `tag`, `field`, `target` |
 | `related-in-hierarchy` | warning | A `related` tag is also an ancestor or a descendant. One issue per `related` item. | `tag`, `field`, `target` |
 | `unplaced` | warning | The entry has no `broader` key, so it has no place in the hierarchy. (`"broader": []` makes a root.) | `tag` |
 | `redundant-broader` | warning | A parent is also reached through another parent. | `tag`, `field`, `target` |
-| `invalid-frontmatter` | warning | A note's frontmatter isn't valid YAML or isn't a mapping. Obsidian shows no properties for it. | `path` |
+| `invalid-frontmatter` | warning | `scan`/`usage` (added with them): a note's frontmatter isn't valid YAML or isn't a mapping. Obsidian shows no properties for it. | `path` |
 
 ## Commands
 
