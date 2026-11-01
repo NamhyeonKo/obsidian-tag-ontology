@@ -34,3 +34,5 @@ export function show(model: Ontology, dictionary: RawDictionary, query: string, 
     draft: draftOf(dictionary, tag),
   };
 }
+
+export type Shown = ReturnType<typeof show>;

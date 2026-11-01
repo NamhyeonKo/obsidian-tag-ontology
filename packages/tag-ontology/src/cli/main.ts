@@ -10,6 +10,7 @@ import { PathError, scan } from '../vault/scan.ts';
 import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
 import { show } from './show.ts';
+import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
   const args = argumentsOf(process.argv.slice(2));
@@ -23,17 +24,16 @@ function run(): void {
   if (!statSync(root).isDirectory()) throw new UsageError(`${root} is not a vault folder.`);
   const dictionary = resolve(root, values.dictionary ?? 'Tag-Dictionary.json');
   const failed = (issues: Issue[]) => issues.some(item => item.severity === 'error' || values.strict);
-  const output = (issues: Issue[], fields: Record<string, unknown> = {}, code = failed(issues) ? 1 : 0) => {
-    const result = { schemaVersion: 1, command, ok: code === 0, issues: [...issues].sort(compareIssues), ...fields };
+  // --json prints the contract's document; otherwise `text` says the same for people (checkText for a bare list of issues).
+  const output = (issues: Issue[], fields: object = {}, code = failed(issues) ? 1 : 0, text: (sorted: Issue[]) => string[] = checkText) => {
+    const sorted = [...issues].sort(compareIssues);
     process.exitCode = code;
-    if (values.json) process.stdout.write(`${JSON.stringify(result)}\n`);
-    else if (command === 'check') process.stdout.write(issues.length ? `${issues.map(item => `${item.severity}: ${item.message}`).join('\n')}\n` : 'No problems found.\n');
-    else process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.stdout.write(values.json ? `${JSON.stringify({ schemaVersion: 1, command, ok: code === 0, issues: sorted, ...fields })}\n` : `${text(sorted).map(visible).join('\n')}\n`);
   };
   const exclude = values.exclude ?? [];
   if (command === 'scan') {
     const result = scan(root, { paths: rest.length ? rest : ['.'], exclude });
-    output(result.issues, { notes: result.notes });
+    output(result.issues, { notes: result.notes }, undefined, sorted => scanText(result.notes, sorted));
     return;
   }
   const file = readDictionary(dictionary);
@@ -44,21 +44,22 @@ function run(): void {
       throw new UsageError(`${rest[0]} is outside the vault root.`);
     }
     const changes = readChanges(changesFile);
-    const fields = { base: file.hash, ...command === 'apply' ? { written: false } : {} };
+    const edited = (issues: Issue[], fields: EditFields, code?: number) => { output(issues, fields, code, sorted => editText(command, fields, sorted)); };
+    const fields: EditFields = { base: file.hash, ...command === 'apply' ? { written: false } : {} };
     if (command === 'apply' && file.hash !== values.base) {
-      output([], { ...fields, conflict: { base: values.base, current: file.hash } }, 3);
+      edited([], { ...fields, conflict: { base: values.base, current: file.hash } }, 3);
       return;
     }
-    if (file.issues.length) { output(file.issues, fields); return; }
+    if (file.issues.length) { edited(file.issues, fields); return; }
     const plan = planChanges(file.raw, changes, { names });
-    if (!plan.applied) { output(plan.issues, fields); return; }
+    if (!plan.applied) { edited(plan.issues, fields); return; }
     const result = { ...fields, diff: plan.diff };
-    if (command === 'plan' || failed(plan.issues) || !plan.diff.length) { output(plan.issues, result); return; }
+    if (command === 'plan' || failed(plan.issues) || !plan.diff.length) { edited(plan.issues, result); return; }
     // Check again just before writing; planning may have taken time. This is not a lock (docs/cli.md).
     const current = readDictionary(dictionary).hash;
-    if (current !== values.base) { output(plan.issues, { ...result, conflict: { base: values.base, current } }, 3); return; }
+    if (current !== values.base) { edited(plan.issues, { ...result, conflict: { base: values.base, current } }, 3); return; }
     const hash = writeDictionary(dictionary, plan.dictionary);
-    output(plan.issues, { ...result, written: true, hash });
+    edited(plan.issues, { ...result, written: true, hash });
     return;
   }
   const issues = file.issues.length ? file.issues : validate(file.raw, { names });
@@ -72,17 +73,17 @@ function run(): void {
     const result = usage(file.raw, notes, path => paths.has(path));
     const found = [...issues, ...scoped.issues];
     const problems = failed(found) || values.strict && [result.unregistered, result.nonCanonical, result.unused, result.redundant].some(items => items.length);
-    output(found, { ...result }, problems ? 1 : 0);
+    output(found, { ...result }, problems ? 1 : 0, sorted => usageText(result, sorted));
     return;
   }
   const result = show(new Ontology(file.raw, notes), file.raw, rest[0]!, values.notes ?? false, values.exact ?? false);
-  output(issues.filter(item => item.tag === result.tag || item.target === result.tag), result);
+  output(issues.filter(item => item.tag === result.tag || item.target === result.tag), result, undefined, sorted => showText(result, sorted));
 }
 
 try { run(); }
 catch (error) {
   const code = error instanceof UsageError || error instanceof PathError
     || error instanceof Error && 'syscall' in error && typeof error.syscall === 'string' ? 2 : 70;
-  process.stderr.write(`tag-ontology: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`tag-ontology: ${visible(error instanceof Error ? error.message : String(error))}\n`);
   process.exitCode = code;
 }
