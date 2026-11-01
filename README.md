@@ -228,15 +228,28 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 Bug reports and feature requests are welcome in [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues). Please include your Obsidian version and OS for bugs.
 
+## Library and CLI
+
+The standalone [`tag-ontology` package](packages/tag-ontology/README.md) exposes the same dictionary rules as an MIT-licensed ESM library and a Node CLI. It checks and scans a vault, reports tag usage, shows a tag's hierarchy and previews/applies dictionary changes with a content-hash check. Obsidian does not need to be installed.
+
+The first npm release (0.1.0) is in preparation. From this repository, run `npm ci` and `npm run build`, then:
+
+```sh
+node packages/tag-ontology/dist/cli/main.js check --root /path/to/vault --json
+```
+
+See the [package guide](packages/tag-ontology/README.md) for library examples and the [CLI contract](docs/cli.md) for commands, JSON fields, exit codes and parser limits. The plugin and package have independent versions and release tags.
+
 ## Development
 
 Requires Node.js **22.18 or later**. The tests run TypeScript directly with Node's built-in type stripping.
 
 ```sh
 npm ci
-npm run lint        # Obsidian review rules (eslint-plugin-obsidianmd)
+npm run lint        # Obsidian review rules + checked package lint
 npm test            # unit tests, no vault needed
-npm run build       # type-check + bundle to main.js
+npm run build       # type-check + package dist + plugin main.js
+npm run check:package  # inspect and install the actual npm tarball
 npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css into the vault
 ```
 
@@ -249,8 +262,6 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 ```text
 src/
 ├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
-├── ontology.ts     # Dictionary validation, hierarchy, note roll-up, dictionary check
-├── dictionary.ts   # Pure functions that apply sidebar edits to the dictionary JSON and write it
 ├── search.ts       # Suggestion popover for the search box and the edit forms
 ├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
 ├── graph3d.ts      # The 3D view: draws the same layered data with 3d-force-graph
@@ -260,8 +271,15 @@ src/
 ├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
 tests/              # node:test unit tests (tests/integration is maintainer-only)
+packages/tag-ontology/
+├── src/core/       # Pure dictionary validation, hierarchy, usage and edits
+├── src/vault/      # Node file access and Markdown/frontmatter readers
+├── src/cli/        # Command-line arguments, JSON results and exit codes
+└── tests/          # Package unit and real-process CLI tests
+docs/cli.md         # Versioned CLI contract
 examples/           # Sample vault with a Tag-Dictionary.json
 scripts/deploy.mjs  # Copies the build into a local vault
+scripts/check-package.mjs  # Inspects and exercises the packed npm package
 ```
 
 ### Contributing and releasing
@@ -281,6 +299,8 @@ Tag Ontology is free and open source. If it saves you time, you can [buy me a co
 
 Copyright (C) 2026 NamhyeonKo
 
-Tag Ontology is free software: you can redistribute it and/or modify it under the terms of the [GNU Affero General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for details.
+The Obsidian plugin (`src/`, `styles.css` and the root plugin tooling) is free software under the [GNU Affero General Public License](LICENSE), version 3 or later. It is distributed without any warranty; see the license for details.
+
+The standalone library and CLI in [`packages/tag-ontology/`](packages/tag-ontology/README.md), including that directory's source and tests, are separately licensed under [MIT](packages/tag-ontology/LICENSE). Importing the package does not require the Obsidian plugin.
 
 Versions 0.2.0 and earlier were released under the MIT License, and those releases remain under MIT.
