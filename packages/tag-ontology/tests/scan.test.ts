@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { scan } from '../src/vault/scan.ts';
+import { PathError, scan } from '../src/vault/scan.ts';
 
 const root = fileURLToPath(new URL('fixtures/vault/', import.meta.url));
 const paths = (result: ReturnType<typeof scan>) => result.notes.map(note => note.path);
@@ -47,8 +47,10 @@ test('an exclude glob skips the notes it matches and the folders below a folder 
 });
 
 test('a path outside the root, or one that does not exist, is refused', () => {
-  assert.throws(() => scan(root, { paths: ['../'] }), /outside/);
-  assert.throws(() => scan(root, { paths: ['missing.md'] }), /missing\.md/);
+  assert.throws(() => scan(root, { paths: ['../'] }), (error: unknown) => error instanceof PathError && /outside/.test(error.message));
+  for (const missing of ['missing.md', 'missing/inside.md']) {
+    assert.throws(() => scan(root, { paths: [missing] }), (error: unknown) => error instanceof PathError && error.message.includes(missing));
+  }
 });
 
 test('symbolic links are not followed', t => {
@@ -61,6 +63,6 @@ test('symbolic links are not followed', t => {
   // Nor when a given path goes through one, which could lead outside the root.
   symlinkSync(tmpdir(), join(dir, 'outside'));
   for (const given of ['linked', 'linked/archive', 'Alias.md', 'outside']) {
-    assert.throws(() => scan(dir, { paths: [given] }), /symbolic link/, given);
+    assert.throws(() => scan(dir, { paths: [given] }), (error: unknown) => error instanceof PathError && /symbolic link/.test(error.message), given);
   }
 });

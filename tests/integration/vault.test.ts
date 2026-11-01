@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { Ontology, usage, validate } from 'tag-ontology';
+import { Ontology, validate, type Usage } from 'tag-ontology';
+import { json } from '../../packages/tag-ontology/tests/cli-helper.ts';
 
 test('real vault counts agree with the existing Python CLI for root, middle and leaf', () => {
   assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');
@@ -12,11 +13,12 @@ test('real vault counts agree with the existing Python CLI for root, middle and 
   const baseline = JSON.parse(execFileSync('python3', ['-B', '-c', [
     'import runpy,json',
     "m=runpy.run_path('99_Etc/scripts/vault_meta.py',run_name='read_only_check')",
-    "print(json.dumps(m['note_tags'](),ensure_ascii=False))",
-  ].join('\n')], { cwd: root, encoding: 'utf8' })) as Record<string, string[]>;
+    "tags=m['load_tags']()",
+    "print(json.dumps({'notes':m['note_tags'](),'roots':sum(e.get('broader')==[] for e in tags.values())},ensure_ascii=False))",
+  ].join('\n')], { cwd: root, encoding: 'utf8' })) as { notes: Record<string, string[]>; roots: number };
   const model = new Ontology(JSON.parse(readFileSync(join(root, 'Tag-Dictionary.json'), 'utf8')),
-    Object.entries(baseline).map(([path, tags]) => ({ path, tags })));
-  assert.equal(model.roots.length, 14);
+    Object.entries(baseline.notes).map(([path, tags]) => ({ path, tags })));
+  assert.equal(model.roots.length, baseline.roots);
   for (const tag of ['ai', 'machine-learning', 'dropout']) {
     for (const exact of [true, false]) {
       const lines = execFileSync('python3', ['-B', '99_Etc/scripts/vault_meta.py', 'notes', tag, ...(exact ? ['--exact'] : [])],
@@ -75,13 +77,6 @@ test('validate() finds what vault_meta.py finds, rule by rule, on the real dicti
   assert.deepEqual(ours, pythonCodes(dir));
 });
 
-// The note tags vault_meta.py reads, from the folders sync scans, archives included as sync includes them.
-const pythonNotes = (root: string) => Object.entries(JSON.parse(execFileSync('python3', ['-B', '-c', [
-  'import runpy,json',
-  "m=runpy.run_path('99_Etc/scripts/vault_meta.py',run_name='read_only_check')",
-  "print(json.dumps(m['note_tags'](True),ensure_ascii=False))",
-].join('\n')], { cwd: root, encoding: 'utf8' })) as Record<string, string[]>).map(([path, tags]) => ({ path, tags }));
-
 // sync prints a block per finding, headed "[미등록 2개]" and so on; this reads back the four that usage() also reports.
 function syncFindings(root: string) {
   const out = execFileSync('python3', ['-B', '99_Etc/scripts/vault_meta.py', 'sync'], { cwd: root, encoding: 'utf8' });
@@ -110,7 +105,16 @@ function syncFindings(root: string) {
 }
 
 function ourFindings(root: string) {
-  const result = usage(JSON.parse(readFileSync(join(root, 'Tag-Dictionary.json'), 'utf8')), pythonNotes(root));
+  const folders = JSON.parse(execFileSync('python3', ['-B', '-c', [
+    'import runpy,json',
+    "m=runpy.run_path('99_Etc/scripts/vault_meta.py',run_name='read_only_check')",
+    "print(json.dumps(m['SCAN']))",
+  ].join('\n')], { cwd: root, encoding: 'utf8' })) as string[];
+  // Python owns the folder convention; give its scope to the CLI rather than building it into the package.
+  const excludes = readdirSync(root).filter(name => !folders.includes(name)).flatMap(name => ['--exclude', name]);
+  const run = json(['usage', ...excludes], root);
+  assert.equal(run.code, 0, run.stderr);
+  const result = run.doc as unknown as Usage;
   const redundant = new Map<string, string[]>();
   for (const row of result.redundant) redundant.set(row.path, [...redundant.get(row.path) ?? [], row.tag]);
   return {
@@ -132,7 +136,7 @@ function assertAgree(root: string) {
   return theirs;
 }
 
-test('usage() reports what vault_meta.py sync reports, on the real vault and on one with every kind of finding', t => {
+test('usage CLI reports what vault_meta.py sync reports, on the real vault and on one with every kind of finding', t => {
   assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');
   const root = resolve(process.env.OBSIDIAN_VAULT_PATH);
   assert.ok(assertAgree(root).redundant.length > 0, 'the real vault has redundant tags to compare');
