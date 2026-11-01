@@ -3,11 +3,11 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
-import { Ontology, isIncludedNote } from '../src/ontology.ts';
+import { Ontology, isIncludedNote } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
-import * as dictionaryModule from '../src/dictionary.ts';
+import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
-import { apply, draftOf, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
+import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
 import type { NativeData } from '../src/layer.ts';
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
@@ -99,9 +99,8 @@ async function setup(saved?: Promise<unknown>) {
     const exports: Record<string, unknown> = specifier === 'obsidian'
       ? { Plugin, ItemView: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: File, getAllTags: () => [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
-      : specifier === './ontology.ts' ? { Ontology, isIncludedNote }
       : specifier === './settings.ts' ? { ...settings }
-      : specifier === './dictionary.ts' ? { ...dictionaryModule }
+      : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './vault-data.ts' ? { vaultData }
       : specifier === './graph3d.ts' ? { VIEW_3D: 'tag-ontology-3d', Graph3DView: class {} }
       : { NativeGraphs, PANEL_VIEW: 'tag-ontology-panel' };

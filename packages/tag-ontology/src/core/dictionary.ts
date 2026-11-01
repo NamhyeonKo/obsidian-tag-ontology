@@ -9,6 +9,11 @@ export type Change = { kind: 'add'; draft: Draft } | { kind: 'edit'; tag: string
 
 // Tag names come from users, and `next[name] = …` with "__proto__" would set the prototype instead of adding an entry.
 const put = (dict: RawDictionary, key: string, entry: RawEntry) => Object.defineProperty(dict, key, { value: entry, enumerable: true, writable: true, configurable: true });
+// A tag a change names must be in the dictionary; Object.hasOwn keeps "__proto__" and other inherited keys out.
+function entryOf(dict: RawDictionary, tag: string): RawEntry {
+  if (!Object.hasOwn(dict, tag)) throw new Error(`Unknown tag ${tag}`);
+  return dict[tag]!;
+}
 const without = (list: string[], items: string[]) => list.filter(item => !items.includes(item));
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(item => b.includes(item));
 // Empty aliases and related are left out of the entries a change writes; an empty broader still marks a root.
@@ -17,11 +22,11 @@ function setList(entry: RawEntry, key: 'aliases' | 'related', list: string[]) {
 }
 
 export function draftOf(dict: RawDictionary, tag: string): Draft {
-  const entry = dict[tag], keys = Object.keys(dict);
+  const entry = entryOf(dict, tag), keys = Object.keys(dict);
   return {
     name: tag, description: entry.description, aliases: [...entry.aliases ?? []], parents: [...entry.broader ?? []],
-    children: keys.filter(key => dict[key].broader?.includes(tag)).sort(),
-    related: [...new Set([...entry.related ?? [], ...keys.filter(key => dict[key].related?.includes(tag))])],
+    children: keys.filter(key => entryOf(dict, key).broader?.includes(tag)).sort(),
+    related: [...new Set([...entry.related ?? [], ...keys.filter(key => entryOf(dict, key).related?.includes(tag))])],
   };
 }
 
@@ -33,14 +38,14 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
     const { name, description, aliases, parents, children, related } = change.draft;
     put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] });
     // A new tag has no links yet, so every child and related tag is one to add, as in an edit.
-    for (const child of children) next[child].broader = [...next[child].broader ?? [], name];
-    setList(next[name], 'related', related);
-    for (const other of related) next[other].related = [...next[other].related ?? [], name];
+    for (const child of children) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
+    setList(entryOf(next, name), 'related', related);
+    for (const other of related) entryOf(next, other).related = [...entryOf(next, other).related ?? [], name];
     return next;
   }
   if (change.kind === 'delete') {
     // Children move up to the deleted tag's parents, like a thesaurus hands a dropped concept's scope to its broader term.
-    const { tag } = change, parents = next[tag].broader ?? [];
+    const { tag } = change, parents = entryOf(next, tag).broader ?? [];
     delete next[tag];
     for (const entry of Object.values(next)) {
       if (entry.broader?.includes(tag)) entry.broader = [...new Set(entry.broader.flatMap(parent => parent === tag ? parents : [parent]))];
@@ -50,22 +55,22 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   }
   const { tag, draft } = change, { name } = draft, before = draftOf(dict, tag);
   if (name !== tag) {
-    put(next, name, next[tag]); delete next[tag];
+    put(next, name, entryOf(next, tag)); delete next[tag];
     for (const entry of Object.values(next)) {
       for (const key of ['broader', 'related'] as const) if (entry[key]?.includes(tag)) entry[key] = entry[key].map(item => item === tag ? name : item);
     }
   }
-  const entry = next[name];
+  const entry = entryOf(next, name);
   setList(entry, 'aliases', draft.aliases);
   entry.description = draft.description;
   if (entry.broader || draft.parents.length) entry.broader = [...draft.parents];
-  for (const child of without(before.children, draft.children)) next[child].broader = without(next[child].broader ?? [], [name]);
-  for (const child of without(draft.children, before.children)) next[child].broader = [...next[child].broader ?? [], name];
+  for (const child of without(before.children, draft.children)) entryOf(next, child).broader = without(entryOf(next, child).broader ?? [], [name]);
+  for (const child of without(draft.children, before.children)) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
   // Related is two-way; it is rewritten only when the user changed it, so other edits leave the file's related lines alone.
   if (!sameSet(before.related, draft.related)) {
-    for (const other of without(before.related, draft.related)) setList(next[other], 'related', without(next[other].related ?? [], [name]));
+    for (const other of without(before.related, draft.related)) setList(entryOf(next, other), 'related', without(entryOf(next, other).related ?? [], [name]));
     setList(entry, 'related', draft.related);
-    for (const other of draft.related) if (!next[other].related?.includes(name)) next[other].related = [...next[other].related ?? [], name];
+    for (const other of draft.related) if (!entryOf(next, other).related?.includes(name)) entryOf(next, other).related = [...entryOf(next, other).related ?? [], name];
   }
   return next;
 }
@@ -100,7 +105,7 @@ export function excluded(dict: RawDictionary, tag: string | undefined, draft: Dr
   const self = tag ?? NEW, children = new Map<string, string[]>();
   const next = tag === undefined ? apply(dict, { kind: 'add', draft: { ...draft, name: self } }) : apply(dict, { kind: 'edit', tag, draft: { ...draft, name: tag } });
   for (const [key, entry] of Object.entries(next)) for (const parent of entry.broader ?? []) children.set(parent, [...children.get(parent) ?? [], key]);
-  const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : next[item]?.broader ?? [];
+  const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : entryOf(next, item)?.broader ?? [];
   const queue = step(self), seen = new Set<string>();
   while (queue.length) {
     const item = queue.pop()!;
@@ -111,7 +116,7 @@ export function excluded(dict: RawDictionary, tag: string | undefined, draft: Dr
 
 export function deletionPreview(dict: RawDictionary, tag: string): { parents: string[]; children: string[]; roots: string[]; related: string[] } {
   const { parents, children, related } = draftOf(dict, tag), next = apply(dict, { kind: 'delete', tag });
-  return { parents, children, roots: children.filter(child => next[child].broader?.length === 0), related };
+  return { parents, children, roots: children.filter(child => entryOf(next, child).broader?.length === 0), related };
 }
 
 // What changed elsewhere since the form opened that the change would overwrite or be wrong about: the tag's own entry,
@@ -141,6 +146,6 @@ const inline = (value: unknown): string => Array.isArray(value) ? `[${value.map(
 
 // One entry per line in key order, like the dictionaries users keep in git: a save only changes the lines it touches.
 export function serialize(dict: RawDictionary): string {
-  const lines = Object.keys(dict).sort().map(key => `${JSON.stringify(key)}: ${inline(dict[key])}`);
+  const lines = Object.keys(dict).sort().map(key => `${JSON.stringify(key)}: ${inline(entryOf(dict, key))}`);
   return lines.length ? `{\n${lines.join(',\n')}\n}\n` : '{\n}\n';
 }

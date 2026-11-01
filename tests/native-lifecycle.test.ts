@@ -3,12 +3,12 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
-import { Ontology } from '../src/ontology.ts';
+import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
-import * as dictionaryModule from '../src/dictionary.ts';
-import { apply, type Change, type RawDictionary } from '../src/dictionary.ts';
+import * as coreModule from 'tag-ontology';
+import { apply, type Change, type RawDictionary } from 'tag-ontology';
 
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
@@ -102,7 +102,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
-      : specifier === './dictionary.ts' ? { ...dictionaryModule }
+      : specifier === 'tag-ontology' ? { ...coreModule }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);

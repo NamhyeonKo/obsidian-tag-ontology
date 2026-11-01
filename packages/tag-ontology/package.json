@@ -1,0 +1,37 @@
+{
+  "name": "tag-ontology",
+  "version": "0.0.0",
+  "description": "Validate, query and edit a tag ontology dictionary (Tag-Dictionary.json) for Markdown vaults.",
+  "license": "MIT",
+  "author": "NamhyeonKo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NamhyeonKo/obsidian-tag-ontology.git",
+    "directory": "packages/tag-ontology"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --conditions=source --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.8.3"
+  }
+}

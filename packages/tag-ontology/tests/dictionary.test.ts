@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { apply, changedFields, conflicts, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, serialize, type Change, type RawDictionary } from '../src/dictionary.ts';
+import { apply, changedFields, conflicts, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, serialize, type Change, type RawDictionary } from '../src/core/dictionary.ts';
 
 // The user's dictionary is written one entry per line, keys in code point order, empty aliases left out.
 const userStyle = '{\n'

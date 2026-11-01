@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Ontology, isIncludedNote } from '../src/ontology.ts';
+import { Ontology, isIncludedNote } from '../src/core/ontology.ts';
 
 const raw = {
   root: { description: '최상위', aliases: ['루트'], broader: [] },

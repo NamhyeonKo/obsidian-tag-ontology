@@ -71,8 +71,8 @@ export class Ontology {
     }
     const pending = new Map([...this.entries].map(([tag, entry]) => [tag, entry.broader?.length ?? 0]));
     const queue = [...pending].filter(([, degree]) => degree === 0).map(([tag]) => tag);
-    for (let index = 0; index < queue.length; index++) {
-      for (const child of this.children.get(queue[index])!) {
+    for (const tag of queue) {
+      for (const child of this.children.get(tag)!) {
         const degree = pending.get(child)! - 1;
         pending.set(child, degree);
         if (degree === 0) queue.push(child);
@@ -104,8 +104,8 @@ export class Ontology {
   descendants(tag: string): Set<string> {
     const found = new Set<string>();
     const queue = [tag];
-    for (let index = 0; index < queue.length; index++) {
-      for (const child of this.children.get(queue[index]) ?? []) {
+    for (const item of queue) {
+      for (const child of this.children.get(item) ?? []) {
         if (!found.has(child)) { found.add(child); queue.push(child); }
       }
     }

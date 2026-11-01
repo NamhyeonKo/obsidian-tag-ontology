@@ -3,9 +3,8 @@ import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
-import type { Ontology } from './ontology.ts';
 import { TagSuggest } from './search.ts';
-import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type RawDictionary } from './dictionary.ts';
+import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
