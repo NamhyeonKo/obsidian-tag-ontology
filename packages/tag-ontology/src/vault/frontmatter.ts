@@ -1,5 +1,6 @@
 // A note's frontmatter and its tags, read as Obsidian 1.14.5's metadata cache reads them.
 import { parse } from 'yaml';
+import { isRecord } from '../core/guards.ts';
 
 export interface Frontmatter {
   // The YAML mapping, or null when there is none, it is empty, or it can't be used; `error` then says why.
@@ -8,8 +9,6 @@ export interface Frontmatter {
   body: string;
   error?: string;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function readFrontmatter(text: string): Frontmatter {
   // Obsidian decodes the file with a TextDecoder, which drops a byte order mark, and its parser turns \r\n and \r into \n.

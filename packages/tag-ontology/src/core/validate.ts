@@ -1,5 +1,6 @@
 // Every rule a tag dictionary is checked against, in one place: the Ontology, the plugin and the CLI all go through here.
 import { tagNameError, type RawDictionary } from './dictionary.ts';
+import { isRecord, isStringList } from './guards.ts';
 
 export type Severity = 'error' | 'warning';
 
@@ -50,8 +51,6 @@ const LISTS = ['aliases', 'broader', 'related'] as const;
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const RANK: Record<Severity, number> = { error: 0, warning: 1 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 // Code-unit order, so the result doesn't depend on the locale it runs in.
 const compare = (a = '', b = '') => a < b ? -1 : a > b ? 1 : 0;
 // The order of docs/cli.md: errors first, then by tag, path, code and target.
