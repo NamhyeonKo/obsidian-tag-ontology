@@ -232,10 +232,10 @@ Bug reports and feature requests are welcome in [Issues](https://github.com/Namh
 
 The standalone [`tag-ontology` package](packages/tag-ontology/README.md) exposes the same dictionary rules as an MIT-licensed ESM library and a Node CLI. It checks and scans a vault, reports tag usage, shows a tag's hierarchy and previews/applies dictionary changes with a content-hash check. Obsidian does not need to be installed.
 
-The first npm release (0.1.0) is in preparation. From this repository, run `npm ci` and `npm run build`, then:
+It is published on npm as [`tag-ontology`](https://www.npmjs.com/package/tag-ontology):
 
 ```sh
-node packages/tag-ontology/dist/cli/main.js check --root /path/to/vault --json
+npx tag-ontology check --root /path/to/vault --json
 ```
 
 See the [package guide](packages/tag-ontology/README.md) for library examples and the [CLI contract](docs/cli.md) for commands, JSON fields, exit codes and parser limits. The plugin and package have independent versions and release tags.
