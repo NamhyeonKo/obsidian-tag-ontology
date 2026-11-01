@@ -12,8 +12,8 @@ export interface Frontmatter {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function readFrontmatter(text: string): Frontmatter {
-  // Obsidian's parser turns \r\n and \r into \n before anything else.
-  const note = text.replace(/\r\n?/g, '\n');
+  // Obsidian decodes the file with a TextDecoder, which drops a byte order mark, and its parser turns \r\n and \r into \n.
+  const note = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   // The block opens with exactly "---\n" at the start, and closes at the next "---" that starts a line, whatever follows it.
   let end = note.startsWith('---\n') ? note.indexOf('---', 3) : -1;
   while (end !== -1 && note[end - 1] !== '\n') end = note.indexOf('---', end + 3);
@@ -37,5 +37,5 @@ export function frontmatterTags(frontmatter: Record<string, unknown> | null): st
   const key = Object.keys(frontmatter).find(name => /^tags$/i.test(name));
   const value = key === undefined ? undefined : frontmatter[key];
   const items = typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-  return items.map(item => item.trim().replace(/^#/, '')).filter(item => item !== '' && !item.includes(' '));
+  return items.map(item => item.trim()).filter(item => item !== '' && !item.includes(' ')).map(item => item.replace(/^#/, ''));
 }

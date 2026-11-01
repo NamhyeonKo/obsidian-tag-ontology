@@ -8,6 +8,8 @@ test('frontmatter opens with --- on the first line and closes at the next line t
   assert.deepEqual(readFrontmatter('---\ntags: [a]\n---\n# Body\n'), { frontmatter: { tags: ['a'] }, body: '# Body\n' });
   // Line endings are normalized first, as Obsidian's parser does.
   assert.deepEqual(readFrontmatter('---\r\ntags:\r\n  - a\r\n---\r\nBody\r\n'), { frontmatter: { tags: ['a'] }, body: 'Body\n' });
+  // A byte order mark before it is dropped, as Obsidian's TextDecoder drops it.
+  assert.deepEqual(readFrontmatter('\uFEFF---\ntags: [a]\n---\nBody'), { frontmatter: { tags: ['a'] }, body: 'Body' });
   // The closing line only has to start with ---, so ---- closes it and leaves a dash behind.
   assert.deepEqual(readFrontmatter('---\na: 1\n----\nrest'), { frontmatter: { a: 1 }, body: '-\nrest' });
 });
@@ -44,5 +46,7 @@ test('a string is one tag and a list gives its strings; each is trimmed and lose
   assert.deepEqual(frontmatterTags({ tags: 'a, b' }), []);
   assert.deepEqual(frontmatterTags({ tags: 'a,b' }), ['a,b']);
   assert.deepEqual(frontmatterTags({ tags: ['#a', ' b ', 1984, null, 'two words', '', '##c', 'a'] }), ['a', 'b', '#c', 'a']);
+  // A lone # is a tag with an empty name to Obsidian.
+  assert.deepEqual(frontmatterTags({ tags: '#' }), ['']);
   assert.deepEqual(frontmatterTags({ tags: 42 }), []);
 });
