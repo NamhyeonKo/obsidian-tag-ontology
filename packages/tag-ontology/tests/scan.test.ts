@@ -55,7 +55,7 @@ test('a path outside the root, or one that does not exist, is refused', () => {
 
 test('symbolic links are not followed', t => {
   const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); });
   cpSync(join(root, 'notes'), join(dir, 'notes'), { recursive: true });
   symlinkSync(join(dir, 'notes'), join(dir, 'linked'));
   symlinkSync(join(dir, 'notes', 'Alpha.md'), join(dir, 'Alias.md'));
