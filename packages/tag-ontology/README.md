@@ -4,18 +4,16 @@ Validate, query and edit a `Tag-Dictionary.json` against the Markdown notes in a
 
 Requires **Node.js 22.18 or later**. The CLI does not require Obsidian. The library is ESM; CommonJS callers can use dynamic `import()`.
 
-**Release status:** 0.1.0 is in preparation. Until the first npm release, run from the repository checkout as shown below.
+Published on npm as [`tag-ontology`](https://www.npmjs.com/package/tag-ontology), with [provenance](https://docs.npmjs.com/generating-provenance-statements) from this repository's GitHub Actions.
 
 ## Installation
-
-After the first npm release:
 
 ```sh
 npm install tag-ontology
 npx tag-ontology check --root /path/to/vault --json
 ```
 
-From a repository checkout:
+Or from a repository checkout:
 
 ```sh
 npm ci
