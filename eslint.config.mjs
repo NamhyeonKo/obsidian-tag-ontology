@@ -5,7 +5,8 @@ import { builtinModules } from 'node:module';
 
 export default defineConfig([
   { ignores: ['main.js', 'node_modules/', 'packages/*/dist/', 'validation/', 'examples/', 'scripts/', 'tests/', 'esbuild.config.mjs', 'eslint.config.mjs'] },
-  { files: ['src/**/*.ts', 'package.json'], extends: obsidianmd.configs.recommended,
+  // The package's source too: Obsidian's community scan may lint every src/ in the repository.
+  { files: ['src/**/*.ts', 'packages/tag-ontology/src/**/*.ts', 'package.json'], extends: obsidianmd.configs.recommended,
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } } },
   { files: ['packages/tag-ontology/**/*.ts'], extends: tseslint.configs.strictTypeChecked,
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
