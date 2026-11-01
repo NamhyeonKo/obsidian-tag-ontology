@@ -103,6 +103,8 @@ function syncFindings(root: string) {
       const at = line.lastIndexOf('.md: ') + 3;
       return { path: line.slice(0, at), tags: line.slice(at + 2).split(', ').sort() };
     }),
+    // sync prints at most 20 notes with redundant tags, but its heading counts them all.
+    redundantNotes: Number(/(\d+)개 노트/.exec(blocks.get('상위·하위')?.head ?? '')?.[1] ?? 0),
   };
 }
 
@@ -118,12 +120,21 @@ function ourFindings(root: string) {
   };
 }
 
+// The redundant notes sync printed must match ours for the same notes, and the count must match for all of them.
+function assertAgree(root: string) {
+  const { redundantNotes, ...theirs } = syncFindings(root), ours = ourFindings(root);
+  assert.equal(ours.redundant.length, redundantNotes);
+  const printed = new Set(theirs.redundant.map(row => row.path));
+  assert.deepEqual({ ...ours, redundant: ours.redundant.filter(row => printed.has(row.path)) }, {
+    ...theirs, redundant: theirs.redundant.sort((a, b) => a.path < b.path ? -1 : 1),
+  });
+  return theirs;
+}
+
 test('usage() reports what vault_meta.py sync reports, on the real vault and on one with every kind of finding', t => {
   assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');
   const root = resolve(process.env.OBSIDIAN_VAULT_PATH);
-  const real = syncFindings(root);
-  assert.ok(real.redundant.length > 0, 'the real vault has redundant tags to compare');
-  assert.deepEqual(ourFindings(root), real);
+  assert.ok(assertAgree(root).redundant.length > 0, 'the real vault has redundant tags to compare');
 
   const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -149,7 +160,7 @@ test('usage() reports what vault_meta.py sync reports, on the real vault and on 
   note('03_Resources/ML - Overview.md', ['ML', 'machine-learning', 'deep-learning']);
   note('03_Resources/Pandas.md', ['python', 'pandas', 'llm-agents']);
   note('01_Projects/p/archive/Typos.md', ['llm-agent', 'llmagents', 'cnns', 'transformer', 'transformers', 'rag']);
-  const fixture = syncFindings(dir);
-  assert.ok(Object.values(fixture).every(found => found.length > 0), 'the fixture has every kind of finding');
-  assert.deepEqual(ourFindings(dir), fixture);
+  // More notes with redundant tags than the 20 sync prints.
+  for (let i = 10; i < 31; i++) note(`02_Areas/Generated/Note ${i}.md`, ['ai', 'cnn']);
+  assert.ok(Object.values(assertAgree(dir)).every(found => found.length > 0), 'the fixture has every kind of finding');
 });
