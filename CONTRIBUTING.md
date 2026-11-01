@@ -122,7 +122,7 @@ Pick the version when you release: a minor version (`0.x.0`) when the release ad
 
 The package has its own version in `packages/tag-ontology/package.json`. Its release tags use `tag-ontology-X.Y.Z`; numeric tags such as `0.9.0` belong to the Obsidian plugin. A package release does not change `manifest.json`, `versions.json` or the plugin version. The plugin release workflow ignores the package tags.
 
-The first package release is still in preparation; npm publishing credentials and trusted publishing must be configured separately. See the [package guide](packages/tag-ontology/README.md).
+The first package release is still in preparation. The [npm release guide](docs/npm-release.md) covers authentication, trusted publishing, the package tag workflow and registry/provenance verification. See the [package guide](packages/tag-ontology/README.md) for consumers.
 
 ### Hotfixes
 

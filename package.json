@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "3d-force-graph": "1.80.1",
-    "tag-ontology": "0.0.0",
+    "tag-ontology": "0.1.0",
     "three": "0.186.1",
     "three-spritetext": "1.10.0"
   },
