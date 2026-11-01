@@ -145,3 +145,25 @@ test('inherited object keys are not taken for tags', () => {
     { code: 'unknown-reference', severity: 'error', tag: 'a', field: 'broader', target: 'constructor' },
   ]);
 });
+
+test('hierarchy warnings still hold on and below a broader cycle', () => {
+  assert.deepEqual(where(validate({
+    a: { description: 'A', broader: ['b'], related: ['b'] },
+    b: { description: 'B', broader: ['a'] },
+    c: { description: 'C', broader: ['a', 'b'] },
+  })), [
+    { code: 'broader-cycle', severity: 'error', tag: 'a' },
+    { code: 'broader-cycle', severity: 'error', tag: 'b' },
+    { code: 'related-in-hierarchy', severity: 'warning', tag: 'a', field: 'related', target: 'b' },
+    { code: 'redundant-broader', severity: 'warning', tag: 'c', field: 'broader', target: 'a' },
+    { code: 'redundant-broader', severity: 'warning', tag: 'c', field: 'broader', target: 'b' },
+  ]);
+});
+
+test('a 10,000-level chain validates in about linear time', () => {
+  const chain = Object.fromEntries(Array.from({ length: 10000 }, (_, i) => [`t${i}`, { description: 'X', broader: i ? [`t${i - 1}`] : [] }]));
+  // The plugin validates on every refresh. Keeping every tag's ancestors took 2.4 s and 1.5 GB here; a walk per question takes milliseconds.
+  const start = performance.now();
+  assert.deepEqual(validate(chain), []);
+  assert.ok(performance.now() - start < 1000, `took ${Math.round(performance.now() - start)} ms`);
+});

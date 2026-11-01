@@ -94,30 +94,32 @@ export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
     }
   }
 
-  // The hierarchy between checked entries. Ancestors are filled parents first, so a tag on or below a cycle never gets its turn.
+  // The hierarchy between checked entries, without the self-references reported above.
   const up = new Map([...entries].map(([tag, entry]) => [tag, (entry.broader ?? []).filter(parent => parent !== tag && entries.has(parent))]));
+  // Whether `other` is above `tag` through broader. Each question walks only the tags above `tag`, and `seen` stops it on a cycle.
+  // Keeping every tag's ancestors instead grows with the square of the depth: 1.5 GB for a 10,000-level chain.
+  const isAbove = (other: string, tag: string) => {
+    const seen = new Set<string>(), stack = [...up.get(tag) ?? []];
+    for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+      if (item === other) return true;
+      if (!seen.has(item)) { seen.add(item); stack.push(...up.get(item) ?? []); }
+    }
+    return false;
+  };
+  // A parents-first walk never reaches the tags on or below a cycle; of those, the ones above themselves are on it.
+  // ponytail: one walk per unreached tag, so a long chain below a cycle is quadratic; only a dictionary with an error gets here.
   const down = new Map([...entries.keys()].map(tag => [tag, [] as string[]]));
   for (const [tag, parents] of up) for (const parent of parents) down.get(parent)?.push(tag);
   const waiting = new Map([...up].map(([tag, parents]) => [tag, parents.length]));
-  const ancestors = new Map<string, Set<string>>();
   const queue = [...waiting].filter(([, count]) => count === 0).map(([tag]) => tag);
   for (const tag of queue) {
-    ancestors.set(tag, new Set((up.get(tag) ?? []).flatMap(parent => [parent, ...ancestors.get(parent) ?? []])));
     for (const child of down.get(tag) ?? []) {
       const count = (waiting.get(child) ?? 0) - 1;
       waiting.set(child, count);
       if (count === 0) queue.push(child);
     }
   }
-  const leadsTo = (from: string, to: string) => {
-    const seen = new Set<string>(), stack = [...up.get(from) ?? []];
-    for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
-      if (item === to) return true;
-      if (!seen.has(item)) { seen.add(item); stack.push(...up.get(item) ?? []); }
-    }
-    return false;
-  };
-  const cycle = [...entries.keys()].filter(tag => !ancestors.has(tag) && leadsTo(tag, tag));
+  const cycle = [...waiting].filter(([tag, count]) => count > 0 && isAbove(tag, tag)).map(([tag]) => tag);
   for (const tag of cycle) report('broader-cycle', `Cycle in broader relations: ${cycle.join(', ')}`, { tag });
 
   for (const tag of tags) {
@@ -139,16 +141,14 @@ export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
   for (const [tag, entry] of entries) {
     if (!entry.description.trim()) report('empty-description', `${tag}.description: empty.`, { tag, field: 'description' });
     if (!entry.broader) report('unplaced', `${tag}: no broader, so it has no place in the hierarchy.`, { tag });
-    const above = ancestors.get(tag);
-    if (!above) continue;
     for (const target of entry.related ?? []) {
-      if (target !== tag && (above.has(target) || ancestors.get(target)?.has(tag))) {
+      if (target !== tag && (isAbove(target, tag) || isAbove(tag, target))) {
         report('related-in-hierarchy', `${tag}.related: ${target} is also its ancestor or descendant.`, { tag, field: 'related', target });
       }
     }
     const parents = up.get(tag) ?? [];
     for (const parent of new Set(parents)) {
-      if (parents.some(other => other !== parent && ancestors.get(other)?.has(parent))) {
+      if (parents.some(other => other !== parent && isAbove(parent, other))) {
         report('redundant-broader', `${tag}.broader: ${parent} is already reached through another parent.`, { tag, field: 'broader', target: parent });
       }
     }
