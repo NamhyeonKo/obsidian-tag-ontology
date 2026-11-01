@@ -66,9 +66,12 @@ export function scan(root: string, options: ScanOptions = {}): Scan {
   const notes: ScannedNote[] = [], issues: Issue[] = [];
   for (const path of [...found].sort()) {
     const { frontmatter, body, error } = readFrontmatter(readFileSync(join(root, path), 'utf8'));
-    if (error !== undefined) issues.push(issue('invalid-frontmatter', `${path}: ${error}`, { path }));
+    let jsonFrontmatter = frontmatter, problem = error;
+    try { JSON.stringify(frontmatter); }
+    catch { jsonFrontmatter = null; problem = 'The frontmatter cannot be represented as JSON (for example, circular YAML aliases).'; }
+    if (problem !== undefined) issues.push(issue('invalid-frontmatter', `${path}: ${problem}`, { path }));
     const { tags: bodyTags, headings } = readBody(body);
-    notes.push({ path, frontmatter, tags: frontmatterTags(frontmatter), bodyTags, headings });
+    notes.push({ path, frontmatter: jsonFrontmatter, tags: frontmatterTags(frontmatter), bodyTags, headings });
   }
   return { notes, issues: issues.sort(compareIssues) };
 }

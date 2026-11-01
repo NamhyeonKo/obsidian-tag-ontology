@@ -11,6 +11,9 @@
   },
   "type": "module",
   "sideEffects": false,
+  "bin": {
+    "tag-ontology": "dist/cli/main.js"
+  },
   "exports": {
     ".": {
       "source": "./src/index.ts",

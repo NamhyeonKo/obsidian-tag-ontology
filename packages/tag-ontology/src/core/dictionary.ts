@@ -68,7 +68,10 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   for (const child of without(draft.children, before.children)) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
   // Related is two-way; it is rewritten only when the user changed it, so other edits leave the file's related lines alone.
   if (!sameSet(before.related, draft.related)) {
-    for (const other of without(before.related, draft.related)) setList(entryOf(next, other), 'related', without(entryOf(next, other).related ?? [], [name]));
+    for (const other of without(before.related, draft.related)) {
+      // A CLI plan can remove a broken reference whose other endpoint no longer exists.
+      if (Object.hasOwn(next, other)) setList(entryOf(next, other), 'related', without(entryOf(next, other).related ?? [], [name]));
+    }
     setList(entry, 'related', draft.related);
     for (const other of draft.related) if (!entryOf(next, other).related?.includes(name)) entryOf(next, other).related = [...entryOf(next, other).related ?? [], name];
   }
