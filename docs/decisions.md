@@ -99,14 +99,14 @@ Which folders hold notes, `category` and `type` fields, archive folders: none of
 
 - **Why:** it is what the plugin writes, and a save changes only the lines of the entries it touched, which reads well in git. On the real vault (997 tags), reading and writing back with `serialize()` gives the same bytes.
 
-## 16. Note tags match dictionary tags ignoring case *(planned)*
+## 16. Note tags match dictionary tags ignoring case
 
 `#Python` on a note counts for the `python` tag. It is reported under `nonCanonical`, but the tag counts as used.
 
 - **Why:** Obsidian treats tags that differ only in case as one tag, and the plugin's graph does the same. `vault_meta.py sync` compares exactly, so it would call `python` unused there. On the real vault the two give the same counts, because no note uses a case variant (checked 2026-11-01).
 - An alias on a note doesn't count as using the tag: Obsidian doesn't know aliases, so the note isn't found under the tag.
 
-## 17. A tag with narrower tags is never "unused" *(planned)*
+## 17. A tag with narrower tags is never "unused"
 
 - **Why:** a grouping node such as `machine-learning` is there to hold narrower tags; notes carry the specific ones. Reporting it would bury the unused leaf tags. `vault_meta.py sync` uses the same rule.
 - Unused is judged over the whole vault even when `usage` is given paths, also as `sync` does, so a scoped run doesn't call every tag outside the scope unused.
@@ -114,3 +114,11 @@ Which folders hold notes, `category` and `type` fields, archive folders: none of
 ## 18. Output in English
 
 - **Why:** the package is open source and its users aren't only Korean speakers. Messages and docs are in English; the vault's own content can be in any language.
+
+## 19. Similar tags by their longest common subsequence
+
+Two names, lowercased, are similar when they are equal with `-` removed, or when 2 × their longest common subsequence (LCS) ≥ 0.85 × their total length.
+
+- **Why:** `vault_meta.py sync` uses `difflib.SequenceMatcher(...).ratio() >= 0.85`. That ratio is 2 × matched characters / total length, where difflib finds the matches greedily, so they never exceed the LCS. Using the LCS itself finds every pair difflib finds, plus the few its greedy matching misses. On the real dictionary's 496,506 tag pairs, difflib finds 55 similar pairs; this rule finds the same 55 and `langgraph-edge` / `langgraph-node`.
+- **Rejected:** a Levenshtein distance within 15% of the longer name (the first draft). It misses the plural of a short tag, the most common slip: `llm` / `llms` is 1 edit in 4 characters, while difflib's ratio is 0.86. Porting difflib's algorithm: more code for an answer that is only an approximation of this one.
+- **Cost:** the LCS table is length × length per pair, and a length check skips most pairs first: 997 unregistered tags against the dictionary take about 0.5 s.
