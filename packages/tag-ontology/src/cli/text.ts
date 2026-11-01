@@ -5,6 +5,13 @@ import type { Issue } from '../core/validate.ts';
 import type { ScannedNote } from '../vault/scan.ts';
 import type { Shown } from './show.ts';
 
+// Note content reaches the terminal here, and a control character there would act instead of show: an escape sequence can
+// set the clipboard or rewrite what is on screen. All of them but tab are written as \u escapes, as JSON does.
+export const visible = (line: string) => Array.from(line, char => {
+  const code = char.charCodeAt(0);
+  return (code < 0x20 && code !== 0x09) || (code >= 0x7f && code <= 0x9f) ? `\\u${code.toString(16).padStart(4, '0')}` : char;
+}).join('');
+
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const list = (items: readonly string[]) => items.length ? items.join(', ') : '-';
 // A long list of notes is cut so one tag doesn't fill the screen; --json has them all.

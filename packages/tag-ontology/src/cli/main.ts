@@ -10,7 +10,7 @@ import { PathError, scan } from '../vault/scan.ts';
 import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
 import { show } from './show.ts';
-import { checkText, editText, scanText, showText, usageText, type EditFields } from './text.ts';
+import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
   const args = argumentsOf(process.argv.slice(2));
@@ -28,7 +28,7 @@ function run(): void {
   const output = (issues: Issue[], fields: object = {}, code = failed(issues) ? 1 : 0, text: (sorted: Issue[]) => string[] = checkText) => {
     const sorted = [...issues].sort(compareIssues);
     process.exitCode = code;
-    process.stdout.write(values.json ? `${JSON.stringify({ schemaVersion: 1, command, ok: code === 0, issues: sorted, ...fields })}\n` : `${text(sorted).join('\n')}\n`);
+    process.stdout.write(values.json ? `${JSON.stringify({ schemaVersion: 1, command, ok: code === 0, issues: sorted, ...fields })}\n` : `${text(sorted).map(visible).join('\n')}\n`);
   };
   const exclude = values.exclude ?? [];
   if (command === 'scan') {
@@ -84,6 +84,6 @@ try { run(); }
 catch (error) {
   const code = error instanceof UsageError || error instanceof PathError
     || error instanceof Error && 'syscall' in error && typeof error.syscall === 'string' ? 2 : 70;
-  process.stderr.write(`tag-ontology: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`tag-ontology: ${visible(error instanceof Error ? error.message : String(error))}\n`);
   process.exitCode = code;
 }

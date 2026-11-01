@@ -69,3 +69,16 @@ test('plan and apply show the diff and what happened to the file', t => {
   assert.match(applied, /^Written\./m);
   assert.ok(applied.includes(`sha256:${createHash('sha256').update(readFileSync(dictionary)).digest('hex')}`));
 });
+
+test('control characters from notes are shown as escapes, not sent to the terminal', t => {
+  const vault = copyOfFixture(t);
+  // OSC 52 asks a terminal to set the clipboard; a carriage return can overwrite what is already on the line.
+  writeFileSync(join(vault, 'Hostile.md'), '# Title \u001b]52;c;aGk=\u0007 end\n\n#tag\rspoof\n');
+  for (const args of [['scan', 'Hostile.md'], ['usage', 'Hostile.md']]) {
+    const { stdout } = text(args, vault);
+    assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(stdout), `${args[0]} printed a control character`);
+  }
+  assert.match(text(['scan', 'Hostile.md'], vault).stdout, /# Title \\u001b\]52;c;aGk=\\u0007 end/);
+  // --json escapes them already.
+  assert.ok(!cli(['scan', 'Hostile.md', '--json'], vault).stdout.includes('\u001b'));
+});
