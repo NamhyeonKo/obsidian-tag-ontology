@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { Ontology } from '../../src/ontology.ts';
+import { Ontology } from 'tag-ontology';
 
 test('real vault counts agree with the existing Python CLI for root, middle and leaf', () => {
   assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');

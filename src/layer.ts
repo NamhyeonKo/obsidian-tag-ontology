@@ -1,4 +1,4 @@
-import type { Ontology } from './ontology.ts';
+import type { Ontology } from 'tag-ontology';
 
 // The core graph engine's data shape. The renderer calls hasOwnProperty directly, so these stay plain objects.
 export interface NativeData {

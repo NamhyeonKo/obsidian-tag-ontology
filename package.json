@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules --test tests/*.test.ts",
-    "test:vault": "node --experimental-vm-modules --test tests/integration/*.test.ts",
+    "test": "node --conditions=source --experimental-vm-modules --test tests/*.test.ts && npm test -w tag-ontology",
+    "test:vault": "node --conditions=source --experimental-vm-modules --test tests/integration/*.test.ts",
     "lint": "eslint .",
-    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "build": "tsc --noEmit && npm run typecheck -w tag-ontology && node esbuild.config.mjs",
     "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
@@ -23,7 +23,11 @@
   },
   "dependencies": {
     "3d-force-graph": "1.80.1",
+    "tag-ontology": "0.0.0",
     "three": "0.186.1",
     "three-spritetext": "1.10.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }
