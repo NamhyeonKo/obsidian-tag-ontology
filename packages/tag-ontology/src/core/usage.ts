@@ -32,8 +32,7 @@ function commonLength(a: readonly string[], b: readonly string[]): number {
 function similar(a: string, b: string): boolean {
   if (a.replaceAll('-', '') === b.replaceAll('-', '')) return true;
   // By character (code point), as Python counts: a letter outside the BMP is two UTF-16 units of a string.
-  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- The contract compares code points, as Python does, not graphemes.
-  const x = [...a], y = [...b], total = x.length + y.length;
+  const x = Array.from(a), y = Array.from(b), total = x.length + y.length;
   // There can't be more characters in common than the shorter name has, which rules out most pairs before the table.
   return 2 * Math.min(x.length, y.length) >= SIMILAR * total && 2 * commonLength(x, y) >= SIMILAR * total;
 }

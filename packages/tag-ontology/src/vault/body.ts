@@ -18,7 +18,7 @@ const HTML_BLOCK = /^<\/?(?:address|article|aside|blockquote|details|dialog|div|
 
 // Obsidian's tag pattern: # and then anything but whitespace, the ASCII punctuation other than - _ /, and the Unicode
 // punctuation blocks.
-const TAG = /#([^ -⁯⸀-⹿'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+)/gu;
+const TAG = /#([^\u2000-\u206F\u2E00-\u2E7F'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+)/gu;
 
 // The width of a line's indentation, with tabs to the next multiple of 4.
 function columns(line: string): number {
