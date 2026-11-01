@@ -18,6 +18,7 @@ const SEVERITY = {
   'related-in-hierarchy': 'warning',
   'unplaced': 'warning',
   'redundant-broader': 'warning',
+  'invalid-frontmatter': 'warning',
 } as const satisfies Record<string, Severity>;
 
 export type IssueCode = keyof typeof SEVERITY;
@@ -30,6 +31,7 @@ export interface Issue {
   tag?: string;
   field?: EntryField;
   target?: string;
+  path?: string;
   message: string;
 }
 
@@ -49,14 +51,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 // Code-unit order, so the result doesn't depend on the locale it runs in.
 const compare = (a = '', b = '') => a < b ? -1 : a > b ? 1 : 0;
-const byPlace = (a: Issue, b: Issue) => RANK[a.severity] - RANK[b.severity]
-  || compare(a.tag, b.tag) || compare(a.code, b.code) || compare(a.target, b.target);
+// The order of docs/cli.md: errors first, then by tag, path, code and target.
+export const compareIssues = (a: Issue, b: Issue) => RANK[a.severity] - RANK[b.severity]
+  || compare(a.tag, b.tag) || compare(a.path, b.path) || compare(a.code, b.code) || compare(a.target, b.target);
+
+// An issue with the severity its code always has.
+export const issue = (code: IssueCode, message: string, at: Pick<Issue, 'tag' | 'field' | 'target' | 'path'> = {}): Issue =>
+  ({ code, severity: SEVERITY[code], ...at, message });
 
 export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
   const issues: Issue[] = [];
-  const report = (code: IssueCode, message: string, at: Pick<Issue, 'tag' | 'field' | 'target'> = {}) => {
-    issues.push({ code, severity: SEVERITY[code], ...at, message });
-  };
+  const report = (...args: Parameters<typeof issue>) => { issues.push(issue(...args)); };
   if (!isRecord(raw)) {
     report('invalid-dictionary', 'The tag dictionary must be a JSON object.');
     return issues;
@@ -153,7 +158,7 @@ export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
       }
     }
   }
-  return issues.sort(byPlace);
+  return issues.sort(compareIssues);
 }
 
 // The plugin opens exactly the dictionaries without errors; this throws the first one and tells TypeScript the shape holds.
