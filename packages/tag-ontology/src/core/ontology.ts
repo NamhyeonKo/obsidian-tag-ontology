@@ -1,3 +1,5 @@
+import { assertDictionary } from './validate.ts';
+
 export interface Entry {
   aliases: string[];
   description: string;
@@ -15,17 +17,6 @@ export function isIncludedNote(path: string): boolean {
     && !path.split('/').some((part) => part === '' || part.startsWith('.'));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringList(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`${field}: expected an array of strings.`);
-  }
-  return [...new Set(value as string[])];
-}
-
 export class Ontology {
   entries = new Map<string, Entry>();
   children = new Map<string, string[]>();
@@ -39,47 +30,30 @@ export class Ontology {
   order: string[] = [];
 
   constructor(raw: unknown, notes: Note[]) {
-    if (!isRecord(raw)) throw new Error('The tag dictionary must be a JSON object.');
-    for (const tag of Object.keys(raw).sort()) {
-      const value = raw[tag];
-      if (!isRecord(value) || typeof value.description !== 'string') {
-        throw new Error(`Tag ${tag}: expected an object with a string description.`);
-      }
-      const entry: Entry = {
-        description: value.description,
-        aliases: stringList(Object.hasOwn(value, 'aliases') ? value.aliases : [], `${tag}.aliases`),
-      };
+    assertDictionary(raw);
+    for (const [tag, value] of Object.entries(raw).sort(([a], [b]) => a < b ? -1 : 1)) {
+      const entry: Entry = { description: value.description, aliases: [...new Set(value.aliases ?? [])] };
       for (const key of ['broader', 'related'] as const) {
-        if (Object.hasOwn(value, key)) entry[key] = stringList(value[key], `${tag}.${key}`);
+        const list = value[key];
+        if (list) entry[key] = [...new Set(list)];
       }
-      if (Object.hasOwn(value, 'facet')) {
-        if (typeof value.facet !== 'string') throw new Error(`${tag}.facet: expected a string.`);
-        entry.facet = value.facet;
-      }
+      if (typeof value.facet === 'string') entry.facet = value.facet;
       this.entries.set(tag, entry);
       this.children.set(tag, []);
     }
     for (const [tag, entry] of this.entries) {
-      for (const key of ['broader', 'related'] as const) {
-        for (const target of entry[key] ?? []) {
-          if (!this.entries.has(target)) throw new Error(`${tag}.${key}: unknown tag ${target}`);
-          if (target === tag) throw new Error(`${tag}.${key}: a tag cannot reference itself.`);
-          if (key === 'broader') this.children.get(target)!.push(tag);
-        }
-      }
+      for (const parent of entry.broader ?? []) this.children.get(parent)?.push(tag);
       if (entry.broader?.length === 0) this.roots.push(tag);
     }
+    // validate() has ruled out cycles, so every tag gets its turn here.
     const pending = new Map([...this.entries].map(([tag, entry]) => [tag, entry.broader?.length ?? 0]));
     const queue = [...pending].filter(([, degree]) => degree === 0).map(([tag]) => tag);
     for (const tag of queue) {
-      for (const child of this.children.get(tag)!) {
-        const degree = pending.get(child)! - 1;
+      for (const child of this.children.get(tag) ?? []) {
+        const degree = (pending.get(child) ?? 0) - 1;
         pending.set(child, degree);
         if (degree === 0) queue.push(child);
       }
-    }
-    if (queue.length !== this.entries.size) {
-      throw new Error(`Cycle in broader relations: ${[...pending].filter(([, degree]) => degree > 0).map(([tag]) => tag).join(', ')}`);
     }
     this.order = queue;
     this.placed = new Set(this.roots.flatMap(root => [root, ...this.descendants(root)]));
