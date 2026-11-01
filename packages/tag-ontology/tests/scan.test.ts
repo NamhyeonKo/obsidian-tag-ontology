@@ -58,4 +58,9 @@ test('symbolic links are not followed', t => {
   symlinkSync(join(dir, 'notes'), join(dir, 'linked'));
   symlinkSync(join(dir, 'notes', 'Alpha.md'), join(dir, 'Alias.md'));
   assert.deepEqual(paths(scan(dir)), ['notes/Alpha.md', 'notes/Broken.md', 'notes/archive/Old.md']);
+  // Nor when a given path goes through one, which could lead outside the root.
+  symlinkSync(tmpdir(), join(dir, 'outside'));
+  for (const given of ['linked', 'linked/archive', 'Alias.md', 'outside']) {
+    assert.throws(() => scan(dir, { paths: [given] }), /symbolic link/, given);
+  }
 });

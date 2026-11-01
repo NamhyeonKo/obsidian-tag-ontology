@@ -47,7 +47,13 @@ export function scan(root: string, options: ScanOptions = {}): Scan {
     const path = relative(resolve(root), resolve(root, given)).split(sep).join('/');
     if (path.startsWith('..') || isAbsolute(path)) throw new Error(`${given} is outside the vault root.`);
     if (path && excluded(path)) continue;
+    // Every folder on the way is checked too: a link there could lead anywhere, outside the root as well.
+    const parts = path ? path.split('/') : [];
+    for (let i = 1; i < parts.length; i++) {
+      if (lstatSync(join(root, ...parts.slice(0, i))).isSymbolicLink()) throw new Error(`${given} goes through a symbolic link, which the scan doesn't follow.`);
+    }
     const stats = lstatSync(join(root, path));
+    if (stats.isSymbolicLink()) throw new Error(`${given} is a symbolic link, which the scan doesn't follow.`);
     if (stats.isDirectory()) walk(path);
     else if (stats.isFile() && isIncludedNote(path)) found.add(path);
   }
