@@ -45,7 +45,7 @@ Vault conventions such as which folders hold notes are not built in; pass them a
 
 What the CLI reads from a note follows Obsidian 1.14.5's metadata cache, which is what the plugin sees:
 
-- **Frontmatter**: the note must start with exactly `---` and a line break (a byte order mark before it is dropped); the block closes at the next line that starts with `---`. Line endings are normalized to `\n` first, so CRLF works. It is parsed with the `yaml` package, as in Obsidian: YAML 1.2, so dates and `yes`/`no` stay strings, and a repeated key is an error. A block that is empty, isn't a mapping or doesn't parse gives no frontmatter (the last two with an `invalid-frontmatter` warning).
+- **Frontmatter**: the note must start with exactly `---` and a line break (a byte order mark before it is dropped); the block closes at the next line that starts with `---`. Line endings are normalized to `\n` first, so CRLF works. It is parsed with the `yaml` package, as in Obsidian: YAML 1.2, so dates and `yes`/`no` stay strings, and a repeated key is an error. A block that is empty, isn't a mapping or doesn't parse gives no frontmatter (the last two with an `invalid-frontmatter` warning). A mapping that cannot be represented as JSON, such as circular YAML aliases, also gives `frontmatter: null` and that warning; its tags are still read, and scanning continues.
 - **Tags** (`tags`): the value of the first frontmatter key named `tags`, in any case (`tag` is not read). A string is one tag (it isn't split at commas), and a list gives its string items (numbers are dropped). Empty items and ones with a space are dropped, then each is trimmed and loses one leading `#`. Order and duplicates are kept.
 - **Body tags** (`bodyTags`): `#` followed by anything but whitespace, the ASCII punctuation other than `-`, `_` and `/`, and the Unicode punctuation blocks (U+2000–206F, U+2E00–2E7F), so letters of any script, digits, emoji and nested tags (`a/b`) are fine. Digits only (`#1984`) is not a tag.
   - The `#` must start a piece of inline text: a line, or after whitespace, inline code, a `[[wikilink]]`, an HTML tag, the `[` of a link, a table cell's `|`, or the opening `*`, `_`, `~` or `=` of emphasis, a strikethrough or a highlight that is closed (`**#tag**`, `_#tag_` gives `tag`).
@@ -127,7 +127,7 @@ An **error** is something that stops the plugin from opening the dictionary. Eve
 | `related-in-hierarchy` | warning | A `related` tag is also an ancestor or a descendant. One issue per `related` item. | `tag`, `field`, `target` |
 | `unplaced` | warning | The entry has no `broader` key, so it has no place in the hierarchy. (`"broader": []` makes a root.) | `tag` |
 | `redundant-broader` | warning | A parent is also reached through another parent. | `tag`, `field`, `target` |
-| `invalid-frontmatter` | warning | `scan`/`usage` (added with them): a note's frontmatter isn't valid YAML or isn't a mapping. Obsidian shows no properties for it. | `path` |
+| `invalid-frontmatter` | warning | `scan`/`usage`: a note's frontmatter isn't valid YAML, isn't a mapping, or cannot be represented as JSON. | `path` |
 
 ## Commands
 

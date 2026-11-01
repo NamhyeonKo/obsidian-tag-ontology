@@ -61,33 +61,33 @@ The TypeScript CLI is the only note parser. The TOW skills (Python, separate rep
 - **Rejected:** `gray-matter`, which depends on `js-yaml` 3 and three more packages for a job one parser does.
 - **Found later:** Obsidian 1.14.5 parses frontmatter with the same package and its default options (see 20), so a note gives the same values and the same errors.
 
-## 10. The changes file is the core `Change` type *(planned)*
+## 10. The changes file is the core `Change` type
 
 `plan` and `apply` read `{ "changes": Change[] }`, the same `Change` the plugin's edit form produces.
 
 - **Why:** the plugin, the CLI and a future chatbot then go through the same `apply()`, so an edit means the same thing everywhere.
 
-## 11. No vault conventions in the CLI *(planned)*
+## 11. No vault conventions in the CLI
 
 Which folders hold notes, `category` and `type` fields, archive folders: none of it is built in. The CLI takes `--exclude` globs; the TOW skills, which own those conventions, pass them.
 
 - **Why:** the CLI is for any vault with a `Tag-Dictionary.json`; one vault's layout would be wrong for the next.
 
-## 12. Machine-readable output is a contract *(planned)*
+## 12. Machine-readable output is a contract
 
 `--json` output, issue codes and exit codes are written down in [cli.md](cli.md) and versioned by `schemaVersion`. Text output isn't.
 
 - **Why:** other programs (the TOW skills first) parse the output. A field they rely on can't change silently, and a version number tells them when it did. Adding fields doesn't bump the version, so readers ignore what they don't know.
 - Every JSON document has the same four fields (`schemaVersion`, `command`, `ok`, `issues`), so a reader can check the outcome before it knows the command.
 
-## 13. Exit codes 0, 1, 2, 3 and 70 *(planned)*
+## 13. Exit codes 0, 1, 2, 3 and 70
 
 0 success, 1 problems found, 2 wrong usage, 3 conflict, 70 internal error.
 
 - **Why:** a caller has to tell "the dictionary has errors" (fix the dictionary) from "I called it wrong" (fix the call) from "someone else changed the file" (plan again). Node exits with 1 on an uncaught exception, which would read as "problems found", so the CLI catches unexpected errors and exits with 70 (`EX_SOFTWARE` in BSD `sysexits.h`).
 - A dictionary that isn't valid JSON is exit 1 (an `invalid-dictionary` issue), not 2: judging the file is `check`'s job.
 
-## 14. Optimistic concurrency with a content hash *(planned)*
+## 14. Optimistic concurrency with a content hash
 
 `plan` reports the dictionary's SHA-256; `apply --base <hash>` writes only if the file still has it, through a temporary file and a rename.
 
@@ -131,3 +131,9 @@ The rules for frontmatter, tags and headings come from the Obsidian 1.14.5 app b
 - **Why:** the plugin reads tags through Obsidian's metadata cache, so the CLI is right exactly when it agrees with that cache. The help pages leave out what decides edge cases: only a key named `tags` counts (not `tag`), a string is never split, a list drops numbers, and the tag pattern excludes Unicode punctuation.
 - **Simplified:** Obsidian runs a full Markdown parser, an old remark with its own extensions. The CLI reads the blocks (list items with their columns, quotes, code, math, HTML, `%%` comments, headings, tables) and then the inline text of each, which is the part tags and headings depend on. A Markdown library would be dozens of packages, and today's CommonMark parsers differ from Obsidian's old remark exactly where it matters here: lazy lines in list items, setext headings, emphasis.
 - **Checked:** Obsidian's `worker.js`, run locally in Node, is the reference: what it returns for a note is what the plugin sees. The CLI agrees with it on all 681 notes of the two vaults tried and on 73 crafted notes. On 20,000 random notes built from unclosed and nested constructs, about 2% still differ, for example where Obsidian pairs emphasis across lines. Fixture tests pin each rule, each checked against the worker; Obsidian's code isn't part of this repository.
+
+## 21. Scanned frontmatter must fit JSON
+
+`readFrontmatter()` keeps the parsed YAML mapping. When that mapping cannot be represented as JSON, `scan()` returns `frontmatter: null` with an `invalid-frontmatter` warning, while keeping the tags read from it.
+
+- **Why:** valid YAML can contain circular aliases. One such note must not abort an entire `scan --json` run. Shared aliases that are not circular still serialize normally, and the raw frontmatter reader keeps its Obsidian behavior.
