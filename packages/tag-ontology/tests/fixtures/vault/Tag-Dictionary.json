@@ -1,0 +1,7 @@
+{
+"ai": {"description": "Artificial intelligence", "broader": []},
+"cnn": {"aliases": ["Convolutional Neural Network"], "description": "Convolutional neural networks", "broader": ["deep-learning"]},
+"deep-learning": {"aliases": ["DL"], "description": "Neural networks with many layers", "broader": ["machine-learning"]},
+"machine-learning": {"aliases": ["ML"], "description": "Learning from data", "broader": ["ai"]},
+"unused-leaf": {"description": "No note uses this", "broader": ["ai"]}
+}

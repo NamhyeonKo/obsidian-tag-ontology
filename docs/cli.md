@@ -43,14 +43,17 @@ A note is a `.md` file under `--root`. The CLI skips:
 
 Vault conventions such as which folders hold notes are not built in; pass them as `--exclude`.
 
-What the CLI reads from a note, following Obsidian:
+What the CLI reads from a note follows Obsidian 1.14.5's metadata cache, which is what the plugin sees:
 
-- **Frontmatter**: a YAML block that opens with `---` on the first line and closes with the next `---` line. LF and CRLF line endings both work. It is parsed as YAML 1.2 (core schema), so dates stay strings.
-- **Tags** (`tags`): the frontmatter `tags` or `tag` value, a list or a string, without a leading `#`, in the order written.
-- **Body tags** (`bodyTags`): `#tag` in the body, outside fenced code blocks and inline code. A tag is letters, digits, `_`, `-` and `/` (nested tags such as `a/b`), and not digits only.
-- **Headings**: ATX headings (`#` to `######`) outside code blocks.
+- **Frontmatter**: the note must start with exactly `---` and a line break (a byte order mark before it is dropped); the block closes at the next line that starts with `---`. Line endings are normalized to `\n` first, so CRLF works. It is parsed with the `yaml` package, as in Obsidian: YAML 1.2, so dates and `yes`/`no` stay strings, and a repeated key is an error. A block that is empty, isn't a mapping or doesn't parse gives no frontmatter (the last two with an `invalid-frontmatter` warning).
+- **Tags** (`tags`): the value of the first frontmatter key named `tags`, in any case (`tag` is not read). A string is one tag (it isn't split at commas), and a list gives its string items (numbers are dropped). Empty items and ones with a space are dropped, then each is trimmed and loses one leading `#`. Order and duplicates are kept.
+- **Body tags** (`bodyTags`): `#` followed by anything but whitespace, the ASCII punctuation other than `-`, `_` and `/`, and the Unicode punctuation blocks (U+2000–206F, U+2E00–2E7F), so letters of any script, digits, emoji and nested tags (`a/b`) are fine. Digits only (`#1984`) is not a tag.
+  - The `#` must start a piece of inline text: a line, or after whitespace, inline code, a `[[wikilink]]`, an HTML tag, the `[` of a link, a table cell's `|`, or the opening `*`, `_`, `~` or `=` of emphasis, a strikethrough or a highlight that is closed (`**#tag**`, `_#tag_` gives `tag`).
+  - Nothing counts in fenced code (inside a list item or a quote too, ending with it), indented code, `$$` math blocks, `$…$` inline math or inline code (both may run over several lines of a paragraph), HTML comments and HTML blocks, `[[…]]` and images.
+  - Tags inside `%%` comments count, as in Obsidian. A `%%` comment over several lines holds no headings or code; it runs to the next `%%`, or to the end of the note.
+- **Headings**: the note's top-level headings, not those in lists, quotes, code, HTML or `%%` comments. ATX headings are `#` to `######` and a space, closing `#`s removed; a setext heading underlines a one-line paragraph with `===` or `---`. The text is as written, markup kept.
 
-The exact edge cases (string splitting, comments, numbers in lists) are pinned by fixture tests and listed here when the parser lands.
+Obsidian parses full Markdown with an old version of remark. The CLI reads the blocks and then the inline text of each, which is the part of the structure tags and headings depend on. It was compared with the metadata cache that Obsidian 1.14.5's own worker builds: it agrees on every note of the two vaults tried (681 notes) and on the examples above. Random notes built from unclosed and nested constructs still differ about 2% of the time, for example when Obsidian pairs emphasis across lines.
 
 A note tag **matches** a dictionary tag when the names are equal ignoring case, because Obsidian treats `#Python` and `#python` as one tag. Aliases never make a match: Obsidian doesn't know about them, so a note tagged with an alias isn't found under the tag.
 

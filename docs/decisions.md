@@ -53,12 +53,13 @@ The TypeScript CLI is the only note parser. The TOW skills (Python, separate rep
 
 - **Why:** a second parser in Python would be a second set of tag rules to keep in step with Obsidian's.
 
-## 9. YAML with the `yaml` package *(planned)*
+## 9. YAML with the `yaml` package
 
 `yaml` 2.9.1, pinned. It has no dependencies.
 
 - **Why:** frontmatter tags can be a block list, an inline list (`tags: [a, b]`) or a string. The regular expression in `vault_meta.py` reads only block lists. A real YAML parser handles all of them, and the core schema keeps dates as strings.
 - **Rejected:** `gray-matter`, which depends on `js-yaml` 3 and three more packages for a job one parser does.
+- **Found later:** Obsidian 1.14.5 parses frontmatter with the same package and its default options (see 20), so a note gives the same values and the same errors.
 
 ## 10. The changes file is the core `Change` type *(planned)*
 
@@ -122,3 +123,11 @@ Two names, lowercased, are similar when they are equal with `-` removed, or when
 - **Why:** `vault_meta.py sync` uses `difflib.SequenceMatcher(...).ratio() >= 0.85`. That ratio is 2 × matched characters / total length, where difflib finds the matches greedily, so they never exceed the LCS. Using the LCS itself finds every pair difflib finds, plus the few its greedy matching misses. On the real dictionary's 496,506 tag pairs, difflib finds 55 similar pairs; this rule finds the same 55 and `langgraph-edge` / `langgraph-node`.
 - **Rejected:** a Levenshtein distance within 15% of the longer name (the first draft). It misses the plural of a short tag, the most common slip: `llm` / `llms` is 1 edit in 4 characters, while difflib's ratio is 0.86. Porting difflib's algorithm: more code for an answer that is only an approximation of this one.
 - **Cost:** the LCS table is length × length per pair, and a length check skips most pairs first: 997 unregistered tags against the dictionary take about 0.5 s.
+
+## 20. Note parsing follows Obsidian's own code
+
+The rules for frontmatter, tags and headings come from the Obsidian 1.14.5 app bundle (`worker.js`, which builds the metadata cache, and `app.js`, which has `getAllTags` and `parseFrontMatterTags`), not from the help pages or guesses.
+
+- **Why:** the plugin reads tags through Obsidian's metadata cache, so the CLI is right exactly when it agrees with that cache. The help pages leave out what decides edge cases: only a key named `tags` counts (not `tag`), a string is never split, a list drops numbers, and the tag pattern excludes Unicode punctuation.
+- **Simplified:** Obsidian runs a full Markdown parser, an old remark with its own extensions. The CLI reads the blocks (list items with their columns, quotes, code, math, HTML, `%%` comments, headings, tables) and then the inline text of each, which is the part tags and headings depend on. A Markdown library would be dozens of packages, and today's CommonMark parsers differ from Obsidian's old remark exactly where it matters here: lazy lines in list items, setext headings, emphasis.
+- **Checked:** Obsidian's `worker.js`, run locally in Node, is the reference: what it returns for a note is what the plugin sees. The CLI agrees with it on all 681 notes of the two vaults tried and on 73 crafted notes. On 20,000 random notes built from unclosed and nested constructs, about 2% still differ, for example where Obsidian pairs emphasis across lines. Fixture tests pin each rule, each checked against the worker; Obsidian's code isn't part of this repository.
