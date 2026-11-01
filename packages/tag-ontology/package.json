@@ -16,6 +16,11 @@
       "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./vault": {
+      "source": "./src/vault/index.ts",
+      "types": "./dist/vault/index.d.ts",
+      "default": "./dist/vault/index.js"
     }
   },
   "files": [
