@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { Ontology, validate } from 'tag-ontology';
+import { Ontology, usage, validate } from 'tag-ontology';
 
 test('real vault counts agree with the existing Python CLI for root, middle and leaf', () => {
   assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');
@@ -73,4 +73,83 @@ test('validate() finds what vault_meta.py finds, rule by rule, on the real dicti
   const ours = ourCodes(fixture);
   assert.deepEqual(new Set(ours), new Set(PYTHON_RULES.map(([, code]) => code)), 'the fixture breaks every rule');
   assert.deepEqual(ours, pythonCodes(dir));
+});
+
+// The note tags vault_meta.py reads, from the folders sync scans, archives included as sync includes them.
+const pythonNotes = (root: string) => Object.entries(JSON.parse(execFileSync('python3', ['-B', '-c', [
+  'import runpy,json',
+  "m=runpy.run_path('99_Etc/scripts/vault_meta.py',run_name='read_only_check')",
+  "print(json.dumps(m['note_tags'](True),ensure_ascii=False))",
+].join('\n')], { cwd: root, encoding: 'utf8' })) as Record<string, string[]>).map(([path, tags]) => ({ path, tags }));
+
+// sync prints a block per finding, headed "[미등록 2개]" and so on; this reads back the four that usage() also reports.
+function syncFindings(root: string) {
+  const out = execFileSync('python3', ['-B', '99_Etc/scripts/vault_meta.py', 'sync'], { cwd: root, encoding: 'utf8' });
+  const blocks = new Map(out.split('\n\n').map(block => {
+    const [head = '', ...lines] = block.split('\n');
+    return [head.slice(1, head.indexOf(' ')), { head, lines: lines.map(line => line.trim()).filter(Boolean) }];
+  }));
+  return {
+    unregistered: (blocks.get('미등록')?.lines ?? []).map(line => {
+      const [tag = '', rest = ''] = line.split('  ← ');
+      return { tag, similar: rest.split('⚠ 비슷한 태그: ')[1]?.split(', ') ?? [] };
+    }),
+    nonCanonical: (blocks.get('별칭으로')?.lines ?? []).map(line => {
+      const [, path, tag, canonical] = /^(.+): '(.+)' → (.+)$/.exec(line) ?? [];
+      return { path, tag, canonical };
+    }),
+    unused: blocks.get('사전에는')?.head.split('] ')[1]?.split(', ') ?? [],
+    redundant: (blocks.get('상위·하위')?.lines ?? []).map(line => {
+      const at = line.lastIndexOf('.md: ') + 3;
+      return { path: line.slice(0, at), tags: line.slice(at + 2).split(', ').sort() };
+    }),
+  };
+}
+
+function ourFindings(root: string) {
+  const result = usage(JSON.parse(readFileSync(join(root, 'Tag-Dictionary.json'), 'utf8')), pythonNotes(root));
+  const redundant = new Map<string, string[]>();
+  for (const row of result.redundant) redundant.set(row.path, [...redundant.get(row.path) ?? [], row.tag]);
+  return {
+    unregistered: result.unregistered.map(({ tag, similar }) => ({ tag, similar })),
+    nonCanonical: result.nonCanonical,
+    unused: result.unused,
+    redundant: [...redundant].map(([path, tags]) => ({ path, tags: tags.sort() })),
+  };
+}
+
+test('usage() reports what vault_meta.py sync reports, on the real vault and on one with every kind of finding', t => {
+  assert.ok(process.env.OBSIDIAN_VAULT_PATH, 'Set OBSIDIAN_VAULT_PATH to the vault directory.');
+  const root = resolve(process.env.OBSIDIAN_VAULT_PATH);
+  const real = syncFindings(root);
+  assert.ok(real.redundant.length > 0, 'the real vault has redundant tags to compare');
+  assert.deepEqual(ourFindings(root), real);
+
+  const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, '99_Etc', 'scripts'), { recursive: true });
+  copyFileSync(join(root, '99_Etc', 'scripts', 'vault_meta.py'), join(dir, '99_Etc', 'scripts', 'vault_meta.py'));
+  // sync reads these four folders and fails if one is missing.
+  for (const folder of ['01_Projects', '02_Areas', '03_Resources', '04_Archives']) mkdirSync(join(dir, folder));
+  writeFileSync(join(dir, 'Tag-Dictionary.json'), JSON.stringify({
+    ai: { description: 'AI', broader: [] },
+    'machine-learning': { description: 'ML', aliases: ['ML'], broader: ['ai'] },
+    'deep-learning': { description: 'DL', broader: ['machine-learning'] },
+    cnn: { description: 'CNN', broader: ['deep-learning'] },
+    python: { description: 'Python', broader: [], facet: 'language' },
+    pandas: { description: 'pandas', broader: ['python'] },
+    'llm-agents': { description: 'Agents', broader: ['ai'] },
+    'graph-database': { description: 'Unused', broader: ['ai'] },
+  }));
+  const note = (path: string, tags: string[]) => {
+    mkdirSync(join(dir, path, '..'), { recursive: true });
+    writeFileSync(join(dir, path), `---\ntags:\n${tags.map(tag => `  - ${tag}\n`).join('')}---\n# ${path}\n`);
+  };
+  note('03_Resources/Training.md', ['ai', 'machine-learning', 'cnn']);
+  note('03_Resources/ML - Overview.md', ['ML', 'machine-learning', 'deep-learning']);
+  note('03_Resources/Pandas.md', ['python', 'pandas', 'llm-agents']);
+  note('01_Projects/p/archive/Typos.md', ['llm-agent', 'llmagents', 'cnns', 'transformer', 'transformers', 'rag']);
+  const fixture = syncFindings(dir);
+  assert.ok(Object.values(fixture).every(found => found.length > 0), 'the fixture has every kind of finding');
+  assert.deepEqual(ourFindings(dir), fixture);
 });
