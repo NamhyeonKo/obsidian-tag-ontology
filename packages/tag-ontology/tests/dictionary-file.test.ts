@@ -9,7 +9,7 @@ import { readDictionary, writeDictionary } from '../src/vault/dictionary-file.ts
 
 const temp = (t: { after: (fn: () => void) => void }) => {
   const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); });
   return dir;
 };
 const sha256 = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;

@@ -22,7 +22,7 @@ export function json(args: string[], cwd = fixture) {
 // A copy of the fixture vault, for a test that writes to it.
 export function copyOfFixture(t: { after: (fn: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); });
   cpSync(fixture, dir, { recursive: true });
   return dir;
 }

@@ -10,7 +10,7 @@ const userStyle = '{\n'
   + '}\n';
 
 test('serialize reproduces a file written one entry per line byte for byte', () => {
-  assert.equal(serialize(JSON.parse(userStyle)), userStyle);
+  assert.equal(serialize(JSON.parse(userStyle) as RawDictionary), userStyle);
 });
 
 test('serialize sorts keys by code point and writes an empty dictionary as two lines', () => {
@@ -66,7 +66,7 @@ test('add writes a root when no parent is chosen and leaves empty aliases out', 
 test('add links children and related too, the way edit does', () => {
   const next = apply(raw, { kind: 'add', draft: { ...emptyDraft(['ml']), name: 'llm', aliases: ['LLM'], children: ['dl', 'loose'], related: ['py', 'sec'] } });
   assert.deepEqual(next.llm, { aliases: ['LLM'], description: '', broader: ['ml'], related: ['py', 'sec'] });
-  assert.deepEqual(Object.keys(next.llm!), ['aliases', 'description', 'broader', 'related']);
+  assert.deepEqual(Object.keys(next.llm), ['aliases', 'description', 'broader', 'related']);
   assert.deepEqual(next.dl!.broader, ['ml', 'llm']); assert.deepEqual(next.loose!.broader, ['llm']);
   assert.deepEqual(next.py!.related, ['ml', 'llm']); assert.deepEqual(next.sec!.related, ['llm']);
   assert.equal('related' in apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }).book!, false);

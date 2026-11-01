@@ -115,7 +115,7 @@ export function excluded(dict: RawDictionary, tag: string | undefined, draft: Dr
   const self = tag ?? NEW, children = new Map<string, string[]>();
   const next = tag === undefined ? apply(dict, { kind: 'add', draft: { ...draft, name: self } }) : apply(dict, { kind: 'edit', tag, draft: { ...draft, name: tag } });
   for (const [key, entry] of Object.entries(next)) for (const parent of entry.broader ?? []) children.set(parent, [...children.get(parent) ?? [], key]);
-  const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : entryOf(next, item)?.broader ?? [];
+  const step = (item: string) => kind === 'parents' ? children.get(item) ?? [] : entryOf(next, item).broader ?? [];
   const queue = step(self), seen = new Set<string>();
   while (queue.length) {
     const item = queue.pop()!;
