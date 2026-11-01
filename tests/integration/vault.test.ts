@@ -94,10 +94,11 @@ function syncFindings(root: string) {
       const [tag = '', rest = ''] = line.split('  ← ');
       return { tag, similar: rest.split('⚠ 비슷한 태그: ')[1]?.split(', ') ?? [] };
     }),
+    // In the order the tags are written; usage() sorts them by path and tag.
     nonCanonical: (blocks.get('별칭으로')?.lines ?? []).map(line => {
-      const [, path, tag, canonical] = /^(.+): '(.+)' → (.+)$/.exec(line) ?? [];
+      const [, path = '', tag = '', canonical = ''] = /^(.+): '(.+)' → (.+)$/.exec(line) ?? [];
       return { path, tag, canonical };
-    }),
+    }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : a.tag < b.tag ? -1 : 1),
     unused: blocks.get('사전에는')?.head.split('] ')[1]?.split(', ') ?? [],
     redundant: (blocks.get('상위·하위')?.lines ?? []).map(line => {
       const at = line.lastIndexOf('.md: ') + 3;
@@ -143,7 +144,7 @@ test('usage() reports what vault_meta.py sync reports, on the real vault and on 
   // sync reads these four folders and fails if one is missing.
   for (const folder of ['01_Projects', '02_Areas', '03_Resources', '04_Archives']) mkdirSync(join(dir, folder));
   writeFileSync(join(dir, 'Tag-Dictionary.json'), JSON.stringify({
-    ai: { description: 'AI', broader: [] },
+    ai: { description: 'AI', aliases: ['artificial-intelligence'], broader: [] },
     'machine-learning': { description: 'ML', aliases: ['ML'], broader: ['ai'] },
     'deep-learning': { description: 'DL', broader: ['machine-learning'] },
     cnn: { description: 'CNN', broader: ['deep-learning'] },
@@ -157,7 +158,8 @@ test('usage() reports what vault_meta.py sync reports, on the real vault and on 
     writeFileSync(join(dir, path), `---\ntags:\n${tags.map(tag => `  - ${tag}\n`).join('')}---\n# ${path}\n`);
   };
   note('03_Resources/Training.md', ['ai', 'machine-learning', 'cnn']);
-  note('03_Resources/ML - Overview.md', ['ML', 'machine-learning', 'deep-learning']);
+  // Two aliases on one note, written in the opposite of sorted order.
+  note('03_Resources/ML - Overview.md', ['artificial-intelligence', 'ML', 'machine-learning', 'deep-learning']);
   note('03_Resources/Pandas.md', ['python', 'pandas', 'llm-agents']);
   note('01_Projects/p/archive/Typos.md', ['llm-agent', 'llmagents', 'cnns', 'transformer', 'transformers', 'rag']);
   // More notes with redundant tags than the 20 sync prints.
