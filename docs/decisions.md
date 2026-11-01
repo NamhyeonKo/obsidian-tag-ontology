@@ -26,18 +26,20 @@ npm workspaces: the Obsidian plugin stays at the repository root and the library
 
 - **Why:** the dictionary is a `Record<string, RawEntry>` read by key everywhere, and a missing key is the most likely bug. `noUncheckedIndexedAccess` makes every `dict[tag]` possibly `undefined`; turning it on found `apply()` reading tags that weren't in the dictionary, which now throws `Unknown tag` instead of a `TypeError`. `exactOptionalPropertyTypes` keeps "field absent" (an unplaced tag has no `broader`) apart from "field set to `undefined`".
 
-## 5. Errors only for what stops the plugin; everything else is a warning *(planned)*
+## 5. Errors only for what stops the plugin; everything else is a warning
 
 An issue is an **error** when the plugin can't open the dictionary with it (today: when the `Ontology` constructor throws). Style and consistency problems are **warnings**, and fail only with `--strict`.
 
 - **Why:** the plugin and `vault_meta.py` disagree today (kebab-case names, empty descriptions and alias collisions are errors in Python and allowed in the plugin). Making them errors would make the plugin refuse dictionaries it opens now. Warnings keep every existing dictionary usable, and `--strict` lets a vault that wants the stricter rules have them.
 - Kebab-case names are a vault convention, so they are an opt-in warning (`--names kebab`), not the default rule.
 
-## 6. One validator *(planned)*
+## 6. One validator
 
 All rules live in `core/validate.ts`, which returns a list of issues. The `Ontology` constructor calls it and throws on the first error.
 
 - **Why:** two copies of a rule drift, which is how the plugin and `vault_meta.py` ended up with different rules. With one function, the plugin, the CLI and anything built on the CLI agree by construction.
+- **How:** each issue code has its severity in one `as const` table, and the `IssueCode` type is derived from its keys (`keyof typeof SEVERITY`), so a code can't be used without a severity. The constructor calls `assertDictionary()`, an assertion function (`asserts raw is RawDictionary`): once it returns, TypeScript treats the parsed JSON as a dictionary and the model needs no casts.
+- **Checked:** an integration test runs `vault_meta.py`'s dictionary checks on the real dictionary and on a fixture that breaks every rule, and compares the count for each rule.
 
 ## 7. Dependencies point one way: `cli → vault → core` *(planned)*
 
