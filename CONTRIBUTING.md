@@ -49,6 +49,12 @@ npm run build
 - The lint does not check CSS (`!important`, `:has()` and so on). If you change `styles.css`, mention it in the PR so the maintainer can run a preview scan.
 - Add or update a test in `tests/` for behavior changes.
 
+Package changes also have tests in `packages/tag-ontology/tests/`. CI checks Node 22.18.0 and 24. Before a package PR, run `npm run check:package`: it rebuilds and packs the workspace, checks the tarball with publint and Are the Types Wrong (ESM profile), installs it in a temporary directory and runs library/CLI checks there. It never writes to a real vault.
+
+The plugin uses Obsidian's lint rules; the package uses `strictTypeChecked` and enforces `cli → vault → core`. Core imports neither Node nor Obsidian, and core/vault use static imports so the boundary checks apply. The plugin build rejects runtime imports other than `obsidian`.
+
+The package directory has its own [MIT license](packages/tag-ontology/LICENSE). The Obsidian plugin is AGPL-3.0-or-later under the root [LICENSE](LICENSE).
+
 ## Contributor license agreement
 
 Tag Ontology is licensed under AGPL-3.0-or-later. To keep the option of offering it under other terms later, every contribution comes with this agreement. By submitting a contribution (a pull request, patch or any other material), you agree that:
@@ -111,6 +117,12 @@ Pick the version when you release: a minor version (`0.x.0`) when the release ad
 5. Write release notes on the draft **before publishing**. An empty description gets a review Recommendation, and editing the notes later does not trigger a new review of the same version.
 6. In the [community dashboard](https://community.obsidian.md), put the tag in **Review branch** and run a preview scan. Publish the draft only when it reports no errors.
 7. Click **Check for new releases** in the dashboard and check the review. A published version is reviewed once; fixes need a new version.
+
+### npm package release tags
+
+The package has its own version in `packages/tag-ontology/package.json`. Its release tags use `tag-ontology-X.Y.Z`; numeric tags such as `0.9.0` belong to the Obsidian plugin. A package release does not change `manifest.json`, `versions.json` or the plugin version. The plugin release workflow ignores the package tags.
+
+The first package release is still in preparation; npm publishing credentials and trusted publishing must be configured separately. See the [package guide](packages/tag-ontology/README.md).
 
 ### Hotfixes
 

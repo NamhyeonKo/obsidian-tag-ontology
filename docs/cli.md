@@ -1,6 +1,6 @@
 # tag-ontology CLI
 
-> **Status: draft, `schemaVersion` 1.** Commands, options, JSON fields, issue codes and exit codes may still change until `tag-ontology` 0.1.0. Any change is made in this file first, before the code.
+> **Contract: `schemaVersion` 1, for `tag-ontology` 0.1.0.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes. The first npm release is still in preparation.
 
 `tag-ontology` checks, queries and edits a tag dictionary (`Tag-Dictionary.json`) against the Markdown notes of a vault. It applies the same rules as the Obsidian plugin in this repository, because both use the `tag-ontology` package.
 
@@ -254,8 +254,8 @@ Applies the [changes](#changes-file) in order to the dictionary in memory, valid
   "issues": [],
   "base": "sha256:9f2c…",
   "diff": [
-    { "tag": "dropout", "status": "changed", "before": { "description": "Old.", "broader": ["deep-learning"] }, "after": { "description": "New.", "broader": ["deep-learning"] } },
     { "tag": "aes", "status": "removed", "before": { "description": "A block cipher.", "broader": ["cryptography"] } },
+    { "tag": "dropout", "status": "changed", "before": { "description": "Old.", "broader": ["deep-learning"] }, "after": { "description": "New.", "broader": ["deep-learning"] } },
     { "tag": "llm-agent", "status": "added", "after": { "description": "An LLM that calls tools.", "broader": ["ai"] } }
   ]
 }
@@ -286,7 +286,11 @@ The file is written in the dictionary layout the plugin uses: one entry per line
   "ok": true,
   "issues": [],
   "base": "sha256:9f2c…",
-  "diff": [],
+  "diff": [
+    { "tag": "aes", "status": "removed", "before": { "description": "A block cipher.", "broader": ["cryptography"] } },
+    { "tag": "dropout", "status": "changed", "before": { "description": "Old.", "broader": ["deep-learning"] }, "after": { "description": "New.", "broader": ["deep-learning"] } },
+    { "tag": "llm-agent", "status": "added", "after": { "description": "An LLM that calls tools.", "broader": ["ai"] } }
+  ],
   "written": true,
   "hash": "sha256:41ab…"
 }

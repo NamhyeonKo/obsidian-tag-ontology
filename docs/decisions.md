@@ -41,9 +41,11 @@ All rules live in `core/validate.ts`, which returns a list of issues. The `Ontol
 - **How:** each issue code has its severity in one `as const` table, and the `IssueCode` type is derived from its keys (`keyof typeof SEVERITY`), so a code can't be used without a severity. The constructor calls `assertDictionary()`, an assertion function (`asserts raw is RawDictionary`): once it returns, TypeScript treats the parsed JSON as a dictionary and the model needs no casts.
 - **Checked:** an integration test runs `vault_meta.py`'s dictionary checks on the real dictionary and on a fixture that breaks every rule, and compares the count for each rule.
 
-## 7. Dependencies point one way: `cli → vault → core` *(planned)*
+## 7. Dependencies point one way: `cli → vault → core`
 
 `core` does no I/O and imports neither Node nor Obsidian. `vault` reads files with Node. `cli` parses arguments and sets exit codes. ESLint's `no-restricted-imports` enforces the direction.
+
+`core` and `vault` use static imports so those boundaries can be checked; dynamic imports and `require()` are rejected there too. The plugin build checks its external imports and fails unless `obsidian` is the only one.
 
 - **Why:** the plugin bundles `core` into a browser-like environment, so a Node import there would break it. Pure functions are also tested without temporary files. The `tag-ontology` entry point exports only `core`; Node code is under `tag-ontology/vault`.
 
