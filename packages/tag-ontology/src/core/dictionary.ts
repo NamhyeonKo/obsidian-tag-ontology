@@ -77,12 +77,19 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
 
 export const normalizeName = (input: string) => input.trim().replace(/^#/, '');
 
-export function nameError(name: string, dict: RawDictionary, current?: string): string | undefined {
+// Obsidian's own tag rules: the edit form refuses such a name, and validate() warns about one already in the file.
+export function tagNameError(name: string): string | undefined {
   if (!name) return 'Enter a tag name.';
   if (/\s/.test(name)) return 'Tag names cannot contain spaces.';
   // \p{M}: combining marks, as in Hindi or Thai, which Obsidian accepts in tags.
   if (!/^[\p{L}\p{M}\p{N}_\-/]+$/u.test(name)) return 'Use letters, numbers, _, - and / only.';
   if (/^\d+$/.test(name)) return 'A tag needs at least one character that is not a number.';
+  return undefined;
+}
+
+export function nameError(name: string, dict: RawDictionary, current?: string): string | undefined {
+  const error = tagNameError(name);
+  if (error) return error;
   // The core graph merges tags that differ only in case, so the dictionary can't hold both.
   const existing = Object.keys(dict).find(key => key !== current && key.toLowerCase() === name.toLowerCase());
   return existing === undefined ? undefined : `#${existing} is already in the dictionary.`;
