@@ -1,7 +1,8 @@
 import { build } from 'esbuild';
+import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { licenseNotice } from './scripts/notices.mjs';
-await build({
+const result = await build({
   entryPoints: ['src/main.ts'],
   bundle: true,
   external: ['obsidian'],
@@ -15,6 +16,9 @@ await build({
   outfile: 'main.js',
   sourcemap: false,
   minify: true,
+  metafile: true,
   // The bundled packages' licence notices, which minifying would otherwise drop.
   banner: { js: licenseNotice(fileURLToPath(new URL('.', import.meta.url))) },
 });
+const external = Object.values(result.metafile.outputs).flatMap(output => output.imports.filter(item => item.external).map(item => item.path));
+assert.deepEqual([...new Set(external)].sort(), ['obsidian'], 'The plugin must require only obsidian at runtime.');
