@@ -24,6 +24,9 @@ export interface ScanOptions {
 
 export interface Scan { notes: ScannedNote[]; issues: Issue[] }
 
+// A path given to scan() that it can't use, which the CLI reports as wrong usage.
+export class PathError extends Error {}
+
 const globToRegExp = (glob: string) => new RegExp(`^${glob.replace(/^\.\//, '').replace(/\/$/, '').replace(/\*\*\/|\*\*|\*|\?|[.+^${}()|[\]\\]/g,
   token => token === '**/' ? '(?:.*/)?' : token === '**' ? '.*' : token === '*' ? '[^/]*' : token === '?' ? '[^/]' : `\\${token}`)}$`);
 
@@ -45,15 +48,17 @@ export function scan(root: string, options: ScanOptions = {}): Scan {
   };
   for (const given of options.paths ?? ['.']) {
     const path = relative(resolve(root), resolve(root, given)).split(sep).join('/');
-    if (path.startsWith('..') || isAbsolute(path)) throw new Error(`${given} is outside the vault root.`);
+    if (path.startsWith('..') || isAbsolute(path)) throw new PathError(`${given} is outside the vault root.`);
     if (path && excluded(path)) continue;
-    // Every folder on the way is checked too: a link there could lead anywhere, outside the root as well.
+    // Every part of the path is checked, folders on the way too: a link there could lead anywhere, outside the root as well.
+    let stats = lstatSync(root);
     const parts = path ? path.split('/') : [];
-    for (let i = 1; i < parts.length; i++) {
-      if (lstatSync(join(root, ...parts.slice(0, i))).isSymbolicLink()) throw new Error(`${given} goes through a symbolic link, which the scan doesn't follow.`);
+    for (const [i] of parts.entries()) {
+      const part = lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false });
+      if (!part) throw new PathError(`${given} doesn't exist.`);
+      if (part.isSymbolicLink()) throw new PathError(`${given} is or goes through a symbolic link, which the scan doesn't follow.`);
+      stats = part;
     }
-    const stats = lstatSync(join(root, path));
-    if (stats.isSymbolicLink()) throw new Error(`${given} is a symbolic link, which the scan doesn't follow.`);
     if (stats.isDirectory()) walk(path);
     else if (stats.isFile() && isIncludedNote(path)) found.add(path);
   }
