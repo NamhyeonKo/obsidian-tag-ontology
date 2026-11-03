@@ -16,6 +16,9 @@ Tag Ontology는 사이드바 탭에서 태그마다 상위·하위·연관 태�
 
 ![Tag Ontology 데모](assets/0.9.0/demo.gif)
 
+> [!TIP]
+> **AI 에이전트와 함께 쓰기**: [TOW](https://github.com/NamhyeonKo/tag-ontology-wiki)를 함께 사용하면 AI 에이전트로 태그와 사전을 자동 관리하고 vault 전반을 정리할 수 있습니다. ([자세히 보기](#관련-프로젝트))
+
 ## 기능
 
 - **사이드바에서 계층 만들기.** 노트에서 이미 쓰는 태그나 새 이름을 추가하고, 태그의 이름·설명·별칭·상위·하위·연관 태그를 고치고, 태그를 삭제합니다. 파일을 직접 고칠 필요가 없고, 저장할 때 다른 곳에서 바뀐 내용을 덮어쓰지 않습니다.
@@ -228,6 +231,28 @@ UI는 영어로 표시됩니다.
 - 로컬 그래프에도 계층 표시
 
 버그 제보와 기능 제안은 [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues)에 남겨 주세요. 버그라면 Obsidian 버전과 OS를 함께 적어 주세요.
+
+## 라이브러리와 CLI
+
+독립 패키지인 [`tag-ontology`](packages/tag-ontology/README.md)는 MIT 라이선스의 ESM 라이브러리와 Node CLI로 동일한 사전 규칙을 제공합니다. Obsidian을 설치하지 않고도 vault를 검사·스캔하고, 태그 사용 현황을 확인하며, 태그 계층을 조회하고, 콘텐츠 해시 검증을 통해 사전 변경 사항을 미리 보거나 적용할 수 있습니다.
+
+npm에 [`tag-ontology`](https://www.npmjs.com/package/tag-ontology)로 배포되어 있습니다:
+
+```sh
+npx tag-ontology check --root /path/to/vault --json
+```
+
+라이브러리 예시는 [패키지 안내](packages/tag-ontology/README.md)를, 명령어·JSON 필드·종료 코드·파서 제한은 [CLI 규격 문서](docs/cli.md)를 참고하세요. 플러그인과 패키지는 버전과 릴리스 태그를 독립적으로 관리합니다.
+
+## 관련 프로젝트
+
+### [TOW (Tag Ontology Wiki)](https://github.com/NamhyeonKo/tag-ontology-wiki)
+
+[TOW](https://github.com/NamhyeonKo/tag-ontology-wiki)를 함께 사용하면 AI 에이전트를 활용해 태그와 사전을 관리하고, 노트 검색·frontmatter 관리·문서 형식 정리 등 Obsidian vault 전반을 관리할 수 있습니다.
+
+- **CLI 기반 사전 검증 및 관리**: Tag Ontology의 CLI(`tag-ontology`)를 활용해 볼트 내 태그를 조회하고, 사전을 안전하게 검증·수정합니다.
+- **AI 에이전트 워크플로우**: 미등록 태그 식별, 온톨로지 동기화, frontmatter 규격 검사 등 반복적인 볼트 관리 작업을 자동화합니다.
+- **시각화와의 상호보완**: AI 에이전트가 정리한 태그 계층과 연관 관계를 본 플러그인을 통해 그래프 뷰에서 직관적으로 탐색할 수 있습니다.
 
 ## 개발
 
