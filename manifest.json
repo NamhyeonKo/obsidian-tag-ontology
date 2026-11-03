@@ -6,9 +6,6 @@
   "description": "Link your tags the way you link notes, with parents, children, and related tags. Explore your tag hierarchy in interactive 2D and 3D graph views with tree layouts.",
   "author": "NamhyeonKo",
   "authorUrl": "https://github.com/NamhyeonKo",
-  "fundingUrl": {
-    "Buy Me a Coffee": "https://buymeacoffee.com/namhyunko",
-    "GitHub Sponsors": "https://github.com/sponsors/NamhyeonKo"
-  },
+  "fundingUrl": "https://buymeacoffee.com/namhyunko",
   "isDesktopOnly": true
 }
