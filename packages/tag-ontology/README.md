@@ -116,4 +116,4 @@ console.log(result.unregistered);
 
 ## License
 
-[MIT](LICENSE) for this package and its contents. The Obsidian plugin at the repository root is separately licensed under AGPL-3.0-or-later.
+[MIT](LICENSE). Both this package and the root Obsidian plugin are licensed under the MIT License.

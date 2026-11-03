@@ -2,9 +2,9 @@
 
 [![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**English** | [한국어](README.ko.md)
+**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md)
 
 **Link your tags the way you link notes.**
 
@@ -58,24 +58,47 @@ The hierarchy you build in the sidebar tab is saved in the dictionary file. See 
 
 Tag usage comes from Obsidian's metadata cache, which includes frontmatter `tags` and inline `#tags` in every Markdown note.
 
-## Installation
+## Installation and Updating
+
+> For complete details, development builds, and troubleshooting, see the [Full Installation & Updating Guide](docs/installation.md).
 
 ### From Community plugins
 
-Open **Settings → Community plugins → Browse**, search for "Tag Ontology", then install and enable it. You can also install it from its [directory page](https://community.obsidian.md/plugins/tag-ontology).
+- **Install**: Open **Settings → Community plugins → Browse**, search for "Tag Ontology", then install and enable it. You can also install it from its [directory page](https://community.obsidian.md/plugins/tag-ontology).
+- **Update**: Go to **Settings → Community plugins**, click **Check for updates**, then click **Update all** or **Update** next to Tag Ontology.
 
-### With BRAT (beta)
+### With BRAT (beta releases)
 
-1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-2. Choose **BRAT: Add a beta plugin** and enter `NamhyeonKo/obsidian-tag-ontology`.
+- **Install**:
+  1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+  2. Choose **BRAT: Add a beta plugin for testing** and enter `NamhyeonKo/obsidian-tag-ontology`.
+- **Update**: Run command `BRAT: Check for updates to all beta plugins` (or `BRAT: Check for plugin updates`).
 
 ### Manually
 
-1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases).
-2. Copy them into `.obsidian/plugins/tag-ontology/` inside your vault.
-3. Reload Obsidian, then enable **Tag Ontology** in **Settings → Community plugins**.
+- **Install**:
+  1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases).
+  2. Copy them into `.obsidian/plugins/tag-ontology/` inside your vault.
+  3. Reload Obsidian, then enable **Tag Ontology** in **Settings → Community plugins**.
+- **Update**:
+  1. Download the latest `main.js`, `manifest.json`, and `styles.css`.
+  2. Overwrite the files in `.obsidian/plugins/tag-ontology/`.
+  3. Run command `Reload app without saving` or restart Obsidian.
 
-The core **Graph view** plugin must be enabled.
+### Standalone CLI tool
+
+The standalone CLI is published on npm as [`tag-ontology`](https://www.npmjs.com/package/tag-ontology):
+
+```sh
+# Run latest directly without installing:
+npx tag-ontology@latest check --root /path/to/vault --json
+
+# Or install / update globally:
+npm install -g tag-ontology@latest
+npm update -g tag-ontology
+```
+
+> **Requirement**: The core **Graph view** plugin must be enabled, with **Filters → Tags** toggled ON in the graph settings.
 
 ## Quick start with the sample vault
 
@@ -295,9 +318,17 @@ scripts/deploy.mjs  # Copies the build into a local vault
 scripts/check-package.mjs  # Inspects and exercises the packed npm package
 ```
 
-### Contributing and releasing
+## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention (Conventional Commits), pre-commit checks, testing in Obsidian, and the maintainer release checklist.
+Contributions from the community are warmly welcome! Whether you are fixing bugs, proposing new features, or improving documentation:
+
+1. Check existing [Issues](https://github.com/NamhyeonKo/obsidian-tag-ontology/issues) or open a new one.
+2. Fork the repository and create your feature branch based on `dev`.
+3. Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for commit messages.
+4. Ensure all checks pass: `npm run lint && npm test && npm run build`.
+5. Submit a Pull Request targeting the `dev` branch.
+
+Please review our [CONTRIBUTING.md](CONTRIBUTING.md) for full development guidelines, testing workflows, and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Support
 
@@ -310,10 +341,6 @@ Tag Ontology is free and open source. If it saves you time, you can [buy me a co
 
 ## License
 
-Copyright (C) 2026 NamhyeonKo
+Copyright (c) 2026 NamhyeonKo
 
-The Obsidian plugin (`src/`, `styles.css` and the root plugin tooling) is free software under the [GNU Affero General Public License](LICENSE), version 3 or later. It is distributed without any warranty; see the license for details.
-
-The standalone library and CLI in [`packages/tag-ontology/`](packages/tag-ontology/README.md), including that directory's source and tests, are separately licensed under [MIT](packages/tag-ontology/LICENSE). Importing the package does not require the Obsidian plugin.
-
-Versions 0.2.0 and earlier were released under the MIT License, and those releases remain under MIT.
+This project is licensed under the [MIT License](LICENSE). You are free to use, modify, and distribute this software under the terms of the MIT License.

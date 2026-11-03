@@ -8,4 +8,4 @@ Obsidian version and OS:
 
 - [ ] `npm run lint`, `npm test` and `npm run build` pass
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
-- [ ] I agree to the [contributor license agreement](../blob/main/CONTRIBUTING.md#contributor-license-agreement)
+- [ ] My contributions are provided under the project's [MIT License](LICENSE)

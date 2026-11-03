@@ -9,9 +9,12 @@ npm workspaces: the Obsidian plugin stays at the repository root and the library
 - **Why:** Obsidian reads `manifest.json`, the README and the release assets from the root of the plugin repository, so the plugin can't move. A workspace package lets the plugin import the library by name (`from 'tag-ontology'`), the way any other user will.
 - **Rejected:** a separate repository now. The plugin and the library change together while the rules are being unified; the package boundary already makes a later move a copy.
 
-## 2. MIT for the package, AGPL for the plugin
+## 2. Unified MIT License for both package and plugin
 
-- **Why:** the package is meant to be a dependency of other tools (the TOW skills, scripts). MIT lets them depend on it without license questions. One author holds the copyright of both, so the package can be licensed differently.
+*(Supersedes former split: MIT for package, AGPL for plugin)*
+
+- **Decision**: Both the Obsidian plugin and the standalone `tag-ontology` package are licensed under the MIT License.
+- **Why**: Simplifying to a permissive MIT license across the whole repository fosters open source adoption, ease of contribution, and consistency with common Obsidian community plugins and modern developer tools.
 
 ## 3. A `source` export condition during development
 
