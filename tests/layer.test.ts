@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Ontology } from '../src/ontology.ts';
+import { Ontology } from 'tag-ontology';
 import { addEdges, applyCollapse, buildLayer, edgeKey, focusIds, hideNotes, linkTone, resolveTags, type FocusScope, type NativeData } from '../src/layer.ts';
 
 const model = new Ontology({

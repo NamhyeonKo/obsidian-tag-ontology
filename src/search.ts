@@ -1,5 +1,5 @@
 import { AbstractInputSuggest, type App } from 'obsidian';
-import type { Suggestion } from './ontology.ts';
+import type { Suggestion } from 'tag-ontology';
 
 // Type-ahead for the graph search box, using Obsidian's own suggestion popover.
 export class TagSuggest extends AbstractInputSuggest<Suggestion> {

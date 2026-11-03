@@ -1,14 +1,11 @@
 {
   "id": "tag-ontology",
   "name": "Tag Ontology",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "minAppVersion": "1.7.2",
-  "description": "Link your tags the way you link notes, with parents, children and related tags, and explore them in the graph view.",
+  "description": "Link your tags the way you link notes, with parents, children, and related tags. Explore your tag hierarchy in interactive 2D and 3D graph views with tree layouts.",
   "author": "NamhyeonKo",
   "authorUrl": "https://github.com/NamhyeonKo",
-  "fundingUrl": {
-    "Buy Me a Coffee": "https://buymeacoffee.com/namhyunko",
-    "GitHub Sponsors": "https://github.com/sponsors/NamhyeonKo"
-  },
+  "fundingUrl": "https://buymeacoffee.com/namhyunko",
   "isDesktopOnly": true
 }

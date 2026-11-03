@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Ontology, isIncludedNote } from '../src/ontology.ts';
+import { Ontology, isIncludedNote } from '../src/core/ontology.ts';
+import { validate } from '../src/core/validate.ts';
 
 const raw = {
   root: { description: '최상위', aliases: ['루트'], broader: [] },
@@ -119,6 +120,16 @@ test('rejects self references and broader cycles', () => {
     b: { description: '', broader: ['c'] },
     c: { description: '', broader: ['a'] },
   }, []), /Cycle/);
+});
+
+test('the model throws the first error validate() reports, and opens a dictionary with only warnings', () => {
+  for (const broken of [
+    { b: { description: 'B', broader: ['gone'] }, a: { description: 'A', broader: ['a'] } },
+    { a: { description: 'A', broader: ['c'] }, b: { description: 'B', broader: ['a'] }, c: { description: 'C', broader: ['b'] }, d: { description: 'D', broader: ['c'] } },
+  ]) assert.throws(() => new Ontology(broken, []), { message: validate(broken)[0]!.message });
+  const loose = { 'Two Words': { description: '' }, x: { description: 'X', aliases: ['two words'], broader: [] } };
+  assert.ok(validate(loose).length > 0 && validate(loose).every(issue => issue.severity === 'warning'));
+  assert.deepEqual(new Ontology(loose, []).order, ['Two Words', 'x']);
 });
 
 test('note tags match dictionary keys case-insensitively, like the core graph', () => {

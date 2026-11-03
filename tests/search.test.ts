@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
-import type { Suggestion } from '../src/ontology.ts';
+import type { Suggestion } from 'tag-ontology';
 
 class Div {
   children: { text: string; cls: string }[] = [];
