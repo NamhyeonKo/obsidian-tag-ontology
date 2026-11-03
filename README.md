@@ -16,6 +16,9 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 ![Tag Ontology demo](assets/0.9.0/demo.gif)
 
+> [!TIP]
+> **Using with AI agents**: Pair it with [TOW](https://github.com/NamhyeonKo/tag-ontology-wiki) to manage tags and dictionaries with AI agents, alongside broader vault tasks. ([Learn more](#related-projects))
+
 ## Features
 
 - **Build your hierarchy in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. No file editing, and saving never overwrites changes made elsewhere.
@@ -239,6 +242,16 @@ npx tag-ontology check --root /path/to/vault --json
 ```
 
 See the [package guide](packages/tag-ontology/README.md) for library examples and the [CLI contract](docs/cli.md) for commands, JSON fields, exit codes and parser limits. The plugin and package have independent versions and release tags.
+
+## Related projects
+
+### [TOW (Tag Ontology Wiki)](https://github.com/NamhyeonKo/tag-ontology-wiki)
+
+When used together with [TOW](https://github.com/NamhyeonKo/tag-ontology-wiki), you can leverage AI agents to manage tags and dictionaries, alongside broader vault tasks like note search, frontmatter management, and document formatting.
+
+- **CLI-based dictionary management**: Uses the `tag-ontology` CLI to inspect tags, validate dictionary integrity, and apply safe updates.
+- **AI agent workflows**: Automates repetitive vault maintenance such as discovering unregistered tags, syncing ontology entries, verifying frontmatter schema, and cleaning up note structure.
+- **Visual graph integration**: Explore and navigate the agent-managed tag hierarchies directly within Obsidian's Graph view using this plugin.
 
 ## Development
 
