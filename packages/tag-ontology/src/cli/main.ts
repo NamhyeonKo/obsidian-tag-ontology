@@ -72,7 +72,7 @@ function run(): void {
     const paths = new Set(scoped.notes.map(note => note.path));
     const result = usage(file.raw, notes, path => paths.has(path));
     const found = [...issues, ...scoped.issues];
-    const problems = failed(found) || values.strict && [result.unregistered, result.nonCanonical, result.unused, result.redundant].some(items => items.length);
+    const problems = failed(found) || values.strict && [result.unregistered, result.nonCanonical, result.unused].some(items => items.length);
     output(found, { ...result }, problems ? 1 : 0, sorted => usageText(result, sorted));
     return;
   }

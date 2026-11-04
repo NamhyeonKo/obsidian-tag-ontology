@@ -24,13 +24,20 @@ test('check lists each problem and counts them', t => {
   assert.match(run.stdout, /1 error, 1 warning/);
 });
 
-test('scan lists each note with its tags and headings', () => {
+test('scan lists each note with its metadata, tags and headings', t => {
   const { stdout } = text(['scan', 'notes']);
   assert.match(stdout, /^notes\/Alpha\.md$/m);
   assert.match(stdout, /tags: machine-learning, cnn/);
   assert.match(stdout, /body tags: deep-learning, ML, ai/);
   assert.match(stdout, /^warning: notes\/Broken\.md/m);
   assert.match(stdout, /3 notes/);
+
+  const vault = copyOfFixture(t);
+  writeFileSync(join(vault, 'notes/Rich.md'), '---\ndescription: Summary line\naliases: [A1, A2]\ntags: [ai]\n---\n# H1\n## H2\n## H3\n## H4\n');
+  const rich = text(['scan', 'notes/Rich.md'], vault).stdout;
+  assert.match(rich, /description: Summary line/);
+  assert.match(rich, /aliases: A1, A2/);
+  assert.match(rich, /headings: # H1, ## H2, ## H3, ## H4/);
 });
 
 test('usage groups its findings', () => {
@@ -39,7 +46,7 @@ test('usage groups its findings', () => {
   assert.match(stdout, /Unregistered \(1\)[\s\S]*quantum.*notes\/Broken\.md/);
   assert.match(stdout, /notes\/Alpha\.md: ML -> machine-learning/);
   assert.match(stdout, /Unused \(1\): unused-leaf/);
-  assert.match(stdout, /Redundant \(3\)[\s\S]*notes\/Alpha\.md: ai \(narrower: cnn, deep-learning, machine-learning\)/);
+  assert.match(stdout, /Redundant \(3\)[\s\S]*notes\/Alpha\.md: ai \(narrower: cnn, deep-learning, machine-learning\); deep-learning \(narrower: cnn\); machine-learning \(narrower: cnn, deep-learning\)/);
   assert.match(text(['usage', 'notes/archive']).stdout, /No unregistered, non-canonical or redundant tags/);
 });
 

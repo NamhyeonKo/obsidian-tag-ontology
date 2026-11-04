@@ -40,10 +40,10 @@ function similar(a: string, b: string): boolean {
 // Letters and digits only, ignoring case, so "Deep Learning" and deep-learning name the same concept.
 const concept = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
-// What a note is about by its file name: the whole name, and its parts split at " - ", "(", ")" or ":".
+// What a note is about by its file name: the whole name, its parts split at " - ", "(", ")" or ":", and its words.
 function titleConcepts(path: string): Set<string> {
   const stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
-  return new Set([stem, ...stem.split(/\s+-\s+|[():]/)].map(concept).filter(Boolean));
+  return new Set([stem, ...stem.split(/\s+-\s+|[():]/), ...stem.split(/\s+/)].map(concept).filter(Boolean));
 }
 
 // `notes` are all the vault's notes: unused tags are judged over them, the rest only over the notes `inScope` keeps.
