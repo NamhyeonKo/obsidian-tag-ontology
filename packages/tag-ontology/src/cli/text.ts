@@ -27,12 +27,20 @@ export function issueLines(issues: readonly Issue[]): string[] {
 export const checkText = (issues: readonly Issue[]) => issues.length ? issueLines(issues) : ['No problems found.'];
 
 export function scanText(notes: readonly ScannedNote[], issues: readonly Issue[]): string[] {
-  const lines = notes.flatMap(note => [
-    note.path,
-    ...note.tags.length ? [`  tags: ${note.tags.join(', ')}`] : [],
-    ...note.bodyTags.length ? [`  body tags: ${note.bodyTags.join(', ')}`] : [],
-    ...note.headings.length ? [`  headings: ${some(note.headings.map(heading => `${'#'.repeat(heading.level)} ${heading.text}`))}`] : [],
-  ]);
+  const lines = notes.flatMap(note => {
+    const description = typeof note.frontmatter?.description === 'string' ? note.frontmatter.description.trim() : '';
+    const aliases = Array.isArray(note.frontmatter?.aliases)
+      ? note.frontmatter.aliases.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [];
+    return [
+      note.path,
+      ...description ? [`  description: ${description}`] : [],
+      ...aliases.length ? [`  aliases: ${aliases.join(', ')}`] : [],
+      ...note.tags.length ? [`  tags: ${note.tags.join(', ')}`] : [],
+      ...note.bodyTags.length ? [`  body tags: ${note.bodyTags.join(', ')}`] : [],
+      ...note.headings.length ? [`  headings: ${note.headings.map(heading => `${'#'.repeat(heading.level)} ${heading.text}`).join(', ')}`] : [],
+    ];
+  });
   return [...lines, ...issueLines(issues), count(notes.length, 'note')];
 }
 
@@ -47,7 +55,11 @@ export function usageText(found: Usage, issues: readonly Issue[]): string[] {
     lines.push(`Written differently from the dictionary (${nonCanonical.length}):`, ...nonCanonical.map(item => `  ${item.path}: ${item.tag} -> ${item.canonical}`));
   }
   if (redundant.length) {
-    lines.push(`Redundant (${redundant.length}):`, ...redundant.map(item => `  ${item.path}: ${item.tag} (narrower: ${item.narrower.join(', ')})`));
+    const byNote = new Map<string, string[]>();
+    for (const item of redundant) {
+      byNote.set(item.path, [...byNote.get(item.path) ?? [], `${item.tag} (narrower: ${item.narrower.join(', ')})`]);
+    }
+    lines.push(`Redundant (${redundant.length}):`, ...[...byNote].map(([path, tags]) => `  ${path}: ${tags.join('; ')}`));
   }
   if (!unregistered.length && !nonCanonical.length && !redundant.length) lines.push('No unregistered, non-canonical or redundant tags.');
   if (unused.length) lines.push(`Unused (${unused.length}): ${unused.join(', ')}`);

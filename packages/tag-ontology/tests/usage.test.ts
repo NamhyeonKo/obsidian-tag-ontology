@@ -58,6 +58,7 @@ test('a note with a tag and its descendant is redundant, except for facets and t
     { path: 'notes/Pandas.md', tags: ['python', 'pandas'] },
     { path: 'notes/Deep Learning (intro).md', tags: ['deep-learning', 'cnn'] },
     { path: 'notes/ML - Overview.md', tags: ['ML', 'machine-learning', 'deep-learning'] },
+    { path: 'notes/Intro to ML.md', tags: ['machine-learning', 'deep-learning'] },
     { path: 'notes/Mixed case.md', tags: ['Deep-Learning', 'CNN'] },
   ]).redundant, [
     { path: 'notes/Mixed case.md', tag: 'deep-learning', narrower: ['cnn'] },

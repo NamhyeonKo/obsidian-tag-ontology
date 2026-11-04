@@ -24,11 +24,21 @@ test('usage compares the notes with the dictionary', () => {
   assert.match(cli(['usage']).stdout, /quantum/);
 });
 
-test('usage with paths reports on those notes, and judges unused over the whole vault', () => {
+test('usage with paths reports on those notes, and judges unused over the whole vault', t => {
   const run = json(['usage', 'notes/archive']);
   assert.equal(run.code, 0);
   assert.deepEqual([run.doc.scanned, run.doc.unregistered, run.doc.nonCanonical, run.doc.redundant, run.doc.issues], [1, [], [], [], []]);
   assert.deepEqual(run.doc.unused, ['unused-leaf']);
+
+  const vault = copyOfFixture(t);
+  writeFileSync(join(vault, 'Tag-Dictionary.json'), JSON.stringify({
+    ai: { description: 'AI', broader: [] },
+    cnn: { description: 'CNN', broader: ['ai'] },
+  }));
+  writeFileSync(join(vault, 'notes/OnlyRedundant.md'), '---\ntags: [ai, cnn]\n---\n');
+  const strict = json(['usage', 'notes/OnlyRedundant.md', '--strict'], vault);
+  assert.equal(strict.code, 0);
+  assert.deepEqual(strict.doc.redundant, [{ path: 'notes/OnlyRedundant.md', tag: 'ai', narrower: ['cnn'] }]);
 });
 
 test('usage and show report a dictionary with errors and nothing else, exit 1', t => {
