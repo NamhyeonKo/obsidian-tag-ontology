@@ -12,6 +12,7 @@ function overlayVault(t: { after: (fn: () => void) => void }): string {
     rag: { description: 'RAG', broader: ['retrieval'], aliases: ['retrieval-augmented generation'] },
   }));
   mkdirSync(join(vault, 'docs'));
+  writeFileSync(join(vault, 'docs/Body.md'), '#retrieval\n');
   writeFileSync(join(vault, 'docs/Plain.md'), '# Plain\n');
   writeFileSync(join(vault, 'docs/Tagged.md'), '---\ntags: [ai]\n---\n');
   writeFileSync(join(vault, 'shared.json'), JSON.stringify({
@@ -34,6 +35,37 @@ test('scan reports overlay tags from every --tags-file, normalized and combined'
 test('scan without --tags-file prints no overlayTags field', t => {
   const run = json(['scan', 'docs'], overlayVault(t));
   assert.ok((run.doc.notes as object[]).every(n => !('overlayTags' in n)));
+});
+
+test('show --notes says which tags matched each note and where they came from', t => {
+  const run = json(['show', 'ai', '--notes', '--tags-file', 'shared.json'], overlayVault(t));
+  const docs = (run.doc.noteMatches as { path: string }[]).filter(m => m.path.startsWith('docs/'));
+  assert.deepEqual(docs, [
+    { path: 'docs/Body.md', matches: [{ tag: 'retrieval', source: 'bodyTags' }] },
+    { path: 'docs/Plain.md', matches: [{ tag: 'rag', source: 'overlay' }] },
+    { path: 'docs/Tagged.md', matches: [{ tag: 'ai', source: 'tags' }] },
+  ]);
+});
+
+test('a tag from frontmatter and overlay on one note lists both sources', t => {
+  const vault = overlayVault(t);
+  writeFileSync(join(vault, 'docs/Both.md'), '---\ntags: [ai]\n---\n');
+  writeFileSync(join(vault, 'both.json'), JSON.stringify({ 'docs/Both.md': { tags: ['ai'] } }));
+  const run = json(['show', 'ai', '--notes', '--exact', '--tags-file', 'both.json'], vault);
+  assert.deepEqual((run.doc.noteMatches as { path: string }[]).find(m => m.path === 'docs/Both.md'),
+    { path: 'docs/Both.md', matches: [{ tag: 'ai', source: 'tags' }, { tag: 'ai', source: 'overlay' }] });
+});
+
+test('show --exact reports only the queried tag in note matches', t => {
+  const vault = overlayVault(t);
+  writeFileSync(join(vault, 'both.json'), JSON.stringify({ 'docs/Tagged.md': { tags: ['retrieval'] } }));
+  const run = json(['show', 'ai', '--notes', '--exact', '--tags-file', 'both.json'], vault);
+  assert.deepEqual((run.doc.noteMatches as { path: string }[]).find(m => m.path === 'docs/Tagged.md'),
+    { path: 'docs/Tagged.md', matches: [{ tag: 'ai', source: 'tags' }] });
+});
+
+test('show without --notes has no noteMatches', t => {
+  assert.ok(!('noteMatches' in json(['show', 'ai'], overlayVault(t)).doc));
 });
 
 test('show and usage count overlay tags like note tags', t => {

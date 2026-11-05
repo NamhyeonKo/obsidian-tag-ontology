@@ -10,7 +10,7 @@ import { PathError, scan } from '../vault/scan.ts';
 import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
 import { overlayIssues, readOverlay } from './overlay.ts';
-import { show } from './show.ts';
+import { show, type NoteSources } from './show.ts';
 import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
@@ -73,6 +73,9 @@ function run(): void {
   if (command === 'check' || issues.some(item => item.severity === 'error')) { output(issues); return; }
   if (!isWellFormed(file.raw, issues)) { output(issues); return; }
   const all = scan(root, { exclude });
+  const sources = new Map<string, NoteSources>(all.notes.map(note => [note.path, {
+    tags: note.tags, bodyTags: note.bodyTags, overlayTags: overlay.get(note.path) ?? [],
+  }]));
   const notes = all.notes.map(note => ({ path: note.path, tags: [...note.tags, ...note.bodyTags, ...overlay.get(note.path) ?? []] }));
   if (command === 'usage') {
     const scoped = rest.length ? scan(root, { paths: rest, exclude }) : all;
@@ -83,7 +86,7 @@ function run(): void {
     output(found, { ...result }, problems ? 1 : 0, sorted => usageText(result, sorted));
     return;
   }
-  const result = show(new Ontology(file.raw, notes), file.raw, rest[0]!, values.notes ?? false, values.exact ?? false);
+  const result = show(new Ontology(file.raw, notes), file.raw, rest[0]!, values.notes ?? false, values.exact ?? false, sources);
   const found = [...issues.filter(item => item.tag === result.tag || item.target === result.tag), ...overlayIssues(root, overlay, new Set(all.notes.map(note => note.path)))];
   output(found, result, undefined, sorted => showText(result, sorted));
 }

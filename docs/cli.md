@@ -242,6 +242,7 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 - `descendants`: how many tags are below it.
 - `notes`: notes with this tag (`direct`) and with it or a descendant (`rollup`).
 - `notePaths`: only with `--notes`. Notes with the tag or a descendant, or only the tag with `--exact`.
+- `noteMatches`: only with `--notes`, in `notePaths` order. Each note has matching dictionary tags (the dictionary key, ignoring case) and their source: `tags`, `bodyTags` or `overlay`. Matches are sorted by tag, then by source in that order; with `--exact`, only the queried tag is included.
 - `draft`: the tag as the edit form sees it, with `children` and two-way `related` filled in. Change it and put it in an `edit` change.
 
 ### plan
