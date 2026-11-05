@@ -21,7 +21,7 @@ Options:
   --root <dir>          Vault folder (default: current directory)
   --dictionary <file>   Dictionary relative to root (default: Tag-Dictionary.json)
   --exclude <glob>      Skip notes; repeatable (scan, usage, show)
-  --tags-file <file>     Tags for files without them; repeatable (scan, usage, show)
+  --tags-file <file>    Tags for files without them; repeatable (scan, usage, show)
   --names <rule>        obsidian (default) or kebab (all but scan)
   --strict              Fail on warnings/findings (check, usage, plan, apply)
   --notes               List note paths (show)

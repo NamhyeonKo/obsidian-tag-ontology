@@ -79,6 +79,11 @@ test('show finds a tag by name ignoring case, lists notes with --notes, and only
   assert.deepEqual(json(['show', 'machine-learning', '--exclude', 'notes']).doc.notes, { direct: 0, rollup: 1 });
 });
 
+test('subset rejects an unknown or missing requested tag as wrong usage', () => {
+  assert.equal(cli(['subset', 'missing']).code, 2);
+  assert.equal(cli(['subset']).code, 2);
+});
+
 test('show of an unknown tag is wrong usage, with suggestions', () => {
   const run = cli(['show', 'machine']);
   assert.equal(run.code, 2);

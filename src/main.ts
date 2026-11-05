@@ -18,7 +18,7 @@ const reason = (error: unknown) => error instanceof Error ? error.message : Stri
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   dictionaryPath = DEFAULT_SETTINGS.dictionaryPath;
-  dictionaryFound = false;
+  dictionaryFound?: boolean;
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
@@ -30,6 +30,7 @@ export default class TagOntologyPlugin extends Plugin {
   firstRun = false;
   private refreshTimer?: number;
   private dictionaryMtime?: number;
+  private dictionarySize?: number;
   private dictionaryMtimePath?: string;
   private redraw = false;
   private disposed = false;
@@ -98,18 +99,16 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   private async readModel(): Promise<Ontology> {
-    this.dictionaryFound = false;
     const path = await this.resolveDictionary();
-    if (!isValidDictionaryPath(path, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
-    let dictionaryMtime: number | undefined;
+    if (!isValidDictionaryPath(path, this.app.vault.configDir)) { this.dictionaryFound = false; throw new Error('The dictionary path is not allowed.'); }
+    let dictionaryMtime: number | undefined, dictionarySize: number | undefined;
     if (isHiddenPath(path)) {
-      try { dictionaryMtime = (await this.app.vault.adapter.stat(path))?.mtime; } catch { /* proceed without the optional mtime */ }
+      try { const stat = await this.app.vault.adapter.stat(path); dictionaryMtime = stat?.mtime; dictionarySize = stat?.size; } catch { /* proceed without optional stat fields */ }
     }
     const start = performance.now();
     let text: string;
     if (isHiddenPath(path)) {
-      if (!await this.app.vault.adapter.exists(path)) throw new Error(`Tag dictionary not found: ${path}`);
-      this.dictionaryFound = true;
+      if (!await this.app.vault.adapter.exists(path)) { this.dictionaryFound = false; throw new Error(`Tag dictionary not found: ${path}`); }
       try { text = await this.app.vault.adapter.read(path); }
       catch (error) {
         try { if (!await this.app.vault.adapter.exists(path)) this.dictionaryFound = false; } catch { /* keep the read error */ }
@@ -117,11 +116,11 @@ export default class TagOntologyPlugin extends Plugin {
       }
     } else {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${path}`);
-      this.dictionaryFound = true;
+      if (!(file instanceof TFile)) { this.dictionaryFound = false; throw new Error(`Tag dictionary not found: ${path}`); }
       // A read error keeps its own message; only a parse error is about the JSON.
       text = await this.app.vault.cachedRead(file);
     }
+    this.dictionaryFound = true;
     let raw: unknown;
     try { raw = JSON.parse(text); }
     catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
@@ -134,6 +133,7 @@ export default class TagOntologyPlugin extends Plugin {
       noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
     };
     this.dictionaryMtime = dictionaryMtime;
+    this.dictionarySize = dictionarySize;
     this.dictionaryMtimePath = path;
     this.raw = raw as RawDictionary;
     this.model = model;
@@ -223,9 +223,10 @@ export default class TagOntologyPlugin extends Plugin {
       // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
       await adapter.write(path, out);
       try {
-        this.dictionaryMtime = (await adapter.stat(path))?.mtime;
+        const stat = await adapter.stat(path);
+        this.dictionaryMtime = stat?.mtime; this.dictionarySize = stat?.size;
         this.dictionaryMtimePath = path;
-      } catch { this.dictionaryMtime = undefined; this.dictionaryMtimePath = path; }
+      } catch { this.dictionaryMtime = undefined; this.dictionarySize = undefined; this.dictionaryMtimePath = path; }
       return true;
     } catch (error) {
       new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
@@ -302,10 +303,15 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async checkOutsideChange(): Promise<void> {
-    if (this.disposed || !isHiddenPath(this.dictionaryPath)) return;
-    let mtime: number | undefined;
-    try { mtime = (await this.app.vault.adapter.stat(this.dictionaryPath))?.mtime; } catch { return; }
-    if (!this.disposed && (this.dictionaryMtimePath !== this.dictionaryPath || mtime !== this.dictionaryMtime)) this.scheduleRefresh(this.dictionaryPath);
+    if (this.disposed) return;
+    let path: string;
+    try { path = await this.resolveDictionary(); } catch { return; }
+    if (this.disposed) return;
+    if (path !== this.dictionaryMtimePath) { this.scheduleRefresh(path); return; }
+    if (!isHiddenPath(path)) return;
+    let stat: { mtime?: number; size?: number } | null | undefined;
+    try { stat = await this.app.vault.adapter.stat(path); } catch { return; }
+    if (!this.disposed && (path !== this.dictionaryMtimePath || stat?.mtime !== this.dictionaryMtime || stat?.size !== this.dictionarySize)) this.scheduleRefresh(path);
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.

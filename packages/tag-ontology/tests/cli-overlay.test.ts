@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { cli, copyOfFixture, json } from './cli-helper.ts';
@@ -32,9 +32,48 @@ test('scan reports overlay tags from every --tags-file, normalized and combined'
   assert.deepEqual((run.doc.issues as { code: string; path: string }[]).filter(i => i.code === 'overlay-missing-note').map(i => i.path), ['docs/Gone.md']);
 });
 
+test('scan warns only for overlay keys whose exact-case file path is missing', t => {
+  const vault = overlayVault(t);
+  writeFileSync(join(vault, 'cases.json'), JSON.stringify({
+    'docs/hidden.md': { tags: ['ai'] },
+    'docs/Plain.txt': { tags: ['ai'] },
+    'docs/Absent.md': { tags: ['ai'] },
+    'docs/Linked.md': { tags: ['ai'] },
+    'outside.md': { tags: ['ai'] },
+    '.hidden/Hidden.md': { tags: ['ai'] },
+    'docs/.hidden/Hidden.md': { tags: ['ai'] },
+  }));
+  writeFileSync(join(vault, 'docs/hidden.md'), '#ai\n');
+  writeFileSync(join(vault, 'docs/Plain.txt'), 'not a note');
+  writeFileSync(join(vault, 'outside.md'), '#ai\n');
+  mkdirSync(join(vault, '.hidden'));
+  writeFileSync(join(vault, '.hidden/Hidden.md'), '#ai\n');
+  mkdirSync(join(vault, 'docs/.hidden'));
+  writeFileSync(join(vault, 'docs/.hidden/Hidden.md'), '#ai\n');
+  symlinkSync(join(vault, 'outside.md'), join(vault, 'docs/Linked.md'));
+  const run = json(['scan', 'docs', '--exclude', 'docs/hidden.md', '--tags-file', 'cases.json'], vault);
+  assert.deepEqual((run.doc.issues as { code: string; path: string }[]).filter(i => i.code === 'overlay-missing-note'), [
+    { code: 'overlay-missing-note', severity: 'warning', path: 'docs/Absent.md', message: 'Overlay tags refer to missing file docs/Absent.md.' },
+  ]);
+});
+
+test('noteMatches includes a missing-overlay warning for show', t => {
+  const run = json(['show', 'ai', '--tags-file', 'shared.json'], overlayVault(t));
+  assert.deepEqual((run.doc.issues as { code: string; path: string }[]).filter(issue => issue.code === 'overlay-missing-note').map(issue => issue.path), ['docs/Gone.md']);
+});
+
 test('scan without --tags-file prints no overlayTags field', t => {
   const run = json(['scan', 'docs'], overlayVault(t));
   assert.ok((run.doc.notes as object[]).every(n => !('overlayTags' in n)));
+});
+
+test('noteMatches reports dictionary spelling for case-insensitive note tags', t => {
+  const vault = overlayVault(t);
+  writeFileSync(join(vault, 'Tag-Dictionary.json'), JSON.stringify({ ml: { description: 'ML', broader: [] } }));
+  writeFileSync(join(vault, 'docs/Case.md'), '---\ntags: [ML]\n---\n');
+  const run = json(['show', 'ml', '--notes'], vault);
+  assert.deepEqual((run.doc.noteMatches as { path: string; matches: { tag: string; source: string }[] }[]).find(item => item.path === 'docs/Case.md'),
+    { path: 'docs/Case.md', matches: [{ tag: 'ml', source: 'tags' }] });
 });
 
 test('show --notes says which tags matched each note and where they came from', t => {
@@ -83,6 +122,16 @@ test('a malformed overlay file or key is wrong usage, exit 2', t => {
   for (const body of ['[]', '{"docs/Plain.md": {"tags": "rag"}}', '{"../x.md": {"tags": ["ai"]}}', '{"/outside.md": {"tags": ["ai"]}}', '{"C:/outside.md": {"tags": ["ai"]}}', '{"docs\\\\Plain.md": {"tags": ["ai"]}}', 'not json']) {
     writeFileSync(join(vault, 'bad.json'), body);
     assert.equal(cli(['scan', '--tags-file', 'bad.json'], vault).code, 2, body);
+  }
+});
+
+test('overlay keys with empty, dot or parent segments are rejected after stripping one leading ./', t => {
+  const vault = overlayVault(t);
+  for (const key of ['./docs/./Plain.md', 'docs//Plain.md', 'docs/../docs/Plain.md', '././docs/Plain.md']) {
+    writeFileSync(join(vault, 'bad.json'), JSON.stringify({ [key]: { tags: ['ai'] } }));
+    const run = cli(['scan', '--tags-file', 'bad.json'], vault);
+    assert.equal(run.code, 2, key);
+    assert.match(run.stderr, /invalid overlay note path/);
   }
 });
 

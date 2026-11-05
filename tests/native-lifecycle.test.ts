@@ -74,7 +74,7 @@ const layoutOutside: string[][] = [];
 // The layout throws this many more times, standing in for anything that fails inside a render.
 let layoutFails = 0;
 
-async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false) {
+async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false, dictionaryFound: boolean | undefined | null = true) {
   const notices: string[] = [], sideCalls: object[] = [];
   // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
   const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
@@ -150,7 +150,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
     raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
-    dictionaryFound: true, created: 0, error: undefined as string | undefined,
+    dictionaryFound: dictionaryFound === null ? undefined : dictionaryFound, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
     async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
@@ -718,6 +718,12 @@ test('revealing a tag that left the dictionary shows a notice instead of throwin
 
 const tagLinks = (el: Element) => el.all().filter(child => child.classes.has('tag')).map(child => child.text);
 
+test('a sidebar mounted before the first dictionary load does not claim the dictionary is missing', async () => {
+  const t = await setup({}, true, false, false, null);
+  assert.notEqual(heading(t), 'Tag dictionary not found');
+  assert.equal(navButton(t, 'New tag').disabled, false);
+});
+
 test('the sidebar lists the root tags until a tag is chosen', async () => {
   const t = await setup();
   assert.deepEqual(tagLinks(t.sidebar), model.roots.map(tag => '#' + tag));
@@ -1270,6 +1276,14 @@ test('an alias typed without Enter counts as a change and is saved', async () =>
   assert.equal(byClass(t, 'tag-ontology-count')!.text, '1 change not saved');
   t.click('Save'); await settle();
   assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
+});
+
+test('a missing automatic dictionary explains that both automatic paths were checked', async () => {
+  const t = await setup();
+  t.owner.dictionaryFound = false;
+  t.controller.refresh(false);
+  assert.ok(t.sidebar.all().some(el => el.text.includes('.tow/tag-dictionary.json')));
+  assert.ok(t.sidebar.all().some(el => el.text.includes('Tag-Dictionary.json')));
 });
 
 test('a missing dictionary file shows the resolved path and how to create one', async () => {

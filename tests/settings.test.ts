@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, cssColorToHex, isHiddenPath, isValidDictionaryPath, s
 test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
-    dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: false, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
+    dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8,
   });
@@ -14,6 +14,9 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.equal(sanitizeSettings({}, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ dictionaryPathExplicit: true }, '.obsidian').dictionaryPathExplicit, true);
   assert.equal(sanitizeSettings({ dictionaryPathExplicit: 'yes' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json' }, '.obsidian').dictionaryPathExplicit, true);
+  assert.equal(sanitizeSettings({ dictionaryPath: 'Tag-Dictionary.json' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: false }, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ titleAccent: false }, '.obsidian').titleAccent, false);
   assert.equal(sanitizeSettings({ focus: true }, '.obsidian').focus, true);
   assert.deepEqual(sanitizeSettings({ focusDescendants: false, focusNotes: 'x', focusAncestors: true }, '.obsidian'), { ...DEFAULT_SETTINGS, focusDescendants: false });

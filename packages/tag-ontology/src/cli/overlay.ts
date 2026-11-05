@@ -18,7 +18,9 @@ export function readOverlay(root: string, files: readonly string[]): Map<string,
     if (!isRecord(raw)) throw new UsageError(`${path}: expected an object mapping note paths to { tags: string[] }.`);
     for (const [key, value] of Object.entries(raw)) {
       const notePath = key.replace(/^\.\//, '');
-      if (isAbsolute(key) || /^[A-Za-z]:\//.test(key) || key.includes('\\')) throw new UsageError(`${path}: invalid overlay note path ${key}.`);
+      if (isAbsolute(key) || /^[A-Za-z]:\//.test(key) || key.includes('\\') || notePath.split('/').some(part => !part || part === '.' || part === '..')) {
+        throw new UsageError(`${path}: invalid overlay note path ${key}.`);
+      }
       const resolved = resolve(root, notePath);
       const fromRoot = relative(root, resolved);
       if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {

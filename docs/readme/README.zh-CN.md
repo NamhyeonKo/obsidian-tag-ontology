@@ -60,7 +60,7 @@ Tag Ontology 允许你在侧边栏标签页中为每个标签指定父级、子�
 
 ## 设置
 
-字典可以保存在库中任意以 `.json` 结尾的路径，包括 `.tow/` 文件夹。如果你从未在设置中选择过路径，插件会在 `.tow/tag-dictionary.json` 存在时使用它；否则使用库根目录下的 `Tag-Dictionary.json`。如果你在设置中选择了路径，即使 `.tow/` 字典存在，也始终使用所选路径。
+字典可以保存在库中任意以 `.json` 结尾的路径，包括 `.tow/` 文件夹。此版本之前保存的自定义路径也视为用户已选择，默认的 `Tag-Dictionary.json` 除外。如果没有选择路径，插件会在 `.tow/tag-dictionary.json` 存在时使用它；否则使用库根目录下的 `Tag-Dictionary.json`。如果已选择路径，即使 `.tow/` 字典存在，也始终使用所选路径。
 
 **Obsidian Sync 不会同步 `.obsidian` 以外以点开头的隐藏文件夹**（[Sync 设置](https://obsidian.md/help/sync/settings)）。如果使用 Obsidian Sync，请为字典选择一个可见路径。除非配置为忽略，Git 和按文件同步工具会同步点开头的文件夹。
 
@@ -68,7 +68,7 @@ Tag Ontology 允许你在侧边栏标签页中为每个标签指定父级、子�
 
 - 完全离线运行：无任何网络请求、遥测或用户账号系统。
 - 仅读取笔记元数据与标签字典 JSON 文件。
-- 插件只会写入自身配置文件（`data.json`），以及在侧边栏保存时写入当前使用的字典文件：设置中选择的路径；若未选择，则在 `.tow/tag-dictionary.json` 存在时使用它，否则使用 `Tag-Dictionary.json`。绝不修改库内的 Markdown 文档。
+- 插件只会写入自身配置文件（`data.json`），以及在侧边栏保存时写入当前使用的字典文件：设置中选择的路径（包括此前版本保存的自定义路径）；若未选择，则在 `.tow/tag-dictionary.json` 存在时使用它，否则使用 `Tag-Dictionary.json`。绝不修改库内的 Markdown 文档。
 
 ## 独立库与 CLI
 

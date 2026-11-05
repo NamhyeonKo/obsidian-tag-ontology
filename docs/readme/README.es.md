@@ -60,7 +60,7 @@ Para obtener instrucciones completas paso a paso, compilaciones de desarrollo y 
 
 ## Configuración
 
-El diccionario puede estar en cualquier ruta del almacén que termine en `.json`, incluida una carpeta `.tow/`. Si nunca has elegido una ruta en los ajustes, el plugin usa `.tow/tag-dictionary.json` cuando existe; de lo contrario, usa `Tag-Dictionary.json` en la raíz. Si eliges una ruta en los ajustes, siempre se usa esa ruta, aunque exista el diccionario en `.tow/`.
+El diccionario puede estar en cualquier ruta del almacén que termine en `.json`, incluida una carpeta `.tow/`. Las rutas personalizadas guardadas antes de esta versión también cuentan como elegidas, excepto la ruta predeterminada `Tag-Dictionary.json`. Si no hay una ruta elegida, el plugin usa `.tow/tag-dictionary.json` cuando existe; de lo contrario, usa `Tag-Dictionary.json` en la raíz. Si hay una ruta elegida, siempre se usa esa ruta, aunque exista el diccionario en `.tow/`.
 
 **Obsidian Sync no sincroniza las carpetas ocultas que empiezan por punto, excepto `.obsidian`** ([ajustes de Sync](https://obsidian.md/help/sync/settings)). Si usas Obsidian Sync, elige una ruta visible para el diccionario. Git y las herramientas de sincronización por archivos incluyen las carpetas ocultas, salvo que estén excluidas.
 
@@ -68,7 +68,7 @@ El diccionario puede estar en cualquier ruta del almacén que termine en `.json`
 
 - Funcionamiento 100% local y offline: Sin peticiones de red, sin telemetría y sin necesidad de cuentas.
 - Solo lee los metadatos de las notas y el archivo JSON del diccionario.
-- Nunca modifica tus notas Markdown; solo escribe en su archivo de configuración interno (`data.json`) y, al guardar cambios en la barra lateral, en el archivo de diccionario que se esté usando: la ruta elegida o, si no se eligió ninguna, `.tow/tag-dictionary.json` si existe y, en caso contrario, `Tag-Dictionary.json`.
+- Nunca modifica tus notas Markdown; solo escribe en su archivo de configuración interno (`data.json`) y, al guardar cambios en la barra lateral, en el archivo de diccionario que se esté usando: la ruta elegida (incluidas las rutas personalizadas guardadas en versiones anteriores) o, si no se eligió ninguna, `.tow/tag-dictionary.json` si existe y, en caso contrario, `Tag-Dictionary.json`.
 
 ## Biblioteca y CLI
 

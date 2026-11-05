@@ -55,17 +55,18 @@ async function setup(saved?: Promise<unknown>) {
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
     text: dictionary, writes: [] as string[], adapterWrites: [] as string[],
-    existing: new Set(['Tag-Dictionary.json']), created: [] as string[], files: new Map<string, string>(), mtimes: new Map<string, number>(),
+    existing: new Set(['Tag-Dictionary.json']), created: [] as string[], files: new Map<string, string>(), mtimes: new Map<string, number>(), sizes: new Map<string, number>(),
     appearOnMkdir: false,
     adapter: {
       exists: async (path: string) => vault.existing.has(path),
       async read(path: string) { reads++; if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
-      async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); vault.mtimes.set(path, (vault.mtimes.get(path) ?? 0) + 1); },
+      async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.sizes.set(path, data.length); vault.existing.add(path); vault.mtimes.set(path, (vault.mtimes.get(path) ?? 0) + 1); },
       async mkdir(path: string) {
         vault.existing.add(path);
         if (vault.appearOnMkdir) { vault.files.set('.tow/tag-dictionary.json', serialize(base)); vault.existing.add('.tow/tag-dictionary.json'); }
       },
-      async stat(path: string) { return vault.mtimes.has(path) ? { mtime: vault.mtimes.get(path)! } : null; },
+      async stat(path: string) { return vault.mtimes.has(path) ? { mtime: vault.mtimes.get(path)!, size: vault.sizes.get(path) ?? 0 } : null; },
+      async readdir(path: string) { return path === '.tow' && vault.existing.has('.tow') ? ['tag-dictionary.json'] : []; },
     },
     async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
     // Like Obsidian, create refuses a path that already exists.
@@ -267,6 +268,15 @@ test('a background reload failure only logs and keeps the last valid model', asy
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel', 'draw-linked']);
 });
 
+test('dictionary presence stays unknown until the first dictionary read completes', async () => {
+  const t = await setup(), read = deferred<string>();
+  t.vault.cachedRead = () => read.promise;
+  t.ready(); await settle();
+  assert.equal(t.plugin.dictionaryFound, undefined);
+  read.resolve(dictionary); await settle();
+  assert.equal(t.plugin.dictionaryFound, true);
+});
+
 test('a broken dictionary at startup is reported, and the sidebar keeps the reason until it loads', async () => {
   const t = await setup();
   t.vault.text = '{ broken'; t.ready(); await settle();
@@ -401,10 +411,29 @@ async function withTowBase() {
   return t;
 }
 
+test('focus notices a newly created .tow dictionary while the visible fallback is in use', async () => {
+  const t = await withBase();
+  t.vault.existing.add('.tow'); t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize({ added: { description: 'Added', broader: [] } }));
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 1);
+  t.vault.sizes.set('.tow/tag-dictionary.json', t.vault.files.get('.tow/tag-dictionary.json')!.length);
+  await t.focus(); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.model?.roots, ['added']);
+});
+
 test('an outside edit to a .tow/ dictionary reloads on window focus', async () => {
   const t = await withTowBase();
   t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, extra: { description: 'Extra', broader: ['root'] } }));
   t.vault.mtimes.set('.tow/tag-dictionary.json', 2);
+  await t.focus(); t.runTimers(); await settle();
+  assert.ok(t.plugin.model?.entries.has('extra'));
+});
+
+test('an outside edit with unchanged mtime reloads when the file size changes', async () => {
+  const t = await withTowBase(), mtime = t.vault.mtimes.get('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, extra: { description: 'Extra entry', broader: ['root'] } }));
+  t.vault.sizes.set('.tow/tag-dictionary.json', t.vault.files.get('.tow/tag-dictionary.json')!.length);
+  t.vault.mtimes.set('.tow/tag-dictionary.json', mtime!);
   await t.focus(); t.runTimers(); await settle();
   assert.ok(t.plugin.model?.entries.has('extra'));
 });
@@ -446,12 +475,12 @@ test('opening a graph schedules a refresh when the hidden dictionary changed', a
 });
 
 test('focus does not read the dictionary when unloaded during the outside-change check', async () => {
-  const t = await withTowBase(), stat = deferred<{ mtime: number }>(), before = t.reads();
+  const t = await withTowBase(), stat = deferred<{ mtime: number; size: number }>(), before = t.reads();
   t.plugin.native.calls.length = 0;
   t.vault.adapter.stat = () => stat.promise;
   const pending = t.focus();
   await settle();
-  t.plugin.onunload(); stat.resolve({ mtime: 2 });
+  t.plugin.onunload(); stat.resolve({ mtime: 2, size: 2 });
   await pending; await settle();
   assert.equal(t.reads(), before);
   assert.deepEqual(t.plugin.native.calls, ['destroy']);

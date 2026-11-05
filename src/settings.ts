@@ -45,7 +45,9 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
-    dictionaryPathExplicit: typeof value.dictionaryPathExplicit === 'boolean' ? value.dictionaryPathExplicit : DEFAULT_SETTINGS.dictionaryPathExplicit,
+    dictionaryPathExplicit: typeof value.dictionaryPathExplicit === 'boolean' ? value.dictionaryPathExplicit
+      : !Object.hasOwn(value, 'dictionaryPathExplicit') && typeof value.dictionaryPath === 'string' && value.dictionaryPath !== DEFAULT_SETTINGS.dictionaryPath
+        && isValidDictionaryPath(value.dictionaryPath, configDir),
     // Radial was removed in 0.6.0; it opens as the vertical tree.
     layout: value.layout === 'tree' || value.layout === 'tree-horizontal' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],

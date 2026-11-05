@@ -45,7 +45,7 @@ A note is a `.md` file under `--root`. The CLI skips:
 
 Vault conventions such as which folders hold notes are not built in; pass them as `--exclude`.
 
-Overlay tags from repeatable `--tags-file` inputs are a third tag source for `scan`, `usage` and `show`. Each file maps vault-relative note paths (using `/` separators) to objects with a string-list `tags`; these tags are normalized like frontmatter tags and apply even when the note already has tags. Absolute paths, backslashes and paths outside `--root` are rejected. A path without a matching note produces an `overlay-missing-note` warning.
+Overlay tags from repeatable `--tags-file` inputs are a third tag source for `scan`, `usage` and `show`. Each file maps vault-relative note paths (using `/` separators) to objects with a string-list `tags`; these tags are normalized like frontmatter tags and apply even when the note already has tags. Absolute paths, backslashes and paths outside `--root` are rejected. One leading `./` is stripped from each key; paths must then have no empty, `.` or `..` segments. Keys match paths in exact case. A key whose file does not exist with that exact case produces an `overlay-missing-note` warning. An existing file that is excluded, hidden, not `.md`, a symlink, or outside the paths scanned is ignored silently. Tags for one path from multiple files are combined in file order without duplicates.
 
 What the CLI reads from a note follows Obsidian 1.14.5's metadata cache, which is what the plugin sees:
 
@@ -67,7 +67,7 @@ A note tag **matches** a dictionary tag when the names are equal ignoring case, 
 | --- | --- | --- |
 | 0 | Success. | the result |
 | 1 | Problems found: `issues` has an error, or, with `--strict`, a warning or a `usage` finding. `apply` wrote nothing. | the result |
-| 2 | Wrong usage: unknown command or option, missing or extra argument, a file that can't be read, a changes file that isn't valid JSON or doesn't have the [expected shape](#changes-file), an unknown tag for `show`. | empty; the message is on stderr |
+| 2 | Wrong usage: unknown command or option, missing or extra argument, a file that can't be read (including a malformed or unreadable `--tags-file`), a changes file that isn't valid JSON or doesn't have the [expected shape](#changes-file), an unknown tag for `show` or `subset`, or no tag for `subset`. | empty; the message is on stderr |
 | 3 | Conflict: the dictionary's hash isn't the `--base` given to `apply`. Nothing was written. | the result, with `conflict` |
 | 70 | Internal error, a bug. Don't trust stdout. | undefined |
 
@@ -198,7 +198,7 @@ Compares the tags on notes (`tags` and `bodyTags`, plus `overlayTags` when suppl
 }
 ```
 
-- `issues`: the dictionary's warnings, and `invalid-frontmatter` for notes in `paths`.
+- `issues`: the dictionary's warnings, `invalid-frontmatter` for notes in `paths`, and `overlay-missing-note` warnings when supplied `--tags-file` keys refer to missing files.
 - `scanned`: how many notes are in `paths`.
 - `unregistered`: tags on notes that match no dictionary tag or alias, sorted by tag, with the notes using them. `similar` lists, sorted, the dictionary tags and other unregistered tags that look like a typo of it. Compared lowercased and counted in characters (code points, not UTF-16 units), two names are similar when they are equal with `-` removed, or when 2 × their longest common subsequence ≥ 0.85 × their total length. That is the ratio Python's `difflib` approximates, so it finds every pair `vault_meta.py sync` finds.
 - `nonCanonical`: a note tag written differently from its dictionary tag, either an alias (ignoring case) or the tag name in different case, once per note and spelling, sorted by path and tag. `canonical` is the name to write instead.
@@ -235,7 +235,7 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 }
 ```
 
-- `issues`: the dictionary's warnings about this tag (as `tag` or `target`).
+- `issues`: the dictionary's warnings about this tag (as `tag` or `target`), and `overlay-missing-note` warnings when supplied `--tags-file` keys refer to missing files.
 - `matchedAlias`: present only when `<tag>` matched an alias.
 - `entry`: the entry as stored in the file, including fields the CLI doesn't know.
 - `placed`: whether a root (`"broader": []`) is reachable through `broader`.
