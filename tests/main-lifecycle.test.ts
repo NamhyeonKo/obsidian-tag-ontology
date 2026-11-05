@@ -54,9 +54,15 @@ async function setup(saved?: Promise<unknown>) {
   const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
   const vault = {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
-    text: dictionary, writes: [] as string[],
-    existing: new Set(['Tag-Dictionary.json']), created: [] as string[],
-    adapter: { exists: async (path: string) => vault.existing.has(path) },
+    text: dictionary, writes: [] as string[], adapterWrites: [] as string[],
+    existing: new Set(['Tag-Dictionary.json']), created: [] as string[], files: new Map<string, string>(), mtimes: new Map<string, number>(),
+    adapter: {
+      exists: async (path: string) => vault.existing.has(path),
+      async read(path: string) { if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
+      async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); },
+      async mkdir(path: string) { vault.existing.add(path); },
+      async stat(path: string) { return { mtime: vault.mtimes.get(path) }; },
+    },
     async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
     // Like Obsidian, create refuses a path that already exists.
     async create(path: string, data: string) { if (vault.existing.has(path)) throw new Error('File already exists.'); vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
@@ -340,9 +346,17 @@ test('a successful manual reload updates the model and graph without an error no
 });
 
 test('without an explicit choice, .tow/tag-dictionary.json wins when it exists', async () => {
-  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
+  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', dictionary);
   await t.plugin.loadModel();
   assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
+});
+
+test('a dictionary under .tow/ loads through the adapter', async () => {
+  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.text = JSON.stringify({ ignored: { description: 'Vault API', broader: [] } });
+  t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  await t.plugin.loadModel();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.plugin.raw)), base);
 });
 
 test('an explicit path wins even when .tow/tag-dictionary.json exists', async () => {
@@ -364,6 +378,11 @@ async function withBase() {
   t.vault.text = serialize(base); t.ready(); await settle();
   return t;
 }
+async function withTowBase() {
+  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize(base)); t.ready(); await settle();
+  return t;
+}
 
 test('loadModel keeps the parsed dictionary as raw', async () => {
   const t = await withBase();
@@ -375,6 +394,30 @@ test('saveChange writes the applied change in the one-entry-per-line format', as
   const t = await withBase();
   assert.equal(await t.plugin.saveChange(describe('New'), t.plugin.raw!), true);
   assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
+});
+
+test('a visible dictionary still goes through the Vault API', async () => {
+  const t = await withBase();
+  assert.equal(await t.plugin.saveChange(describe('New'), t.plugin.raw!), true);
+  assert.equal(t.vault.writes.length, 1);
+  assert.equal(t.vault.adapterWrites.length, 0);
+});
+
+test('saveChange on a .tow/ dictionary writes through the adapter and keeps the conflict check', async () => {
+  const t = await withTowBase();
+  assert.equal(await t.plugin.saveChange(describe('New'), base), true);
+  assert.equal(t.vault.files.get('.tow/tag-dictionary.json'), serialize(apply(base, describe('New'))));
+  assert.equal(t.vault.adapterWrites.length, 1);
+  t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, child: { description: 'Outside', broader: ['root'] } }));
+  assert.equal(await t.plugin.saveChange(describe('Other'), base), false);
+  assert.equal(t.vault.adapterWrites.length, 1);
+});
+
+test('saveChange keeps CRLF line endings in a .tow/ dictionary', async () => {
+  const t = await withTowBase(), crlf = (text: string) => text.replace(/\n/g, '\r\n');
+  t.vault.files.set('.tow/tag-dictionary.json', crlf(serialize(base)));
+  assert.equal(await t.plugin.saveChange(describe('New'), base), true);
+  assert.equal(t.vault.files.get('.tow/tag-dictionary.json'), crlf(serialize(apply(base, describe('New')))));
 });
 
 test('saveChange keeps the CRLF line endings of a dictionary written that way', async () => {
@@ -435,6 +478,15 @@ test('createDictionary makes the folder and an empty file, then reloads', async 
   assert.equal(await t.plugin.createDictionary(), true);
   assert.deepEqual(t.vault.created, ['folder:Dicts', 'file:Dicts/Tags.json:{\n}\n']);
   assert.ok(t.plugin.model);
+});
+
+test('createDictionary makes .tow/ and an empty file through the adapter, never replacing one', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: '.tow/tag-dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.createDictionary(), true);
+  assert.deepEqual([...t.vault.existing].sort(), ['.tow', '.tow/tag-dictionary.json']);
+  assert.equal(t.vault.files.get('.tow/tag-dictionary.json'), '{\n}\n');
+  assert.equal(await t.plugin.createDictionary(), false);
 });
 
 test('createDictionary never replaces a file that appeared meanwhile', async () => {

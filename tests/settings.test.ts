@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SETTINGS, cssColorToHex, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
+import { DEFAULT_SETTINGS, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
 
 test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
@@ -29,6 +29,11 @@ test('sanitizes saved settings to the supported fields', () => {
   }
   assert.equal(sanitizeSettings({ layout: 'radial' }, '.obsidian').layout, 'tree', 'Radial is gone; it opens as the vertical tree');
   assert.equal(sanitizeSettings({ layout: 'tree-horizontal' }, '.obsidian').layout, 'tree-horizontal');
+});
+
+test('detects a hidden path segment', () => {
+  for (const path of ['.tow/tags.json', 'folder/.private/tags.json']) assert.equal(isHiddenPath(path), true, path);
+  for (const path of ['tags.json', 'folder/tags.json']) assert.equal(isHiddenPath(path), false, path);
 });
 
 test('rejects dictionary paths outside the allowed vault scope', () => {

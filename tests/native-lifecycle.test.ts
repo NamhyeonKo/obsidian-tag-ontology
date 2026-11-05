@@ -149,14 +149,15 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
-    raw, changes: [] as Change[], reloads: 0, missing: false, created: 0, error: undefined as string | undefined,
+    raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
+    dictionaryFound: true, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
     async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
       ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
-    }, vault: { getAbstractFileByPath: (path: string) => path === owner.settings.dictionaryPath && !owner.missing ? new File() : null } },
+    }, vault: { getAbstractFileByPath: (path: string) => path === owner.dictionaryPath && owner.dictionaryFound ? new File() : null } },
   };
   const controller = new NativeGraphs(owner);
   // Obsidian restores the sidebar view on startup, so tests start with it mounted.
@@ -1271,10 +1272,11 @@ test('an alias typed without Enter counts as a change and is saved', async () =>
   assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
 });
 
-test('a missing dictionary file shows how to create one and turns off New tag and Edit', async () => {
+test('a missing dictionary file shows the resolved path and how to create one', async () => {
   const t = await setup();
-  t.owner.missing = true; t.controller.refresh(false);
+  t.owner.dictionaryPath = '.tow/tag-dictionary.json'; t.owner.dictionaryFound = false; t.controller.refresh(false);
   assert.equal(heading(t), 'Tag dictionary not found');
+  assert.ok(t.sidebar.all().some(el => el.text.includes('.tow/tag-dictionary.json is not in the vault.')));
   assert.equal(navButton(t, 'New tag').disabled, true); assert.equal(navButton(t, 'Edit tag').disabled, true);
   t.click('Create empty dictionary'); await settle();
   assert.equal(t.owner.created, 1);
@@ -1282,8 +1284,8 @@ test('a missing dictionary file shows how to create one and turns off New tag an
 
 test('the panel comes back when the dictionary file returns', async () => {
   const t = await setup();
-  t.owner.missing = true; t.controller.refresh(false);
-  t.owner.missing = false; t.controller.refresh(false);
+  t.owner.dictionaryFound = false; t.controller.refresh(false);
+  t.owner.dictionaryFound = true; t.controller.refresh(false);
   assert.equal(heading(t), 'Root tags (2)'); assert.equal(navButton(t, 'New tag').disabled, false);
 });
 

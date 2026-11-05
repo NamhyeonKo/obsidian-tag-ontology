@@ -1,5 +1,5 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type WorkspaceLeaf } from 'obsidian';
-import { DEFAULT_SETTINGS, TOW_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
+import { DEFAULT_SETTINGS, TOW_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, type Change, type Note, type RawDictionary } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -18,6 +18,7 @@ const reason = (error: unknown) => error instanceof Error ? error.message : Stri
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   dictionaryPath = DEFAULT_SETTINGS.dictionaryPath;
+  dictionaryFound = false;
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
@@ -61,7 +62,12 @@ export default class TagOntologyPlugin extends Plugin {
     accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
     // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
-    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile })); });
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(async () => {
+      let notify = false;
+      try { notify = isHiddenPath(this.dictionaryPath) ? await this.app.vault.adapter.exists(this.dictionaryPath)
+        : this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile; } catch { notify = false; }
+      await this.refreshViews({ notify });
+    }); });
     const relevant = (path: string) => path === this.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
@@ -89,13 +95,22 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   private async readModel(): Promise<Ontology> {
+    this.dictionaryFound = false;
     const path = await this.resolveDictionary();
     if (!isValidDictionaryPath(path, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${path}`);
-    // A read error keeps its own message; only a parse error is about the JSON.
-    const text = await this.app.vault.cachedRead(file);
+    let text: string;
+    if (isHiddenPath(path)) {
+      if (!await this.app.vault.adapter.exists(path)) throw new Error(`Tag dictionary not found: ${path}`);
+      this.dictionaryFound = true;
+      text = await this.app.vault.adapter.read(path);
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${path}`);
+      this.dictionaryFound = true;
+      // A read error keeps its own message; only a parse error is about the JSON.
+      text = await this.app.vault.cachedRead(file);
+    }
     let raw: unknown;
     try { raw = JSON.parse(text); }
     catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
@@ -140,6 +155,15 @@ export default class TagOntologyPlugin extends Plugin {
   // vault.create refuses an existing path, so this never replaces a dictionary.
   private async writeEmpty(path: string): Promise<void> {
     const { vault } = this.app, parts = path.split('/').slice(0, -1);
+    if (isHiddenPath(path)) {
+      if (await vault.adapter.exists(path)) throw new Error('File already exists.');
+      for (let i = 1; i <= parts.length; i++) {
+        const folder = parts.slice(0, i).join('/');
+        if (!await vault.adapter.exists(folder)) await vault.adapter.mkdir(folder);
+      }
+      await vault.adapter.write(path, '{\n}\n');
+      return;
+    }
     for (let i = 1; i <= parts.length; i++) {
       const folder = parts.slice(0, i).join('/');
       if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
@@ -166,25 +190,40 @@ export default class TagOntologyPlugin extends Plugin {
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
     const path = await this.resolveDictionary();
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
+    if (!isHiddenPath(path)) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
+      try {
+        await this.app.vault.process(file, (text) => this.changedText(text, change, base));
+        return true;
+      } catch (error) {
+        new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
+        return false;
+      }
+    }
     try {
-      await this.app.vault.process(file, (text) => {
-        const latest = JSON.parse(text) as RawDictionary;
-        if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
-        const next = apply(latest, change);
-        // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
-        new Ontology(next, []);
-        // A file kept with CRLF line endings stays that way, so a save still changes only the lines it touches.
-        // serialize's only raw newlines are line breaks: JSON.stringify escapes them inside strings.
-        const out = serialize(next);
-        return text.includes('\r\n') ? out.replace(/\n/g, '\r\n') : out;
-      });
+      if (!await this.app.vault.adapter.exists(path)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
+      const adapter = this.app.vault.adapter;
+      const text = await adapter.read(path), out = this.changedText(text, change, base);
+      // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
+      await adapter.write(path, out);
       return true;
     } catch (error) {
       new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
       return false;
     }
+  }
+
+  private changedText(text: string, change: Change, base: RawDictionary): string {
+    const latest = JSON.parse(text) as RawDictionary;
+    if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
+    const next = apply(latest, change);
+    // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
+    new Ontology(next, []);
+    // A file kept with CRLF line endings stays that way, so a save still changes only the lines it touches.
+    // serialize's only raw newlines are line breaks: JSON.stringify escapes them inside strings.
+    const out = serialize(next);
+    return text.includes('\r\n') ? out.replace(/\n/g, '\r\n') : out;
   }
 
   reload(): Promise<void> { return this.refreshViews({ notify: true }); }
