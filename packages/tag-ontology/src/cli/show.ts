@@ -4,7 +4,7 @@ import { UsageError } from './arguments.ts';
 
 export interface NoteSources { tags: string[]; bodyTags: string[]; overlayTags: string[] }
 
-export function show(model: Ontology, dictionary: RawDictionary, query: string, notes: boolean, exact: boolean, sources: ReadonlyMap<string, NoteSources>) {
+export function resolveTag(model: Ontology, query: string): { tag: string; matchedAlias?: string } {
   let tag = model.entries.has(query) ? query : [...model.entries.keys()].find(name => name.toLowerCase() === query.toLowerCase());
   let matchedAlias: string | undefined;
   if (tag === undefined) {
@@ -20,6 +20,11 @@ export function show(model: Ontology, dictionary: RawDictionary, query: string, 
     const suggestions = model.suggest(query).map(item => item.tag);
     throw new UsageError(`Unknown tag ${query}.${suggestions.length ? ` Try: ${suggestions.join(', ')}.` : ''}`);
   }
+  return { tag, ...matchedAlias === undefined ? {} : { matchedAlias } };
+}
+
+export function show(model: Ontology, dictionary: RawDictionary, query: string, notes: boolean, exact: boolean, sources: ReadonlyMap<string, NoteSources>) {
+  const { tag, matchedAlias } = resolveTag(model, query);
   // Use a stack so a deep hierarchy doesn't exhaust the JavaScript call stack.
   const paths: string[][] = [], pending = [[tag]];
   while (pending.length) {

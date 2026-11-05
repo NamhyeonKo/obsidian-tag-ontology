@@ -14,6 +14,7 @@ npx tag-ontology <command> [arguments] [options]
 | [`scan [paths…]`](#scan) | Reads notes: frontmatter, tags, body tags, headings | nothing |
 | [`usage [paths…]`](#usage) | Compares the tags on notes with the dictionary | nothing |
 | [`show <tag>`](#show) | One tag: its place in the hierarchy, notes, and an editable draft | nothing |
+| [`subset <tag…>`](#subset) | Prints selected tags and their broader ancestors as a dictionary | nothing |
 | [`plan <changes.json>`](#plan) | Applies changes in memory and reports the result | nothing |
 | [`apply <changes.json> --base <hash>`](#apply) | Writes the result of `plan` if the dictionary hasn't changed | the dictionary |
 
@@ -244,6 +245,16 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 - `notePaths`: only with `--notes`. Notes with the tag or a descendant, or only the tag with `--exact`.
 - `noteMatches`: only with `--notes`, in `notePaths` order. Each note has matching dictionary tags (the dictionary key, ignoring case) and their source: `tags`, `bodyTags` or `overlay`. Matches are sorted by tag, then by source in that order; with `--exact`, only the queried tag is included.
 - `draft`: the tag as the edit form sees it, with `children` and two-way `related` filled in. Change it and put it in an `edit` change.
+
+### subset
+
+```sh
+tag-ontology subset <tag…> [--dictionary <file>] [--names <rule>] [--json]
+```
+
+Finds each requested tag by name, then by name ignoring case, then by alias ignoring case. An unknown tag, or an alias held by several tags, exits 2. If the dictionary has errors, `subset` reports them and exits 1. Each selected tag includes every ancestor reached through `broader`; duplicate ancestors in diamond-shaped hierarchies appear once. Entries are copied with all stored fields, while `related` references outside the result are removed (and an empty `related` field is omitted).
+
+Without `--json`, stdout is exactly the resulting dictionary in the same serialization used for dictionary files. With `--json`, the common envelope includes the result in `dictionary`. The command writes nothing.
 
 ### plan
 

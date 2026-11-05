@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 export class UsageError extends Error {}
 
-const COMMANDS = ['check', 'scan', 'usage', 'show', 'plan', 'apply'] as const;
+const COMMANDS = ['check', 'scan', 'usage', 'show', 'subset', 'plan', 'apply'] as const;
 export type Command = typeof COMMANDS[number];
 
 export const HELP = `Usage: tag-ontology <command> [arguments] [options]
@@ -12,6 +12,7 @@ Commands:
   scan [paths…]         Read notes, tags and headings
   usage [paths…]        Compare note tags with the dictionary
   show <tag>            Show a tag, its hierarchy, notes and editable draft
+  subset <tag…>         Print the tags with their broader ancestors as a dictionary
   plan <changes.json>   Preview dictionary changes without writing
   apply <changes.json> --base <hash>
                         Write changes if the dictionary still matches
@@ -45,7 +46,7 @@ export function argumentsOf(args: string[]) {
   const { values, positionals } = parsed;
   if (values.help || values.version) return { info: values.help ? 'help' : 'version' } as const;
   const command = COMMANDS.find(item => item === positionals[0]);
-  if (!command) throw new UsageError('Expected a command: check, scan, usage, show, plan or apply.');
+  if (!command) throw new UsageError('Expected a command: check, scan, usage, show, subset, plan or apply.');
   const allowed = new Set(['root', 'json']);
   if (command !== 'scan') { allowed.add('dictionary'); allowed.add('names'); }
   if (['scan', 'usage', 'show'].includes(command)) { allowed.add('exclude'); allowed.add('tags-file'); }
@@ -54,7 +55,8 @@ export function argumentsOf(args: string[]) {
   if (command === 'apply') allowed.add('base');
   for (const key of Object.keys(values)) if (!allowed.has(key)) throw new UsageError(`--${key} is not an option for ${command}.`);
   const rest = positionals.slice(1);
-  if (command === 'check' && rest.length || ['show', 'plan', 'apply'].includes(command) && rest.length !== 1) {
+  if (command === 'check' && rest.length || ['show', 'plan', 'apply'].includes(command) && rest.length !== 1
+    || command === 'subset' && rest.length < 1) {
     throw new UsageError(`Wrong number of arguments for ${command}. See --help.`);
   }
   const names = values.names ?? 'obsidian';

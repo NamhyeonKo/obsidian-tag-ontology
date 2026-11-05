@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { Ontology } from '../core/ontology.ts';
 import { planChanges } from '../core/plan.ts';
 import { usage } from '../core/usage.ts';
+import { serialize } from '../core/dictionary.ts';
 import { compareIssues, isWellFormed, validate, type Issue } from '../core/validate.ts';
 import { readDictionary, writeDictionary } from '../vault/dictionary-file.ts';
 import { PathError, scan } from '../vault/scan.ts';
@@ -11,6 +12,7 @@ import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
 import { overlayIssues, readOverlay } from './overlay.ts';
 import { show, type NoteSources } from './show.ts';
+import { subset } from './subset.ts';
 import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
@@ -72,6 +74,12 @@ function run(): void {
   const issues = file.issues.length ? file.issues : validate(file.raw, { names });
   if (command === 'check' || issues.some(item => item.severity === 'error')) { output(issues); return; }
   if (!isWellFormed(file.raw, issues)) { output(issues); return; }
+  if (command === 'subset') {
+    const result = subset(new Ontology(file.raw, []), file.raw, rest);
+    if (values.json) output(issues, { dictionary: result });
+    else process.stdout.write(serialize(result));
+    return;
+  }
   const all = scan(root, { exclude });
   const sources = new Map<string, NoteSources>(all.notes.map(note => [note.path, {
     tags: note.tags, bodyTags: note.bodyTags, overlayTags: overlay.get(note.path) ?? [],
