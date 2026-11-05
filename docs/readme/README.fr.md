@@ -68,7 +68,7 @@ Le dictionnaire peut se trouver dans n'importe quel chemin du coffre se terminan
 
 - Fonctionnement 100 % hors ligne : Aucune requête réseau, aucune télémétrie et aucun compte requis.
 - Lit uniquement les métadonnées de vos notes et le fichier JSON du dictionnaire.
-- Ne modifie jamais vos fichiers Markdown ; seuls le fichier de configuration interne (`data.json`) et le fichier dictionnaire (`Tag-Dictionary.json`) sont mis à jour lors de l'enregistrement dans la barre latérale.
+- Ne modifie jamais vos fichiers Markdown ; seuls le fichier de configuration interne (`data.json`) et, lors de l'enregistrement dans la barre latérale, le fichier dictionnaire utilisé sont modifiés : le chemin choisi ou, si aucun chemin n'a été choisi, `.tow/tag-dictionary.json` s'il existe, sinon `Tag-Dictionary.json`.
 
 ## Bibliothèque et CLI
 

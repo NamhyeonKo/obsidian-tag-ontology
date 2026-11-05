@@ -68,7 +68,7 @@ El diccionario puede estar en cualquier ruta del almacén que termine en `.json`
 
 - Funcionamiento 100% local y offline: Sin peticiones de red, sin telemetría y sin necesidad de cuentas.
 - Solo lee los metadatos de las notas y el archivo JSON del diccionario.
-- Nunca modifica tus notas Markdown; solo escribe en su archivo de configuración interno (`data.json`) y en el archivo del diccionario (`Tag-Dictionary.json`) al guardar cambios en la barra lateral.
+- Nunca modifica tus notas Markdown; solo escribe en su archivo de configuración interno (`data.json`) y, al guardar cambios en la barra lateral, en el archivo de diccionario que se esté usando: la ruta elegida o, si no se eligió ninguna, `.tow/tag-dictionary.json` si existe y, en caso contrario, `Tag-Dictionary.json`.
 
 ## Biblioteca y CLI
 

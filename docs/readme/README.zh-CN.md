@@ -68,7 +68,7 @@ Tag Ontology 允许你在侧边栏标签页中为每个标签指定父级、子�
 
 - 完全离线运行：无任何网络请求、遥测或用户账号系统。
 - 仅读取笔记元数据与标签字典 JSON 文件。
-- 除插件自身配置文件（`data.json`）与保存修改时的标签字典（`Tag-Dictionary.json`）外，绝不修改库内的任何 Markdown 文档。
+- 插件只会写入自身配置文件（`data.json`），以及在侧边栏保存时写入当前使用的字典文件：设置中选择的路径；若未选择，则在 `.tow/tag-dictionary.json` 存在时使用它，否则使用 `Tag-Dictionary.json`。绝不修改库内的 Markdown 文档。
 
 ## 独立库与 CLI
 

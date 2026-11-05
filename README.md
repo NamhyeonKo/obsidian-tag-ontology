@@ -239,7 +239,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`) and the dictionary file when you save a change in the sidebar.
+- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`) and, when you save a change in the sidebar, the dictionary file in use: the path you chose, or `.tow/tag-dictionary.json` if it exists when no path was chosen, otherwise `Tag-Dictionary.json`.
 
 ## Compatibility and known limitations
 

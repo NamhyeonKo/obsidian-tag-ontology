@@ -68,7 +68,7 @@ Tag Ontology 讓你在側邊欄分頁中為每個標籤指定父層、子層與�
 
 - 完全離線運作：無任何網路請求、遙測追蹤或使用者帳號系統。
 - 僅讀取筆記中繼資料與標籤字典 JSON 檔案。
-- 除外掛自身設定檔（`data.json`）與儲存變更時的標籤字典（`Tag-Dictionary.json`）外，絕不修改庫內的任何 Markdown 檔案。
+- 外掛只會寫入自身設定檔（`data.json`），以及在側邊欄儲存時寫入目前使用的字典檔案：設定中選擇的路徑；若未選擇，則在 `.tow/tag-dictionary.json` 存在時使用它，否則使用 `Tag-Dictionary.json`。絕不修改庫內的 Markdown 檔案。
 
 ## 獨立套件與 CLI
 
