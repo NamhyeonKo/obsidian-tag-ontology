@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { cli, copyOfFixture, json } from './cli-helper.ts';
@@ -59,6 +59,27 @@ test('an overlay key differing only in case from the file is reported missing', 
   writeFileSync(join(vault, 'case.json'), JSON.stringify({ 'docs/plain.md': { tags: ['ai'] } }));
   const run = json(['scan', 'docs', '--tags-file', 'case.json'], vault);
   assert.deepEqual((run.doc.issues as { code: string; path: string }[]).filter(i => i.code === 'overlay-missing-note').map(i => i.path), ['docs/plain.md']);
+});
+
+test('an overlay key with a case-mismatched parent directory is reported missing', t => {
+  const vault = overlayVault(t);
+  writeFileSync(join(vault, 'case.json'), JSON.stringify({ 'Docs/Plain.md': { tags: ['ai'] } }));
+  const run = json(['scan', 'docs', '--tags-file', 'case.json'], vault);
+  assert.deepEqual((run.doc.issues as { code: string; path: string }[]).filter(i => i.code === 'overlay-missing-note').map(i => i.path), ['Docs/Plain.md']);
+});
+
+test('overlay path checks propagate filesystem errors other than missing paths', t => {
+  const vault = overlayVault(t);
+  const blocked = join(vault, 'blocked');
+  mkdirSync(blocked);
+  writeFileSync(join(vault, 'blocked.json'), JSON.stringify({ 'blocked/Plain.md': { tags: ['ai'] } }));
+  writeFileSync(join(blocked, 'Plain.md'), '');
+  chmodSync(blocked, 0);
+  let run: ReturnType<typeof cli>;
+  try { run = cli(['usage', '--exclude', 'blocked', '--tags-file', 'blocked.json'], vault); }
+  finally { chmodSync(blocked, 0o700); }
+  assert.equal(run.code, 2);
+  assert.match(run.stderr, /EACCES|EPERM/);
 });
 
 test('--tags-file is refused for check, plan and apply', t => {

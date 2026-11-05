@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { isRecord, isStringList } from '../core/guards.ts';
 import { issue, type Issue } from '../core/validate.ts';
 import { cleanTags } from '../vault/frontmatter.ts';
@@ -39,11 +39,17 @@ export function overlayIssues(root: string, overlay: Map<string, string[]>, scan
   const issues: Issue[] = [];
   for (const path of overlay.keys()) {
     if (scanned.has(path)) continue;
-    const parent = dirname(resolve(root, path));
-    const name = basename(path);
-    let exists = false;
-    try { exists = readdirSync(parent).includes(name); }
-    catch { /* Missing parent means the overlay path is missing. */ }
+    let parent = root, exists = true;
+    for (const part of path.split('/')) {
+      let entries: string[];
+      try { entries = readdirSync(parent); }
+      catch (error) {
+        if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) { exists = false; break; }
+        throw error;
+      }
+      if (!entries.includes(part)) { exists = false; break; }
+      parent = resolve(parent, part);
+    }
     if (!exists) issues.push(issue('overlay-missing-note', `Overlay tags refer to missing file ${path}.`, { path }));
   }
   return issues;
