@@ -29,6 +29,7 @@ export default class TagOntologyPlugin extends Plugin {
   // True until data.json exists: a fresh install, used once to turn on the core graph's Tags filter.
   firstRun = false;
   private refreshTimer?: number;
+  private dictionaryMtime?: number;
   private redraw = false;
   private disposed = false;
   // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
@@ -80,6 +81,8 @@ export default class TagOntologyPlugin extends Plugin {
     // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
     // scheduled, so every time the links are resolved the views refresh too (coalesced with the edit's own refresh).
     this.registerEvent(this.app.metadataCache.on('resolved', () => this.scheduleRefresh()));
+    this.registerDomEvent(window, 'focus', () => { void this.checkOutsideChange(); });
+    this.registerEvent(this.app.workspace.on('layout-change', () => { void this.checkOutsideChange(); }));
   }
 
   // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.
@@ -98,6 +101,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.dictionaryFound = false;
     const path = await this.resolveDictionary();
     if (!isValidDictionaryPath(path, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
+    const dictionaryMtime = isHiddenPath(path) ? (await this.app.vault.adapter.stat(path))?.mtime : undefined;
     const start = performance.now();
     let text: string;
     if (isHiddenPath(path)) {
@@ -126,6 +130,7 @@ export default class TagOntologyPlugin extends Plugin {
       dictionaryMs, indexMs: performance.now() - indexStart,
       noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
     };
+    this.dictionaryMtime = dictionaryMtime;
     this.raw = raw as RawDictionary;
     this.model = model;
     return model;
@@ -264,6 +269,8 @@ export default class TagOntologyPlugin extends Plugin {
   async openView(graph: '2d' | '3d' = '2d'): Promise<void> {
     if (this.disposed) return;
     try {
+      await this.checkOutsideChange();
+      if (this.disposed) return;
       await this.loadModel();
       if (this.disposed) return;
       // An open tab of the graph is reused.
@@ -284,6 +291,12 @@ export default class TagOntologyPlugin extends Plugin {
       new Notice(`Could not open the graph: ${reason(error)}`);
       this.native.renderPanel();
     }
+  }
+
+  async checkOutsideChange(): Promise<void> {
+    if (this.disposed || !isHiddenPath(this.dictionaryPath)) return;
+    const mtime = (await this.app.vault.adapter.stat(this.dictionaryPath))?.mtime;
+    if (!this.disposed && mtime !== this.dictionaryMtime) this.scheduleRefresh(this.dictionaryPath);
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.

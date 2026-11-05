@@ -34,7 +34,7 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
-  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; setDictionaryPath(path: string): Promise<void>;
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
@@ -47,7 +47,7 @@ async function setup(saved?: Promise<unknown>) {
   const timers = new Map<number, () => void>();
   // The theme's accent variable, and the observers watching <body>'s style for the accent color setting.
   const theme = { accent: 'hsl(258, 88%, 66%)' }, observers: (() => void)[] = [], cleanups: (() => void)[] = [];
-  let watching = 0;
+  let watching = 0, focusListener: (() => void) | undefined;
   let ready = () => {}, timer = 0, reads = 0;
   class File {}
   const types: string[] = [], open = new Map<string, unknown[]>();
@@ -59,13 +59,13 @@ async function setup(saved?: Promise<unknown>) {
     appearOnMkdir: false,
     adapter: {
       exists: async (path: string) => vault.existing.has(path),
-      async read(path: string) { if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
+      async read(path: string) { reads++; if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
       async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); },
       async mkdir(path: string) {
         vault.existing.add(path);
         if (vault.appearOnMkdir) { vault.files.set('.tow/tag-dictionary.json', serialize(base)); vault.existing.add('.tow/tag-dictionary.json'); }
       },
-      async stat(path: string) { return { mtime: vault.mtimes.get(path) }; },
+      async stat(path: string) { return vault.mtimes.has(path) ? { mtime: vault.mtimes.get(path)! } : null; },
     },
     async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
     // Like Obsidian, create refuses a path that already exists.
@@ -91,6 +91,7 @@ async function setup(saved?: Promise<unknown>) {
     async saveData() {}
     registerView() { ui.push('register-view'); }
     addRibbonIcon() {} addSettingTab() {} registerEvent() {}
+    registerDomEvent(target: { addEventListener(type: string, callback: () => void): void }, type: string, callback: () => void) { target.addEventListener(type, callback); }
     register(cleanup: () => void) { cleanups.push(cleanup); }
     addCommand({ id, callback, checkCallback }: { id: string; callback?: () => void; checkCallback?: (checking: boolean) => boolean }) {
       commands.set(id, callback ?? (() => { checkCallback!(false); }));
@@ -101,6 +102,7 @@ async function setup(saved?: Promise<unknown>) {
     document: { body: {} }, getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--color-accent' ? theme.accent : '' }),
     MutationObserver: class { constructor(callback: () => void) { observers.push(callback); } observe() { watching++; } disconnect() { watching--; } },
     window: {
+    addEventListener(type: string, callback: () => void) { if (type === 'focus') focusListener = callback; },
     setTimeout(callback: () => void) { timers.set(++timer, callback); return timer; },
     clearTimeout(id: number) { timers.delete(id); },
   } });
@@ -126,7 +128,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
-  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), runTimers, reads: () => reads,
+  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
     restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -398,6 +400,47 @@ async function withTowBase() {
   t.vault.files.set('.tow/tag-dictionary.json', serialize(base)); t.ready(); await settle();
   return t;
 }
+
+test('an outside edit to a .tow/ dictionary reloads on window focus', async () => {
+  const t = await withTowBase();
+  t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, extra: { description: 'Extra', broader: ['root'] } }));
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 2);
+  await t.focus(); t.runTimers(); await settle();
+  assert.ok(t.plugin.model?.entries.has('extra'));
+});
+
+test('focus without a change does not reload', async () => {
+  const t = await withTowBase(), before = t.reads();
+  await t.focus(); t.runTimers(); await settle();
+  assert.equal(t.reads(), before);
+});
+
+test('checkOutsideChange skips visible dictionaries', async () => {
+  const t = await withBase(), before = t.reads();
+  await t.plugin.checkOutsideChange(); t.runTimers(); await settle();
+  assert.equal(t.reads(), before);
+});
+
+test('opening a graph schedules a refresh when the hidden dictionary changed', async () => {
+  const t = await withTowBase(); t.plugin.native.calls.length = 0;
+  t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, extra: { description: 'Extra', broader: ['root'] } }));
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 2);
+  await t.plugin.openView(); t.runTimers(); await settle();
+  assert.ok(t.plugin.model?.entries.has('extra'));
+  assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true', 'refresh:true']);
+});
+
+test('focus does not read the dictionary when unloaded during the outside-change check', async () => {
+  const t = await withTowBase(), stat = deferred<{ mtime: number }>(), before = t.reads();
+  t.plugin.native.calls.length = 0;
+  t.vault.adapter.stat = () => stat.promise;
+  const pending = t.focus();
+  await settle();
+  t.plugin.onunload(); stat.resolve({ mtime: 2 });
+  await pending; await settle();
+  assert.equal(t.reads(), before);
+  assert.deepEqual(t.plugin.native.calls, ['destroy']);
+});
 
 test('loadModel keeps the parsed dictionary as raw', async () => {
   const t = await withBase();
