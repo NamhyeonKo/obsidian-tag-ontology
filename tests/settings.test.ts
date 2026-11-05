@@ -5,12 +5,15 @@ import { DEFAULT_SETTINGS, cssColorToHex, isValidDictionaryPath, sanitizeSetting
 test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
-    dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
+    dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: false, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
+  assert.equal(sanitizeSettings({}, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPathExplicit: true }, '.obsidian').dictionaryPathExplicit, true);
+  assert.equal(sanitizeSettings({ dictionaryPathExplicit: 'yes' }, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ titleAccent: false }, '.obsidian').titleAccent, false);
   assert.equal(sanitizeSettings({ focus: true }, '.obsidian').focus, true);
   assert.deepEqual(sanitizeSettings({ focusDescendants: false, focusNotes: 'x', focusAncestors: true }, '.obsidian'), { ...DEFAULT_SETTINGS, focusDescendants: false });

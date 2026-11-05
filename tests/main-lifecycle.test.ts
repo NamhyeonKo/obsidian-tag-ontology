@@ -34,8 +34,9 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
+  dictionaryPath: string; resolveDictionary(): Promise<string>; setDictionaryPath(path: string): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -336,6 +337,24 @@ test('a successful manual reload updates the model and graph without an error no
   assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
   assert.deepEqual(t.notices, []);
   assert.deepEqual(t.errors, []);
+});
+
+test('without an explicit choice, .tow/tag-dictionary.json wins when it exists', async () => {
+  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
+  await t.plugin.loadModel();
+  assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
+});
+
+test('an explicit path wins even when .tow/tag-dictionary.json exists', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json');
+  await t.plugin.loadModel();
+  assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
+});
+
+test('setting the path marks it explicit', async () => {
+  const t = await setup(); await t.plugin.setDictionaryPath('Tags.json');
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, true);
 });
 
 const base: RawDictionary = { root: { description: 'Root', broader: [] }, child: { description: 'Child', broader: ['root'] } };

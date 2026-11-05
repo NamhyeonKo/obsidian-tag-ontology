@@ -1,5 +1,5 @@
 export interface Settings {
-  dictionaryPath: string; layout: 'force' | 'tree' | 'tree-horizontal';
+  dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
   // With customColors on, every tag node in the graph and every tag in the sidebar takes tagColor, or Obsidian's accent color
   // while it is empty; with it off the plugin leaves colors alone.
@@ -17,8 +17,9 @@ export interface Settings {
   perspectiveLabels: boolean; labelSize: number;
 }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
+export const TOW_DICTIONARY = '.tow/tag-dictionary.json';
 export const DEFAULT_SETTINGS: Settings = {
-  dictionaryPath: 'Tag-Dictionary.json', layout: 'force', expanded: [], showNotes: true, showRelated: true,
+  dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
   perspectiveLabels: true, labelSize: 0.8,
 };
@@ -40,6 +41,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
+    dictionaryPathExplicit: typeof value.dictionaryPathExplicit === 'boolean' ? value.dictionaryPathExplicit : DEFAULT_SETTINGS.dictionaryPathExplicit,
     // Radial was removed in 0.6.0; it opens as the vertical tree.
     layout: value.layout === 'tree' || value.layout === 'tree-horizontal' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],

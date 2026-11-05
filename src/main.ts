@@ -1,5 +1,5 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type WorkspaceLeaf } from 'obsidian';
-import { DEFAULT_SETTINGS, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
+import { DEFAULT_SETTINGS, TOW_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, type Change, type Note, type RawDictionary } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -17,6 +17,7 @@ const reason = (error: unknown) => error instanceof Error ? error.message : Stri
 
 export default class TagOntologyPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
+  dictionaryPath = DEFAULT_SETTINGS.dictionaryPath;
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
@@ -37,6 +38,8 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.disposed) return;
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
+    await this.resolveDictionary();
+    if (this.disposed) return;
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
     this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
@@ -58,8 +61,8 @@ export default class TagOntologyPlugin extends Plugin {
     accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
     // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
-    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath) instanceof TFile })); });
-    const relevant = (path: string) => path === this.settings.dictionaryPath || isIncludedNote(path);
+    this.app.workspace.onLayoutReady(() => { void this.ensureDictionary().then(() => this.refreshViews({ notify: this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile })); });
+    const relevant = (path: string) => path === this.dictionaryPath || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     this.registerEvent(this.app.vault.on('modify', changed));
     this.registerEvent(this.app.vault.on('create', changed));
@@ -79,11 +82,18 @@ export default class TagOntologyPlugin extends Plugin {
     catch (error) { this.error = reason(error); throw error; }
   }
 
+  async resolveDictionary(): Promise<string> {
+    this.dictionaryPath = !this.settings.dictionaryPathExplicit && await this.app.vault.adapter.exists(TOW_DICTIONARY)
+      ? TOW_DICTIONARY : this.settings.dictionaryPath;
+    return this.dictionaryPath;
+  }
+
   private async readModel(): Promise<Ontology> {
-    if (!isValidDictionaryPath(this.settings.dictionaryPath, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
+    const path = await this.resolveDictionary();
+    if (!isValidDictionaryPath(path, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
     const start = performance.now();
-    const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
-    if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${this.settings.dictionaryPath}`);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${path}`);
     // A read error keeps its own message; only a parse error is about the JSON.
     const text = await this.app.vault.cachedRead(file);
     let raw: unknown;
@@ -106,18 +116,25 @@ export default class TagOntologyPlugin extends Plugin {
   // hasn't caught up or an iCloud file moved off the disk looks missing too, so the sidebar offers a button instead.
   // Not on settings changes either: the path field saves on every keystroke.
   private async ensureDictionary(): Promise<void> {
-    const { vault } = this.app, path = this.settings.dictionaryPath;
+    const { vault } = this.app;
     try {
+      const path = await this.resolveDictionary();
       if (!this.firstRun || !isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
       await this.writeEmpty(path);
     } catch (error) { console.error('Tag Ontology:', error); }
   }
 
   async createDictionary(): Promise<boolean> {
-    try { await this.writeEmpty(this.settings.dictionaryPath); }
+    try { await this.writeEmpty(await this.resolveDictionary()); }
     catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
     await this.reload();
     return true;
+  }
+
+  async setDictionaryPath(path: string): Promise<void> {
+    this.settings.dictionaryPath = path;
+    this.settings.dictionaryPathExplicit = true;
+    await this.saveSettings();
   }
 
   // vault.create refuses an existing path, so this never replaces a dictionary.
@@ -148,8 +165,9 @@ export default class TagOntologyPlugin extends Plugin {
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
-    const file = this.app.vault.getAbstractFileByPath(this.settings.dictionaryPath);
-    if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${this.settings.dictionaryPath}`); return false; }
+    const path = await this.resolveDictionary();
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
     try {
       await this.app.vault.process(file, (text) => {
         const latest = JSON.parse(text) as RawDictionary;
@@ -225,7 +243,7 @@ export default class TagOntologyPlugin extends Plugin {
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
   private scheduleRefresh(...paths: string[]): void {
-    this.redraw ||= paths.includes(this.settings.dictionaryPath);
+    this.redraw ||= paths.includes(this.dictionaryPath);
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = undefined;
@@ -266,6 +284,7 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
+const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary JSON file. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (chosen automatically)'}.`;
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
@@ -284,7 +303,7 @@ class OntologySettingsTab extends PluginSettingTab {
   // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
-      { name: 'Dictionary path', desc: 'Vault-relative path to the tag dictionary JSON file.', control: {
+      { name: 'Dictionary path', desc: pathDescription(this.owner), control: {
         type: 'text', key: 'dictionaryPath', defaultValue: DEFAULT_SETTINGS.dictionaryPath,
         validate: (path: string) => isValidDictionaryPath(path, this.app.vault.configDir) ? undefined : PATH_HINT,
       } },
@@ -304,6 +323,10 @@ class OntologySettingsTab extends PluginSettingTab {
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
+    if (key === 'dictionaryPath') {
+      if (typeof value === 'string' && isValidDictionaryPath(value, this.app.vault.configDir)) await this.owner.setDictionaryPath(value);
+      return;
+    }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
   }
@@ -330,11 +353,12 @@ class OntologySettingsTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    new Setting(containerEl).setName('Dictionary path').setDesc('Vault-relative path to the tag dictionary JSON file.').addText((text) => {
+    const pathSetting = new Setting(containerEl).setName('Dictionary path').setDesc(pathDescription(this.owner));
+    pathSetting.addText((text) => {
       text.setValue(this.owner.settings.dictionaryPath).onChange(async (path) => {
         if (!isValidDictionaryPath(path, this.app.vault.configDir)) { new Notice(PATH_HINT); return; }
-        this.owner.settings.dictionaryPath = path;
-        await this.owner.saveSettings();
+        await this.owner.setDictionaryPath(path);
+        pathSetting.setDesc(pathDescription(this.owner));
       });
     });
     new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
