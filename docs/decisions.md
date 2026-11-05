@@ -142,3 +142,12 @@ The rules for frontmatter, tags and headings come from the Obsidian 1.14.5 app b
 `readFrontmatter()` keeps the parsed YAML mapping. When that mapping cannot be represented as JSON, `scan()` returns `frontmatter: null` with an `invalid-frontmatter` warning, while keeping the tags read from it.
 
 - **Why:** valid YAML can contain circular aliases. One such note must not abort an entire `scan --json` run. Shared aliases that are not circular still serialize normally, and the raw frontmatter reader keeps its Obsidian behavior.
+
+## 22. Support TOW's `.tow/` files without adopting its conventions
+
+The plugin can read and write a dictionary in a hidden folder through Obsidian's vault adapter. When the user has never chosen a dictionary path, it uses `.tow/tag-dictionary.json` if present, otherwise `Tag-Dictionary.json`; a path explicitly chosen in settings always wins. It checks for outside edits when the window regains focus or a plugin view opens, because hidden files do not emit the vault events used for visible files.
+
+The CLI accepts repeatable `--tags-file` inputs as a third tag source alongside frontmatter and body tags, and `subset` returns selected dictionary entries with their broader ancestors. `show --notes --json` reports each matching tag and its source.
+
+- **Why:** TOW stores tags for project Markdown files outside their frontmatter and body, and needs to find those files through the same hierarchy without parsing notes or reimplementing ontology traversal. The overlay avoids editing project documents; `subset` lets TOW reuse the engine's ancestor and serialization rules. The plugin must use the adapter because Obsidian's Vault API does not expose dot-folders, and must check for changes explicitly because those files emit no vault or metadata-cache events.
+- **Rejected:** teaching the CLI about `.tow/config.json`, PARA, categories or project layout, or handling multiple roots in one invocation. Those are caller conventions; keeping the engine convention-free makes it usable for other vault layouts, while TOW can pass its own filters and call once per root.

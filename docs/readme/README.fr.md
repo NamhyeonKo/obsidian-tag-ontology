@@ -58,6 +58,12 @@ Pour consulter des instructions détaillées, les builds de développement et le
 
 > **Prérequis indispensable** : Le plugin de base **Vue graphique (Graph view)** doit être activé dans Obsidian, avec l'option **Filtres → Étiquettes (Filters → Tags)** cochée.
 
+## Paramètres
+
+Le dictionnaire peut se trouver dans n'importe quel chemin du coffre se terminant par `.json`, y compris dans un dossier `.tow/`. Si vous n'avez jamais choisi de chemin dans les paramètres, le plugin utilise `.tow/tag-dictionary.json` s'il existe ; sinon, il utilise `Tag-Dictionary.json` à la racine du coffre. Si vous choisissez un chemin dans les paramètres, celui-ci est toujours utilisé, même si le dictionnaire `.tow/` existe.
+
+**Obsidian Sync ne synchronise pas les dossiers cachés commençant par un point, à l'exception de `.obsidian`** ([paramètres de Sync](https://obsidian.md/help/sync/settings)). Si vous utilisez Obsidian Sync, choisissez un chemin visible pour le dictionnaire. Git et les outils de synchronisation au niveau des fichiers prennent en charge les dossiers cachés, sauf s'ils sont ignorés.
+
 ## Confidentialité et Sécurité
 
 - Fonctionnement 100 % hors ligne : Aucune requête réseau, aucune télémétrie et aucun compte requis.

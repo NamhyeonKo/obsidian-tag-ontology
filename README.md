@@ -177,7 +177,7 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 
 | Setting | Description |
 | --- | --- |
-| Dictionary path | Vault-relative path to a `.json` file. Default: `Tag-Dictionary.json`. |
+| Dictionary path | Vault-relative path to a `.json` file. If you have never chosen a path, the plugin uses `.tow/tag-dictionary.json` when it exists; otherwise it uses `Tag-Dictionary.json`. A path chosen in settings is always used, even when the `.tow/` dictionary exists. |
 | Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
@@ -192,7 +192,9 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 The sidebar tab reads and writes this file, so you never have to open it. It is plain JSON in your vault, so you can also edit it by hand.
 
-By default the plugin reads `Tag-Dictionary.json` at the vault root; you can change the path in the plugin settings. On a fresh install with no file there, the plugin creates an empty dictionary. If the file goes missing later, the sidebar tab offers to create one.
+The dictionary can live at any vault-relative path ending in `.json`, including inside `.tow/`. If you have never chosen a path in settings, the plugin uses `.tow/tag-dictionary.json` when it exists; otherwise it uses `Tag-Dictionary.json` at the vault root. A path chosen in settings is always used, even when `.tow/tag-dictionary.json` exists. With no dictionary at the selected path, the plugin creates an empty dictionary; if it goes missing later, the sidebar tab offers to create one.
+
+**Obsidian Sync does not sync dot-folders other than `.obsidian`** ([Sync settings](https://obsidian.md/help/sync/settings)). If you use Obsidian Sync, choose a visible path for the dictionary. Git and file-level sync tools carry dot-folders unless they are ignored.
 
 The file is a single JSON object. Each key is a tag **without `#`**, matched case-insensitively like the core graph (`#ML` uses the key `ml`). Lowercase keys are recommended. A nested tag such as `#lang/python` uses the key `lang/python`.
 

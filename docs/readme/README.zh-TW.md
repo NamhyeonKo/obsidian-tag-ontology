@@ -58,6 +58,12 @@ Tag Ontology 讓你在側邊欄分頁中為每個標籤指定父層、子層與�
 
 > **環境需求**：必須在 Obsidian 中啟用核心 **關聯圖（Graph view）** 外掛，並在圖表設定中開啟 **篩選 → 標籤 (Filters → Tags)**。
 
+## 設定
+
+字典可以儲存在保管庫中任何以 `.json` 結尾的路徑，包括 `.tow/` 資料夾。如果你從未在設定中選擇路徑，外掛會在 `.tow/tag-dictionary.json` 存在時使用它；否則使用保管庫根目錄下的 `Tag-Dictionary.json`。如果你在設定中選擇了路徑，即使 `.tow/` 字典存在，也一律使用所選路徑。
+
+**Obsidian Sync 不會同步 `.obsidian` 以外以點開頭的隱藏資料夾**（[Sync 設定](https://obsidian.md/help/sync/settings)）。如果使用 Obsidian Sync，請為字典選擇可見路徑。除非設定為忽略，Git 和檔案層級同步工具會同步點開頭的資料夾。
+
 ## 隱私與安全
 
 - 完全離線運作：無任何網路請求、遙測追蹤或使用者帳號系統。
