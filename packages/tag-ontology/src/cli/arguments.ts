@@ -20,6 +20,7 @@ Options:
   --root <dir>          Vault folder (default: current directory)
   --dictionary <file>   Dictionary relative to root (default: Tag-Dictionary.json)
   --exclude <glob>      Skip notes; repeatable (scan, usage, show)
+  --tags-file <file>     Tags for files without them; repeatable (scan, usage, show)
   --names <rule>        obsidian (default) or kebab (all but scan)
   --strict              Fail on warnings/findings (check, usage, plan, apply)
   --notes               List note paths (show)
@@ -34,7 +35,7 @@ export function argumentsOf(args: string[]) {
   try {
     parsed = parseArgs({ args, allowPositionals: true, options: {
       root: { type: 'string' }, dictionary: { type: 'string' }, exclude: { type: 'string', multiple: true },
-      names: { type: 'string' }, strict: { type: 'boolean' }, json: { type: 'boolean' },
+      'tags-file': { type: 'string', multiple: true }, names: { type: 'string' }, strict: { type: 'boolean' }, json: { type: 'boolean' },
       notes: { type: 'boolean' }, exact: { type: 'boolean' }, base: { type: 'string' },
       help: { type: 'boolean' }, version: { type: 'boolean' },
     } });
@@ -47,7 +48,7 @@ export function argumentsOf(args: string[]) {
   if (!command) throw new UsageError('Expected a command: check, scan, usage, show, plan or apply.');
   const allowed = new Set(['root', 'json']);
   if (command !== 'scan') { allowed.add('dictionary'); allowed.add('names'); }
-  if (['scan', 'usage', 'show'].includes(command)) allowed.add('exclude');
+  if (['scan', 'usage', 'show'].includes(command)) { allowed.add('exclude'); allowed.add('tags-file'); }
   if (['check', 'usage', 'plan', 'apply'].includes(command)) allowed.add('strict');
   if (command === 'show') { allowed.add('notes'); allowed.add('exact'); }
   if (command === 'apply') allowed.add('base');

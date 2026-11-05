@@ -26,6 +26,7 @@ Only `--json` output, issue codes and exit codes are a contract. The text printe
 | `--root <dir>` | all | Vault folder. Default: the current directory. |
 | `--dictionary <file>` | all but `scan` | Dictionary file, relative to `--root` unless absolute. Default: `Tag-Dictionary.json`. |
 | `--exclude <glob>` | `scan`, `usage`, `show` | Skip notes. Repeatable. See [Notes](#notes). |
+| `--tags-file <file>` | `scan`, `usage`, `show` | JSON object mapping note paths to `{ "tags": string[] }`; repeatable. File paths are relative to `--root` unless absolute. |
 | `--names <rule>` | all but `scan` | Tag name rule for warnings: `obsidian` (default) or `kebab`. See [`name-format`](#issue-codes). |
 | `--strict` | `check`, `usage`, `plan`, `apply` | Treat warnings, and `usage` findings, as failures (exit code 1). |
 | `--json` | all | Print one JSON document on stdout. See [JSON output](#json-output). |
@@ -42,6 +43,8 @@ A note is a `.md` file under `--root`. The CLI skips:
 - symbolic links (not followed).
 
 Vault conventions such as which folders hold notes are not built in; pass them as `--exclude`.
+
+Overlay tags from repeatable `--tags-file` inputs are a third tag source for `scan`, `usage` and `show`. Each file maps vault-relative note paths (using `/` separators) to objects with a string-list `tags`; these tags are normalized like frontmatter tags and apply even when the note already has tags. Absolute paths, backslashes and paths outside `--root` are rejected. A path without a matching note produces an `overlay-missing-note` warning.
 
 What the CLI reads from a note follows Obsidian 1.14.5's metadata cache, which is what the plugin sees:
 
@@ -128,6 +131,7 @@ An **error** is something that stops the plugin from opening the dictionary. Eve
 | `unplaced` | warning | The entry has no `broader` key, so it has no place in the hierarchy. (`"broader": []` makes a root.) | `tag` |
 | `redundant-broader` | warning | A parent is also reached through another parent. | `tag`, `field`, `target` |
 | `invalid-frontmatter` | warning | `scan`/`usage`: a note's frontmatter isn't valid YAML, isn't a mapping, or cannot be represented as JSON. | `path` |
+| `overlay-missing-note` | warning | A `--tags-file` key doesn't match a file in the vault using exact-case path matching. | `path` |
 
 ## Commands
 
@@ -142,7 +146,7 @@ Validates the dictionary. The result has only the common fields; `issues` lists 
 ### scan
 
 ```sh
-tag-ontology scan [paths…] [--exclude <glob>…] [--json]
+tag-ontology scan [paths…] [--exclude <glob>…] [--tags-file <file>…] [--json]
 ```
 
 Reads every note in `paths` (files or folders; default: the whole vault), sorted by path. Doesn't read the dictionary.
@@ -159,6 +163,7 @@ Reads every note in `paths` (files or folders; default: the whole vault), sorted
       "frontmatter": { "type": "resource", "tags": ["dropout", "overfitting"] },
       "tags": ["dropout", "overfitting"],
       "bodyTags": ["deep-learning"],
+      "overlayTags": ["rag"],
       "headings": [{ "level": 2, "text": "1.1. Idea" }]
     }
   ]
@@ -168,14 +173,15 @@ Reads every note in `paths` (files or folders; default: the whole vault), sorted
 - `frontmatter`: the parsed YAML, or `null` when there is none or it is invalid (then an `invalid-frontmatter` warning).
 - `tags`: as written, duplicates kept, so a reader can report them.
 - `bodyTags`: each tag once, in the order it first appears.
+- `overlayTags`: present only when at least one `--tags-file` is given; normalized tags from those files for this note, duplicates removed.
 
 ### usage
 
 ```sh
-tag-ontology usage [paths…] [--exclude <glob>…] [--names kebab] [--strict] [--json]
+tag-ontology usage [paths…] [--exclude <glob>…] [--tags-file <file>…] [--names kebab] [--strict] [--json]
 ```
 
-Compares the tags on notes (`tags` and `bodyTags`) with the dictionary. If the dictionary has errors, `usage` reports them and exits 1 without the fields below.
+Compares the tags on notes (`tags` and `bodyTags`, plus `overlayTags` when supplied) with the dictionary. If the dictionary has errors, `usage` reports them and exits 1 without the fields below.
 
 ```json
 {
@@ -205,7 +211,7 @@ The library's `usage(dictionary, notes, inScope)` returns `scanned`, `unregister
 ### show
 
 ```sh
-tag-ontology show <tag> [--notes] [--exact] [--exclude <glob>…] [--names kebab] [--json]
+tag-ontology show <tag> [--notes] [--exact] [--exclude <glob>…] [--tags-file <file>…] [--names kebab] [--json]
 ```
 
 Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. An unknown tag, or an alias held by several tags, exits 2. If the dictionary has errors, `show` reports them and exits 1.
