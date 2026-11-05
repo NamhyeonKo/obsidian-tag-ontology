@@ -60,7 +60,7 @@ async function setup(saved?: Promise<unknown>) {
     adapter: {
       exists: async (path: string) => vault.existing.has(path),
       async read(path: string) { reads++; if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
-      async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); },
+      async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); vault.mtimes.set(path, (vault.mtimes.get(path) ?? 0) + 1); },
       async mkdir(path: string) {
         vault.existing.add(path);
         if (vault.appearOnMkdir) { vault.files.set('.tow/tag-dictionary.json', serialize(base)); vault.existing.add('.tow/tag-dictionary.json'); }
@@ -415,6 +415,21 @@ test('focus without a change does not reload', async () => {
   assert.equal(t.reads(), before);
 });
 
+test('a hidden dictionary still loads when adapter stat fails', async () => {
+  const t = await withTowBase();
+  t.vault.adapter.stat = async () => { throw new Error('stat failed'); };
+  await t.plugin.loadModel();
+  assert.deepEqual(t.plugin.model?.roots, ['root']);
+});
+
+test('a failed outside-change stat is ignored', async () => {
+  const t = await withTowBase(), before = t.reads();
+  t.vault.adapter.stat = async () => { throw new Error('stat failed'); };
+  await assert.doesNotReject(t.plugin.checkOutsideChange());
+  t.runTimers(); await settle();
+  assert.equal(t.reads(), before);
+});
+
 test('checkOutsideChange skips visible dictionaries', async () => {
   const t = await withBase(), before = t.reads();
   await t.plugin.checkOutsideChange(); t.runTimers(); await settle();
@@ -469,6 +484,27 @@ test('saveChange on a .tow/ dictionary writes through the adapter and keeps the 
   t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, child: { description: 'Outside', broader: ['root'] } }));
   assert.equal(await t.plugin.saveChange(describe('Other'), base), false);
   assert.equal(t.vault.adapterWrites.length, 1);
+});
+
+test('saving a hidden dictionary does not trigger an outside reload on focus', async () => {
+  const t = await withTowBase();
+  assert.equal(await t.plugin.saveChange(describe('Updated'), base), true);
+  const afterSave = t.reads();
+  await t.focus(); t.runTimers(); await settle();
+  assert.equal(t.reads(), afterSave);
+});
+
+test('changing the hidden dictionary path reloads on focus', async () => {
+  const t = await withTowBase();
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 1); t.vault.mtimes.set('.tow/other.json', 1);
+  await t.plugin.loadModel();
+  t.vault.files.set('.tow/other.json', serialize({ updated: { description: 'Updated', broader: [] } }));
+  t.vault.existing.add('.tow/other.json');
+  t.plugin.settings.dictionaryPath = '.tow/other.json';
+  t.plugin.settings.dictionaryPathExplicit = true;
+  await t.plugin.resolveDictionary();
+  await t.focus(); t.runTimers(); await settle();
+  assert.ok(t.plugin.model?.entries.has('updated'));
 });
 
 test('saveChange keeps CRLF line endings in a .tow/ dictionary', async () => {

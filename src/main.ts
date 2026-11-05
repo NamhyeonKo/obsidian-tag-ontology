@@ -30,6 +30,7 @@ export default class TagOntologyPlugin extends Plugin {
   firstRun = false;
   private refreshTimer?: number;
   private dictionaryMtime?: number;
+  private dictionaryMtimePath?: string;
   private redraw = false;
   private disposed = false;
   // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
@@ -82,7 +83,6 @@ export default class TagOntologyPlugin extends Plugin {
     // scheduled, so every time the links are resolved the views refresh too (coalesced with the edit's own refresh).
     this.registerEvent(this.app.metadataCache.on('resolved', () => this.scheduleRefresh()));
     this.registerDomEvent(window, 'focus', () => { void this.checkOutsideChange(); });
-    this.registerEvent(this.app.workspace.on('layout-change', () => { void this.checkOutsideChange(); }));
   }
 
   // Every load records how it went, whichever path started it, so the sidebar shows a failure until any later load works.
@@ -101,7 +101,10 @@ export default class TagOntologyPlugin extends Plugin {
     this.dictionaryFound = false;
     const path = await this.resolveDictionary();
     if (!isValidDictionaryPath(path, this.app.vault.configDir)) throw new Error('The dictionary path is not allowed.');
-    const dictionaryMtime = isHiddenPath(path) ? (await this.app.vault.adapter.stat(path))?.mtime : undefined;
+    let dictionaryMtime: number | undefined;
+    if (isHiddenPath(path)) {
+      try { dictionaryMtime = (await this.app.vault.adapter.stat(path))?.mtime; } catch { /* proceed without the optional mtime */ }
+    }
     const start = performance.now();
     let text: string;
     if (isHiddenPath(path)) {
@@ -131,6 +134,7 @@ export default class TagOntologyPlugin extends Plugin {
       noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
     };
     this.dictionaryMtime = dictionaryMtime;
+    this.dictionaryMtimePath = path;
     this.raw = raw as RawDictionary;
     this.model = model;
     return model;
@@ -218,6 +222,10 @@ export default class TagOntologyPlugin extends Plugin {
       const text = await adapter.read(path), out = this.changedText(text, change, base);
       // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
       await adapter.write(path, out);
+      try {
+        this.dictionaryMtime = (await adapter.stat(path))?.mtime;
+        this.dictionaryMtimePath = path;
+      } catch { this.dictionaryMtime = undefined; this.dictionaryMtimePath = path; }
       return true;
     } catch (error) {
       new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
@@ -295,8 +303,9 @@ export default class TagOntologyPlugin extends Plugin {
 
   async checkOutsideChange(): Promise<void> {
     if (this.disposed || !isHiddenPath(this.dictionaryPath)) return;
-    const mtime = (await this.app.vault.adapter.stat(this.dictionaryPath))?.mtime;
-    if (!this.disposed && mtime !== this.dictionaryMtime) this.scheduleRefresh(this.dictionaryPath);
+    let mtime: number | undefined;
+    try { mtime = (await this.app.vault.adapter.stat(this.dictionaryPath))?.mtime; } catch { return; }
+    if (!this.disposed && (this.dictionaryMtimePath !== this.dictionaryPath || mtime !== this.dictionaryMtime)) this.scheduleRefresh(this.dictionaryPath);
   }
 
   // Only a dictionary change redraws graphs; note edits reach them through the core graph's own update.
