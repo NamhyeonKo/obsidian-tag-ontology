@@ -34,7 +34,7 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
-  dictionaryPath: string; resolveDictionary(): Promise<string>; setDictionaryPath(path: string): Promise<void>;
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; setDictionaryPath(path: string): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
@@ -56,11 +56,15 @@ async function setup(saved?: Promise<unknown>) {
     configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
     text: dictionary, writes: [] as string[], adapterWrites: [] as string[],
     existing: new Set(['Tag-Dictionary.json']), created: [] as string[], files: new Map<string, string>(), mtimes: new Map<string, number>(),
+    appearOnMkdir: false,
     adapter: {
       exists: async (path: string) => vault.existing.has(path),
       async read(path: string) { if (!vault.files.has(path)) throw new Error(`ENOENT: ${path}`); return vault.files.get(path)!; },
       async write(path: string, data: string) { vault.adapterWrites.push(data); vault.files.set(path, data); vault.existing.add(path); },
-      async mkdir(path: string) { vault.existing.add(path); },
+      async mkdir(path: string) {
+        vault.existing.add(path);
+        if (vault.appearOnMkdir) { vault.files.set('.tow/tag-dictionary.json', serialize(base)); vault.existing.add('.tow/tag-dictionary.json'); }
+      },
       async stat(path: string) { return { mtime: vault.mtimes.get(path) }; },
     },
     async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
@@ -359,6 +363,17 @@ test('a dictionary under .tow/ loads through the adapter', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(t.plugin.raw)), base);
 });
 
+test('a hidden dictionary that disappears before it is read is marked missing', async () => {
+  const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  t.vault.adapter.read = async (path: string) => {
+    t.vault.existing.delete(path); t.vault.files.delete(path);
+    throw new Error(`ENOENT: ${path}`);
+  };
+  await assert.rejects(t.plugin.loadModel(), /ENOENT/);
+  assert.equal(t.plugin.dictionaryFound, false);
+});
+
 test('an explicit path wins even when .tow/tag-dictionary.json exists', async () => {
   const t = await setup(Promise.resolve({ dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: true }));
   await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json');
@@ -487,6 +502,15 @@ test('createDictionary makes .tow/ and an empty file through the adapter, never 
   assert.deepEqual([...t.vault.existing].sort(), ['.tow', '.tow/tag-dictionary.json']);
   assert.equal(t.vault.files.get('.tow/tag-dictionary.json'), '{\n}\n');
   assert.equal(await t.plugin.createDictionary(), false);
+});
+
+test('createDictionary refuses when the hidden file appears during folder creation', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: '.tow/tag-dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.clear(); t.vault.appearOnMkdir = true;
+  const appeared = serialize(base);
+  assert.equal(await t.plugin.createDictionary(), false);
+  assert.equal(t.vault.files.get('.tow/tag-dictionary.json'), appeared);
+  assert.equal(t.vault.adapterWrites.length, 0);
 });
 
 test('createDictionary never replaces a file that appeared meanwhile', async () => {

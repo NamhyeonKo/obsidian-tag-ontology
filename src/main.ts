@@ -103,7 +103,11 @@ export default class TagOntologyPlugin extends Plugin {
     if (isHiddenPath(path)) {
       if (!await this.app.vault.adapter.exists(path)) throw new Error(`Tag dictionary not found: ${path}`);
       this.dictionaryFound = true;
-      text = await this.app.vault.adapter.read(path);
+      try { text = await this.app.vault.adapter.read(path); }
+      catch (error) {
+        try { if (!await this.app.vault.adapter.exists(path)) this.dictionaryFound = false; } catch { /* keep the read error */ }
+        throw error;
+      }
     } else {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!(file instanceof TFile)) throw new Error(`Tag dictionary not found: ${path}`);
@@ -161,6 +165,8 @@ export default class TagOntologyPlugin extends Plugin {
         const folder = parts.slice(0, i).join('/');
         if (!await vault.adapter.exists(folder)) await vault.adapter.mkdir(folder);
       }
+      // The adapter has no exclusive create; a file can still appear between this check and write.
+      if (await vault.adapter.exists(path)) throw new Error('File already exists.');
       await vault.adapter.write(path, '{\n}\n');
       return;
     }
