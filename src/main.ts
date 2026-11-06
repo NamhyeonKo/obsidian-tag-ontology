@@ -1,5 +1,5 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
-import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, LEGACY_DICTIONARY, TOW_DICTIONARY, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
+import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, type Change, type Note, type RawDictionary } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -166,7 +166,7 @@ export default class TagOntologyPlugin extends Plugin {
 
   // Only a fresh install gets an empty dictionary on its own. Later a missing file is never recreated by itself: a sync that
   // hasn't caught up or an iCloud file moved off the disk looks missing too, so the sidebar offers a button instead.
-  // Not on settings changes either: the path field saves on every keystroke.
+  // Not on settings changes either: the path field saves only on commit.
   private async ensureDictionary(): Promise<void> {
     const { vault } = this.app;
     try {
@@ -389,7 +389,7 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary JSON file. Without a chosen path, uses ${TOW_FOLDER_DICTIONARY}, then ${TOW_DICTIONARY}, then ${LEGACY_DICTIONARY}. New installs create ${TOW_FOLDER_DICTIONARY}; existing ${LEGACY_DICTIONARY} files keep working, and ${TOW_DICTIONARY} dictionaries from TOW 0.5.0–0.5.1 are still read. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (chosen automatically)'}.`;
+const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary (.json). Leave empty to find it automatically. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (automatic)'}.`;
 const TOW_MARKERS = ['tow.json', '.tow/config.json', 'tow/config.json'];
 const TOW_VAULT_NOTICE ='TOW manages this file: run the tow-setup skill or tow migrate to move it.';
 const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dictionary.`;
@@ -406,6 +406,7 @@ const TAG_COLOR = { name: 'Tag color', desc: 'Every tag in the graph and in the 
 const TITLE = { name: 'Tag title in the tag color', desc: 'Show the selected tag\'s title in the sidebar in the tag color.' };
 
 class OntologySettingsTab extends PluginSettingTab {
+  private commitPath?: () => Promise<void>;
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
 
   // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
@@ -428,25 +429,31 @@ class OntologySettingsTab extends PluginSettingTab {
   }
 
   private dictionaryPathSetting(setting: Setting): Setting {
-    let input: TextComponent;
+    let input!: TextComponent;
+    const towVault = TOW_MARKERS.some(path => this.app.vault.getAbstractFileByPath(path));
+    const fill = () => {
+      input.setValue(this.owner.settings.dictionaryPathExplicit ? this.owner.settings.dictionaryPath : '');
+      input.setPlaceholder(this.owner.settings.dictionaryPathExplicit ? TOW_FOLDER_DICTIONARY : this.owner.dictionaryPath);
+    };
+    const describe = () => setting.setDesc(`${pathDescription(this.owner)}${towVault && this.owner.dictionaryPath !== TOW_FOLDER_DICTIONARY ? ` ${TOW_VAULT_NOTICE}` : ''}`);
     setting.setName('Dictionary path').setDesc(pathDescription(this.owner))
-      .addText(text => {
-        input = text;
-        text.setValue(this.owner.settings.dictionaryPath).onChange(async path => {
-          // Shown in place while typing; a Notice would pop up on every keystroke of a half-typed path.
-          if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(PATH_HINT); return; }
-          await this.owner.setDictionaryPath(path);
-          setting.setDesc(pathDescription(this.owner));
-        });
-      })
+      .addText(text => { input = text; })
       .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip('Use automatic dictionary path').onClick(async () => {
-        await this.owner.resetDictionaryPath();
-        input.setValue(this.owner.settings.dictionaryPath);
-        setting.setDesc(pathDescription(this.owner));
+        await this.owner.resetDictionaryPath(); fill(); describe();
       }));
-    if (TOW_MARKERS.some(path => this.app.vault.getAbstractFileByPath(path))) {
-      setting.controlEl.createEl('p', { text: TOW_VAULT_NOTICE });
-    } else {
+    fill(); describe();
+    const commit = async () => {
+      const path = input.getValue().trim();
+      if (path === (this.owner.settings.dictionaryPathExplicit ? this.owner.settings.dictionaryPath : '')) return;
+      if (!path) await this.owner.resetDictionaryPath();
+      else if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(PATH_HINT); return; }
+      else await this.owner.setDictionaryPath(path);
+      fill(); describe();
+    };
+    // Save on commit, not per keystroke, since a half-typed path ending in .json would be saved and reloaded with a "not found" notice each time.
+    input.inputEl.addEventListener('change', () => { void commit(); });
+    this.commitPath = commit;
+    if (!towVault) {
       const path = this.owner.dictionaryPath;
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile && !path.startsWith('tow/') && !isHiddenPath(path)
@@ -461,7 +468,7 @@ class OntologySettingsTab extends PluginSettingTab {
             await this.app.fileManager.renameFile(file, TOW_FOLDER_DICTIONARY);
             if (this.owner.settings.dictionaryPathExplicit) await this.owner.setDictionaryPath(TOW_FOLDER_DICTIONARY);
             await this.owner.reload();
-            setting.setDesc(pathDescription(this.owner));
+            fill(); describe();
           } catch (error) { new Notice(`Could not move the dictionary: ${reason(error)}`); }
         }));
       }
@@ -495,6 +502,9 @@ class OntologySettingsTab extends PluginSettingTab {
         shown?.setValue(this.owner.tagColor());
       }));
   }
+
+  // Closing settings commits a path still being typed, as leaving the field would.
+  hide(): void { void this.commitPath?.(); super.hide(); }
 
   // Fallback for Obsidian older than 1.13, which never calls getSettingDefinitions().
   display(): void {
