@@ -19,11 +19,13 @@ export interface Settings {
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
 export const TOW_DICTIONARY = '.tow/tag-dictionary.json';
 export const TOW_FOLDER_DICTIONARY = 'tow/tag-dictionary.json';
+export const LEGACY_DICTIONARY = 'Tag-Dictionary.json';
+export const AUTOMATIC_DICTIONARIES = [TOW_FOLDER_DICTIONARY, TOW_DICTIONARY, LEGACY_DICTIONARY];
 export function isHiddenPath(path: string): boolean {
   return path.split('/').some(segment => segment.startsWith('.'));
 }
 export const DEFAULT_SETTINGS: Settings = {
-  dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
+  dictionaryPath: TOW_FOLDER_DICTIONARY, dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false,
 };
@@ -47,7 +49,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
     dictionaryPathExplicit: typeof value.dictionaryPathExplicit === 'boolean' ? value.dictionaryPathExplicit
-      : !Object.hasOwn(value, 'dictionaryPathExplicit') && typeof value.dictionaryPath === 'string' && value.dictionaryPath !== DEFAULT_SETTINGS.dictionaryPath
+      : !Object.hasOwn(value, 'dictionaryPathExplicit') && typeof value.dictionaryPath === 'string' && value.dictionaryPath !== LEGACY_DICTIONARY
         && isValidDictionaryPath(value.dictionaryPath, configDir),
     // Radial was removed in 0.6.0; it opens as the vertical tree.
     layout: value.layout === 'tree' || value.layout === 'tree-horizontal' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',

@@ -36,7 +36,7 @@ class NativeGraphs {
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
-  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>; pathForCreation(): Promise<string>;
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
@@ -456,6 +456,29 @@ test('automatic lookup finds tow/tag-dictionary.json on disk before the vault in
   assert.equal(await t.plugin.resolveDictionary(), 'tow/tag-dictionary.json');
 });
 
+test('without a chosen path and no dictionary anywhere, the tow default is used, not the stored path', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: false, locationNoticeShown: true }));
+  await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.resolveDictionary(), 'tow/tag-dictionary.json');
+});
+
+test('a legacy dictionary arriving while automatic is picked up', async () => {
+  const t = await setup(); t.vault.existing.clear();
+  await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found: tow\/tag-dictionary\.json/);
+  t.vault.existing.add('Tag-Dictionary.json');
+  t.events.get('create')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
+  assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
+  assert.deepEqual(t.plugin.model?.roots, ['root']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+});
+
+test('with a chosen path, a file arriving at an automatic location is ignored', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
+  await t.loaded;
+  t.events.get('create')!({ path: 'tow/tag-dictionary.json' }); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, []);
+});
+
 test('the dictionary path setting moves a chosen dictionary and updates its path', async () => {
   const t = await setup(Promise.resolve({ dictionaryPath: 'custom/tags.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
   await t.loaded;
@@ -602,7 +625,7 @@ test('resetDictionaryPath restores the default and clears the explicit choice', 
   await t.plugin.resetDictionaryPath();
   assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
   assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
-  assert.equal(t.plugin.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
   assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS, locationNoticeShown: true });
 });
 

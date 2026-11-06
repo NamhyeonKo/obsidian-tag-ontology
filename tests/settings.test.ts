@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SETTINGS, TOW_DICTIONARY, TOW_FOLDER_DICTIONARY, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
+import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, LEGACY_DICTIONARY, TOW_DICTIONARY, TOW_FOLDER_DICTIONARY, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
 
-test('keeps the legacy stored default while sanitizing the one-time location notice', () => {
-  assert.equal(DEFAULT_SETTINGS.dictionaryPath, 'Tag-Dictionary.json');
+test('defaults to tow/ and treats only the legacy root default as unchosen', () => {
+  assert.equal(DEFAULT_SETTINGS.dictionaryPath, 'tow/tag-dictionary.json');
+  assert.equal(LEGACY_DICTIONARY, 'Tag-Dictionary.json');
+  assert.deepEqual(AUTOMATIC_DICTIONARIES, ['tow/tag-dictionary.json', '.tow/tag-dictionary.json', 'Tag-Dictionary.json']);
   assert.equal(TOW_FOLDER_DICTIONARY, 'tow/tag-dictionary.json');
   assert.equal(TOW_DICTIONARY, '.tow/tag-dictionary.json');
   assert.equal(sanitizeSettings({}, '.obsidian').dictionaryPathExplicit, false);
+  // Settings from before 0.10.0 have no flag: only the old default counts as unchosen.
   assert.equal(sanitizeSettings({ dictionaryPath: 'Tag-Dictionary.json' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: 'tow/tag-dictionary.json' }, '.obsidian').dictionaryPathExplicit, true);
   assert.equal(sanitizeSettings({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }, '.obsidian').dictionaryPathExplicit, true);
   assert.equal(sanitizeSettings({ locationNoticeShown: true }, '.obsidian').locationNoticeShown, true);
   assert.equal(sanitizeSettings({ locationNoticeShown: 'yes' }, '.obsidian').locationNoticeShown, false);

@@ -1282,7 +1282,7 @@ test('a missing automatic dictionary reports the new first-run location and lega
   const t = await setup();
   t.owner.dictionaryFound = false;
   t.controller.refresh(false);
-  assert.ok(t.sidebar.all().some(el => el.text.includes('Tag-Dictionary.json is not in the vault.')));
+  assert.ok(t.sidebar.all().some(el => el.text.includes('tow/tag-dictionary.json is not in the vault.')));
   assert.ok(t.sidebar.all().some(el => el.text.includes('Without a chosen path, lookup checks tow/tag-dictionary.json, then .tow/tag-dictionary.json, then Tag-Dictionary.json.')));
   assert.ok(t.sidebar.all().some(el => el.text.includes('New installs create tow/tag-dictionary.json; existing Tag-Dictionary.json files keep working')));
   assert.ok(t.sidebar.all().some(el => el.text.includes('.tow/ dictionaries from TOW 0.5.0–0.5.1 are still read.')));
