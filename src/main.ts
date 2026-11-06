@@ -406,7 +406,8 @@ class OntologySettingsTab extends PluginSettingTab {
       .addText(text => {
         input = text;
         text.setValue(this.owner.settings.dictionaryPath).onChange(async path => {
-          if (!isValidDictionaryPath(path, this.app.vault.configDir)) { new Notice(PATH_HINT); return; }
+          // Shown in place while typing; a Notice would pop up on every keystroke of a half-typed path.
+          if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(PATH_HINT); return; }
           await this.owner.setDictionaryPath(path);
           setting.setDesc(pathDescription(this.owner));
         });
