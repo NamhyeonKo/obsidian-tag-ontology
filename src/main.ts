@@ -471,6 +471,8 @@ class OntologySettingsTab extends PluginSettingTab {
             if (this.owner.settings.dictionaryPathExplicit) await this.owner.setDictionaryPath(TOW_FOLDER_DICTIONARY);
             await this.owner.reload();
             fill(); describe();
+            // The dictionary is in tow/ now, so there is nothing left to move.
+            button.buttonEl.remove();
           } catch (error) { new Notice(`Could not move the dictionary: ${reason(error)}`); }
         }));
       }
