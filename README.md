@@ -1,4 +1,4 @@
-<h1 align="center">Tag Ontology</h1>
+# Tag Ontology
 
 <p align="center">
   <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
