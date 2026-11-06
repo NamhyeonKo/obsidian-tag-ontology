@@ -4,6 +4,8 @@
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md)
+
 **Link your tags the way you link notes.**
 
 Tag Ontology lets you give each tag parents, children and related tags from a sidebar tab, with no file to edit. Then explore them in Obsidian's own **Graph view**: collapse and expand each branch, switch to a tree layout and keep the selected tag in focus. Notes, links between notes, filters, color groups and display settings keep working as before.
