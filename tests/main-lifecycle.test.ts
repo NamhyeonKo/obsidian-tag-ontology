@@ -36,13 +36,13 @@ class NativeGraphs {
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
-  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>; pathForCreation(): Promise<string>;
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
-  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
+  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -55,14 +55,20 @@ async function setup(saved?: Promise<unknown>) {
   class Folder { path: string; constructor(path = '') { this.path = path; } }
   class TestSetting {
     settingEl = { toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
-    name = ''; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; toggleChanged?: (value: boolean) => void;
-    buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean }[] = []; paragraphs: string[] = [];
-    controlEl = { createEl: (_tag: string, attrs: { text: string }) => { this.paragraphs.push(attrs.text); } };
+    name = ''; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; toggleChanged?: (value: boolean) => void;
+    buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean }[] = [];
     constructor() { settingRows.push(this); }
     setName(name: string) { this.name = name; return this; }
     setDesc(desc: string) { this.desc = desc; return this; }
-    addText(callback: (text: { setValue(value: string): { onChange(callback: (value: string) => void): void }; onChange(callback: (value: string) => void): void }) => void) {
-      callback({ setValue: value => { this.textValue = value; return { onChange: cb => { this.textChanged = cb; } }; }, onChange: cb => { this.textChanged = cb; } }); return this;
+    addText(callback: (text: { inputEl: { addEventListener(type: string, cb: () => void): void }; getValue(): string; setValue(value: string): unknown; setPlaceholder(value: string): unknown; onChange(callback: (value: string) => void): unknown }) => void) {
+      const text = {
+        inputEl: { addEventListener: (type: string, cb: () => void) => { if (type === 'change') this.textCommitted = cb; } },
+        getValue: () => this.textValue ?? '',
+        setValue: (value: string) => { this.textValue = value; return text; },
+        setPlaceholder: (value: string) => { this.textPlaceholder = value; return text; },
+        onChange: (_cb: (value: string) => void) => text,
+      };
+      callback(text); return this;
     }
     addToggle(callback: (toggle: { setValue(value: boolean): { onChange(callback: (value: boolean) => void): void }; onChange(callback: (value: boolean) => void): void }) => void) {
       const onChange = (cb: (value: boolean) => void) => { this.toggleChanged = cb; };
@@ -87,6 +93,7 @@ async function setup(saved?: Promise<unknown>) {
   class TestPluginSettingTab {
     app: unknown; containerEl = { empty() {} };
     constructor(app: unknown) { this.app = app; }
+    hide() {}
   }
   const types: string[] = [], open = new Map<string, unknown[]>();
   const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
@@ -456,6 +463,29 @@ test('automatic lookup finds tow/tag-dictionary.json on disk before the vault in
   assert.equal(await t.plugin.resolveDictionary(), 'tow/tag-dictionary.json');
 });
 
+test('without a chosen path and no dictionary anywhere, the tow default is used, not the stored path', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: false, locationNoticeShown: true }));
+  await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.resolveDictionary(), 'tow/tag-dictionary.json');
+});
+
+test('a legacy dictionary arriving while automatic is picked up', async () => {
+  const t = await setup(); t.vault.existing.clear();
+  await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found: tow\/tag-dictionary\.json/);
+  t.vault.existing.add('Tag-Dictionary.json');
+  t.events.get('create')!({ path: 'Tag-Dictionary.json' }); t.runTimers(); await settle();
+  assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
+  assert.deepEqual(t.plugin.model?.roots, ['root']);
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+});
+
+test('with a chosen path, a file arriving at an automatic location is ignored', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
+  await t.loaded;
+  t.events.get('create')!({ path: 'tow/tag-dictionary.json' }); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.native.calls, []);
+});
+
 test('the dictionary path setting moves a chosen dictionary and updates its path', async () => {
   const t = await setup(Promise.resolve({ dictionaryPath: 'custom/tags.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
   await t.loaded;
@@ -469,8 +499,8 @@ test('the dictionary path setting moves a chosen dictionary and updates its path
   assert.deepEqual(t.vault.renames, [['custom/tags.json', 'tow/tag-dictionary.json']]);
   assert.equal(t.plugin.settings.dictionaryPath, 'tow/tag-dictionary.json');
   assert.equal(t.plugin.dictionaryPath, 'tow/tag-dictionary.json');
-  assert.match(setting.desc!, /New installs create tow\/tag-dictionary\.json/);
-  assert.match(setting.desc!, /In use: tow\/tag-dictionary\.json\./);
+  assert.match(setting.desc!, /In use: tow\/tag-dictionary\.json\.$/);
+  assert.equal(setting.textValue, 'tow/tag-dictionary.json');
   assert.deepEqual(t.plugin.model?.roots, ['moved']);
 });
 
@@ -514,15 +544,21 @@ test('the move action stops if the target appears while creating tow/', async ()
   assert.match(t.notices.at(-1)!, /already exists; not moving/);
 });
 
-test('TOW vaults get migration guidance instead of a move button', async () => {
-  const t = await setup(Promise.resolve({ locationNoticeShown: true }));
-  await t.loaded;
+const render = (t: Awaited<ReturnType<typeof setup>>) => {
+  const s = t.newSetting();
+  const definition = (t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] }).getSettingDefinitions()[0] as unknown as { render(setting: Setting): void };
+  definition.render(s as unknown as Setting);
+  return s;
+};
+
+test('in a TOW vault the note shows only while the dictionary is outside tow/', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
   t.vault.existing.add('tow/config.json');
-  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
-  const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
-  assert.deepEqual(setting.buttonNames, []);
-  assert.deepEqual(setting.paragraphs, ['TOW manages this file: run the tow-setup skill or tow migrate to move it.']);
+  const outside = render(t);
+  assert.deepEqual(outside.buttonNames, []);
+  assert.match(outside.desc!, /In use: Tag-Dictionary\.json \(automatic\)\. TOW manages this file: run the tow-setup skill or tow migrate to move it\.$/);
+  t.vault.existing.add('tow/tag-dictionary.json'); await t.plugin.resolveDictionary();
+  assert.doesNotMatch(render(t).desc!, /TOW manages/);
 });
 
 test('a dictionary already at the automatic tow path is not offered for moving', async () => {
@@ -602,41 +638,85 @@ test('resetDictionaryPath restores the default and clears the explicit choice', 
   await t.plugin.resetDictionaryPath();
   assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
   assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
-  assert.equal(t.plugin.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
   assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS, locationNoticeShown: true });
 });
 
-test('the declarative settings path row refreshes its description and can reset to automatic', async () => {
-  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
-  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
-  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
-  const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
-  assert.match(setting.desc!, /New installs create tow\/tag-dictionary\.json/);
-  assert.match(setting.desc!, /existing Tag-Dictionary\.json files keep working/);
-  assert.match(setting.desc!, /\.tow\/tag-dictionary\.json dictionaries from TOW 0\.5\.0–0\.5\.1 are still read/);
-  setting.textValue = 'Tags.json'; await setting.textChanged!('Tags.json');
-  assert.match(setting.desc!, /In use: Tags\.json\./);
-  setting.buttons[0]!(); await settle();
-  assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
-  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
-  assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
-  assert.equal(setting.textValue, settings.DEFAULT_SETTINGS.dictionaryPath);
-  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(chosen automatically\)\./);
+test('the path field is empty while automatic and shows the path in use as its placeholder', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
+  t.vault.existing.add('tow/tag-dictionary.json'); await t.plugin.resolveDictionary();
+  const setting = render(t);
+  assert.equal(setting.textValue, '');
+  assert.equal(setting.textPlaceholder, 'tow/tag-dictionary.json');
+  assert.equal(setting.desc, 'Vault-relative path to the tag dictionary (.json). Leave empty to find it automatically. In use: tow/tag-dictionary.json (automatic).');
 });
 
-test('the fallback settings path row refreshes its description and can reset to automatic', async () => {
+test('a chosen path fills the field', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true, locationNoticeShown: true })); await t.loaded;
+  const setting = render(t);
+  assert.equal(setting.textValue, 'custom.json');
+  assert.match(setting.desc!, /In use: custom\.json\.$/);
+});
+
+test('the path saves when committed, ignores an unchanged or invalid path, and an empty field goes back to automatic', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  const setting = render(t);
+  setting.textValue = 'Tags.json'; setting.textCommitted!(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, 'Tags.json');
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, true);
+  assert.match(setting.desc!, /In use: Tags\.json\.$/);
+  const writes = t.savedWrites.length;
+  setting.textCommitted!(); await settle();
+  assert.equal(t.savedWrites.length, writes, 'committing the same path again saves nothing');
+  setting.textValue = '../x.json'; setting.textCommitted!(); await settle();
+  assert.equal(setting.desc, 'Enter a .json path inside the vault, outside the config folder.');
+  assert.equal(t.plugin.settings.dictionaryPath, 'Tags.json');
+  setting.textValue = '  '; setting.textCommitted!(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
+  assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
+  assert.equal(setting.textValue, '');
+  assert.equal(setting.textPlaceholder, '.tow/tag-dictionary.json');
+  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(automatic\)\.$/);
+});
+
+test('a commit that finishes after newer typing keeps the newer text', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
+  t.vault.existing.add('A.json');
+  const read = deferred<string>();
+  t.vault.cachedRead = () => read.promise;
+  const tab = t.settingTabs[0] as { display(): void; hide(): void };
+  tab.display();
+  const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
+  setting.textValue = 'A.json'; setting.textCommitted!(); await settle();
+  setting.textValue = 'B.json';
+  read.resolve(dictionary); await settle();
+  assert.equal(setting.textValue, 'B.json');
+  assert.equal(t.plugin.settings.dictionaryPath, 'A.json');
+  tab.hide(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, 'B.json');
+});
+
+test('closing the settings commits a path still in the field', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
+  const tab = t.settingTabs[0] as { display(): void; hide(): void };
+  tab.display();
+  const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
+  setting.textValue = 'Tags.json'; tab.hide(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, 'Tags.json');
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, true);
+});
+
+test('the reset button goes back to automatic and empties the field', async () => {
   const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
   await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
   (t.settingTabs[0] as { display(): void }).display();
   const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
-  setting.textValue = 'Tags.json'; await setting.textChanged!('Tags.json');
-  assert.match(setting.desc!, /In use: Tags\.json\./);
   setting.buttons[0]!(); await settle();
-  assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
   assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
   assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
-  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(chosen automatically\)\./);
+  assert.equal(setting.textValue, '');
+  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(automatic\)\.$/);
 });
 
 const base: RawDictionary = { root: { description: 'Root', broader: [] }, child: { description: 'Child', broader: ['root'] } };

@@ -1278,14 +1278,12 @@ test('an alias typed without Enter counts as a change and is saved', async () =>
   assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
 });
 
-test('a missing automatic dictionary reports the new first-run location and legacy fallbacks', async () => {
+test('a missing dictionary names the path and points to the settings', async () => {
   const t = await setup();
+  t.owner.dictionaryPath = 'Tag-Dictionary.json';
   t.owner.dictionaryFound = false;
   t.controller.refresh(false);
-  assert.ok(t.sidebar.all().some(el => el.text.includes('Tag-Dictionary.json is not in the vault.')));
-  assert.ok(t.sidebar.all().some(el => el.text.includes('Without a chosen path, lookup checks tow/tag-dictionary.json, then .tow/tag-dictionary.json, then Tag-Dictionary.json.')));
-  assert.ok(t.sidebar.all().some(el => el.text.includes('New installs create tow/tag-dictionary.json; existing Tag-Dictionary.json files keep working')));
-  assert.ok(t.sidebar.all().some(el => el.text.includes('.tow/ dictionaries from TOW 0.5.0–0.5.1 are still read.')));
+  assert.ok(t.sidebar.all().some(el => el.text === 'Tag-Dictionary.json is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.'));
 });
 
 test('a missing dictionary file shows the resolved path and how to create one', async () => {

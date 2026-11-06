@@ -177,7 +177,7 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 
 | Setting | Description |
 | --- | --- |
-| Dictionary path | Vault-relative path to a `.json` file. A custom path saved before this version counts as chosen; the default `Tag-Dictionary.json` does not. Without a chosen path, the plugin uses `tow/tag-dictionary.json` if it exists, then `.tow/tag-dictionary.json` if it exists, then `Tag-Dictionary.json`. Existing root dictionaries keep working; a chosen path is always used. |
+| Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
 | Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
@@ -192,7 +192,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 The sidebar tab reads and writes this file, so you never have to open it. It is plain JSON in your vault, so you can also edit it by hand.
 
-The dictionary can live at any vault-relative path ending in `.json`, including inside `tow/` or `.tow/`. Without a chosen path, the plugin checks `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`. New installs create `tow/tag-dictionary.json`; existing `Tag-Dictionary.json` files keep working, and `.tow/tag-dictionary.json` from TOW 0.5.0–0.5.1 is still read. A chosen path is always used. If the dictionary goes missing later, the sidebar tab offers to create it.
+The dictionary can live at any vault-relative path ending in `.json`, including inside `tow/` or `.tow/`. With the **Dictionary path** field empty, the plugin checks `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`. New installs create `tow/tag-dictionary.json`; existing `Tag-Dictionary.json` files keep working, and `.tow/tag-dictionary.json` from TOW 0.5.0–0.5.1 is still read. A chosen path is always used. If the dictionary goes missing later, the sidebar tab offers to create it.
 
 **Obsidian Sync does not sync dot-folders other than `.obsidian`** ([Sync settings](https://obsidian.md/help/sync/settings)). If you use Obsidian Sync, choose a visible path for the dictionary. Git and file-level sync tools carry dot-folders unless they are ignored.
 
