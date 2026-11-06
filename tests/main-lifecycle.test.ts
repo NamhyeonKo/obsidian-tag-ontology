@@ -680,6 +680,23 @@ test('the path saves when committed, ignores an unchanged or invalid path, and a
   assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(automatic\)\.$/);
 });
 
+test('a commit that finishes after newer typing keeps the newer text', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
+  t.vault.existing.add('A.json');
+  const read = deferred<string>();
+  t.vault.cachedRead = () => read.promise;
+  const tab = t.settingTabs[0] as { display(): void; hide(): void };
+  tab.display();
+  const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
+  setting.textValue = 'A.json'; setting.textCommitted!(); await settle();
+  setting.textValue = 'B.json';
+  read.resolve(dictionary); await settle();
+  assert.equal(setting.textValue, 'B.json');
+  assert.equal(t.plugin.settings.dictionaryPath, 'A.json');
+  tab.hide(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, 'B.json');
+});
+
 test('closing the settings commits a path still in the field', async () => {
   const t = await setup(Promise.resolve({ locationNoticeShown: true })); await t.loaded;
   const tab = t.settingTabs[0] as { display(): void; hide(): void };

@@ -448,7 +448,9 @@ class OntologySettingsTab extends PluginSettingTab {
       if (!path) await this.owner.resetDictionaryPath();
       else if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(PATH_HINT); return; }
       else await this.owner.setDictionaryPath(path);
-      fill(); describe();
+      // A slow reload must not overwrite text typed after this commit started.
+      if (input.getValue().trim() === path) fill();
+      describe();
     };
     // Save on commit, not per keystroke, since a half-typed path ending in .json would be saved and reloaded with a "not found" notice each time.
     input.inputEl.addEventListener('change', () => { void commit(); });
