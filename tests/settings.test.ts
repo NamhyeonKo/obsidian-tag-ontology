@@ -1,13 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SETTINGS, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
+import { DEFAULT_SETTINGS, TOW_DICTIONARY, TOW_FOLDER_DICTIONARY, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
+
+test('keeps the legacy stored default while sanitizing the one-time location notice', () => {
+  assert.equal(DEFAULT_SETTINGS.dictionaryPath, 'Tag-Dictionary.json');
+  assert.equal(TOW_FOLDER_DICTIONARY, 'tow/tag-dictionary.json');
+  assert.equal(TOW_DICTIONARY, '.tow/tag-dictionary.json');
+  assert.equal(sanitizeSettings({}, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: 'Tag-Dictionary.json' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }, '.obsidian').dictionaryPathExplicit, true);
+  assert.equal(sanitizeSettings({ locationNoticeShown: true }, '.obsidian').locationNoticeShown, true);
+  assert.equal(sanitizeSettings({ locationNoticeShown: 'yes' }, '.obsidian').locationNoticeShown, false);
+});
 
 test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
-    perspectiveLabels: true, labelSize: 0.8,
+    perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);

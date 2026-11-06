@@ -559,7 +559,7 @@ export class NativeGraphs {
   // Creating is left to the user: a file that is still syncing looks missing too, and it shows up here on its own when it arrives.
   private notFound(panel: HTMLElement) {
     panel.createEl('h4', { text: 'Tag dictionary not found' });
-    panel.createEl('p', { text: `${this.owner.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.` });
+    panel.createEl('p', { text: `${this.owner.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. Without a chosen path, lookup checks tow/tag-dictionary.json, then .tow/tag-dictionary.json, then Tag-Dictionary.json. New installs create tow/tag-dictionary.json; existing Tag-Dictionary.json files keep working, and .tow/ dictionaries from TOW 0.5.0–0.5.1 are still read. You can change the path in the plugin settings.` });
     const create = panel.createEl('button', { text: 'Create empty dictionary', cls: 'mod-cta' });
     create.addEventListener('click', () => { create.disabled = true; void this.owner.createDictionary().finally(() => { create.disabled = false; }); });
   }

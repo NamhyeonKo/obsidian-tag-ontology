@@ -14,17 +14,18 @@ export interface Settings {
   enable3d: boolean;
   // 3D labels: with perspective they grow as the camera comes closer, between 12 and 24 px times labelSize; without, they
   // stay 12 px times labelSize.
-  perspectiveLabels: boolean; labelSize: number;
+  perspectiveLabels: boolean; labelSize: number; locationNoticeShown: boolean;
 }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
 export const TOW_DICTIONARY = '.tow/tag-dictionary.json';
+export const TOW_FOLDER_DICTIONARY = 'tow/tag-dictionary.json';
 export function isHiddenPath(path: string): boolean {
   return path.split('/').some(segment => segment.startsWith('.'));
 }
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
-  perspectiveLabels: true, labelSize: 0.8,
+  perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false,
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -57,6 +58,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     enable3d: flag('enable3d'),
     perspectiveLabels: flag('perspectiveLabels'),
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
+    locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
   };
 }
 
