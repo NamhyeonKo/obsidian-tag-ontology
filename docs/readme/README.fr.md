@@ -58,11 +58,17 @@ Pour consulter des instructions détaillées, les builds de développement et le
 
 > **Prérequis indispensable** : Le plugin de base **Vue graphique (Graph view)** doit être activé dans Obsidian, avec l'option **Filtres → Étiquettes (Filters → Tags)** cochée.
 
+## Paramètres
+
+Le dictionnaire peut se trouver dans n'importe quel chemin du coffre se terminant par `.json`, y compris dans un dossier `.tow/`. Les chemins personnalisés enregistrés avant cette version sont également considérés comme choisis, sauf le chemin par défaut `Tag-Dictionary.json`. Si aucun chemin n'a été choisi, le plugin utilise `.tow/tag-dictionary.json` s'il existe ; sinon, il utilise `Tag-Dictionary.json` à la racine du coffre. Si un chemin a été choisi, il est toujours utilisé, même si le dictionnaire `.tow/` existe.
+
+**Obsidian Sync ne synchronise pas les dossiers cachés commençant par un point, à l'exception de `.obsidian`** ([paramètres de Sync](https://obsidian.md/help/sync/settings)). Si vous utilisez Obsidian Sync, choisissez un chemin visible pour le dictionnaire. Git et les outils de synchronisation au niveau des fichiers prennent en charge les dossiers cachés, sauf s'ils sont ignorés.
+
 ## Confidentialité et Sécurité
 
 - Fonctionnement 100 % hors ligne : Aucune requête réseau, aucune télémétrie et aucun compte requis.
 - Lit uniquement les métadonnées de vos notes et le fichier JSON du dictionnaire.
-- Ne modifie jamais vos fichiers Markdown ; seuls le fichier de configuration interne (`data.json`) et le fichier dictionnaire (`Tag-Dictionary.json`) sont mis à jour lors de l'enregistrement dans la barre latérale.
+- Ne modifie jamais vos fichiers Markdown ; seuls le fichier de configuration interne (`data.json`) et, lors de l'enregistrement dans la barre latérale, le fichier dictionnaire utilisé sont modifiés : le chemin choisi (y compris les chemins personnalisés enregistrés dans les versions précédentes) ou, si aucun chemin n'a été choisi, `.tow/tag-dictionary.json` s'il existe, sinon `Tag-Dictionary.json`.
 
 ## Bibliothèque et CLI
 

@@ -7,16 +7,22 @@ import { cli, copyOfFixture, fixture, json } from './cli-helper.ts';
 
 const version = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
+test('--help aligns the --tags-file description with adjacent option descriptions', () => {
+  const help = cli(['--help']).stdout;
+  assert.match(help, /^  --tags-file <file>    Tags for files without them; repeatable \(scan, usage, show\)$/m);
+});
+
 test('--version and --help print and exit 0', () => {
   assert.deepEqual(cli(['--version']), { code: 0, stdout: `${version}\n`, stderr: '' });
   const help = cli(['--help']);
   assert.equal(help.code, 0);
   assert.match(help.stdout, /^Usage: tag-ontology <command>/);
+  assert.match(help.stdout, /^  --tags-file <file>    Tags for files without them; repeatable \(scan, usage, show\)$/m);
 });
 
 test('wrong usage exits 2 with nothing on stdout and the reason on stderr', () => {
   for (const args of [[], ['frobnicate'], ['check', '--nope'], ['scan', '--strict'], ['check', '--exclude', 'x'], ['check', 'extra'],
-    ['show'], ['check', '--names', 'snake'], ['check', '--dictionary', 'missing.json'], ['scan', '../'], ['scan', 'missing.md']]) {
+    ['show'], ['check', '--names', 'snake'], ['check', '--dictionary', 'missing.json'], ['scan', '../'], ['scan', 'missing.md'], ['scan', '--tags-file', 'missing.json']]) {
     const run = cli([...args, '--json']);
     assert.equal(run.code, 2, args.join(' '));
     assert.equal(run.stdout, '', args.join(' '));
