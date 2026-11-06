@@ -42,7 +42,7 @@ interface Main {
 }
 
 async function setup(saved?: Promise<unknown>) {
-  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
+  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean; removed: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -56,7 +56,7 @@ async function setup(saved?: Promise<unknown>) {
   class TestSetting {
     settingEl = { toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
     name = ''; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; toggleChanged?: (value: boolean) => void;
-    buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean }[] = [];
+    buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean; removed: boolean }[] = [];
     constructor() { settingRows.push(this); }
     setName(name: string) { this.name = name; return this; }
     setDesc(desc: string) { this.desc = desc; return this; }
@@ -83,8 +83,8 @@ async function setup(saved?: Promise<unknown>) {
         setTooltip: (_text: string) => ({ onClick: click }), onClick: click };
       callback(button); return this;
     }
-    addButton(callback: (button: { buttonEl: { hidden: boolean }; setButtonText(text: string): { onClick(callback: () => void): void }; onClick(callback: () => void): void }) => void) {
-      const index = this.buttonNames.length, buttonEl = { hidden: false }, click = (cb: () => void) => { this.buttons[index] = cb; };
+    addButton(callback: (button: { buttonEl: { hidden: boolean; remove(): void }; setButtonText(text: string): { onClick(callback: () => void): void }; onClick(callback: () => void): void }) => void) {
+      const index = this.buttonNames.length, buttonEl = { hidden: false, removed: false, remove() { buttonEl.removed = true; } }, click = (cb: () => void) => { this.buttons[index] = cb; };
       this.buttonEls[index] = buttonEl;
       this.settingEl.buttons.push(buttonEl);
       callback({ buttonEl, setButtonText: text => { this.buttonNames[index] = text; return { onClick: click }; }, onClick: click }); return this;
@@ -502,6 +502,7 @@ test('the dictionary path setting moves a chosen dictionary and updates its path
   assert.match(setting.desc!, /In use: tow\/tag-dictionary\.json\.$/);
   assert.equal(setting.textValue, 'tow/tag-dictionary.json');
   assert.deepEqual(t.plugin.model?.roots, ['moved']);
+  assert.equal(setting.buttonEls[0]!.removed, true, 'nothing is left to move');
 });
 
 test('the fallback settings path also offers the move action for an automatic dictionary', async () => {
