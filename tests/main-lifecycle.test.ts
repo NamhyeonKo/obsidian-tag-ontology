@@ -35,13 +35,14 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
-  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
+  app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>; pathForCreation(): Promise<string>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
-  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; buttons: (() => void)[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
+  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -50,11 +51,13 @@ async function setup(saved?: Promise<unknown>) {
   const theme = { accent: 'hsl(258, 88%, 66%)' }, observers: (() => void)[] = [], cleanups: (() => void)[] = [];
   let watching = 0, focusListener: (() => void) | undefined;
   let ready = () => {}, timer = 0, reads = 0;
-  class File {}
+  class File { path: string; constructor(path = '') { this.path = path; } }
+  class Folder { path: string; constructor(path = '') { this.path = path; } }
   class TestSetting {
-    settingEl = { toggle() {} };
+    settingEl = { toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
     name = ''; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; toggleChanged?: (value: boolean) => void;
-    buttons: (() => void)[] = [];
+    buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean }[] = []; paragraphs: string[] = [];
+    controlEl = { createEl: (_tag: string, attrs: { text: string }) => { this.paragraphs.push(attrs.text); } };
     constructor() { settingRows.push(this); }
     setName(name: string) { this.name = name; return this; }
     setDesc(desc: string) { this.desc = desc; return this; }
@@ -74,6 +77,12 @@ async function setup(saved?: Promise<unknown>) {
         setTooltip: (_text: string) => ({ onClick: click }), onClick: click };
       callback(button); return this;
     }
+    addButton(callback: (button: { buttonEl: { hidden: boolean }; setButtonText(text: string): { onClick(callback: () => void): void }; onClick(callback: () => void): void }) => void) {
+      const index = this.buttonNames.length, buttonEl = { hidden: false }, click = (cb: () => void) => { this.buttons[index] = cb; };
+      this.buttonEls[index] = buttonEl;
+      this.settingEl.buttons.push(buttonEl);
+      callback({ buttonEl, setButtonText: text => { this.buttonNames[index] = text; return { onClick: click }; }, onClick: click }); return this;
+    }
   }
   class TestPluginSettingTab {
     app: unknown; containerEl = { empty() {} };
@@ -81,10 +90,17 @@ async function setup(saved?: Promise<unknown>) {
   }
   const types: string[] = [], open = new Map<string, unknown[]>();
   const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
-  const vault = {
-    configDir: '.obsidian', getAbstractFileByPath: () => new File(), getMarkdownFiles: () => [],
+  const vault: {
+    configDir: string; getAbstractFileByPath(path: string): File | Folder | null; getMarkdownFiles(): unknown[];
+    text: string; writes: string[]; adapterWrites: string[]; existing: Set<string>; created: string[]; targetAppearsOnFolderCreate: boolean;
+    files: Map<string, string>; mtimes: Map<string, number>; sizes: Map<string, number>; appearOnMkdir: boolean; renames: [string, string][];
+    adapter: { exists(path: string): Promise<boolean>; read(path: string): Promise<string>; write(path: string, data: string): Promise<void>; mkdir(path: string): Promise<void>; stat(path: string): Promise<{mtime: number; size: number} | null>; readdir(path: string): Promise<string[]> };
+    createFolder(path: string): Promise<void>; create(path: string, data: string): Promise<void>; cachedRead(file: unknown): Promise<string>; process(file: unknown, fn: (text: string) => string): Promise<string>; on(name: string, callback: (file: {path: string}) => void): void;
+  } = {
+    configDir: '.obsidian', getAbstractFileByPath: (path: string) => vault.existing.has(path) ? (path.endsWith('.json') ? new File(path) : new Folder(path)) : null, getMarkdownFiles: () => [],
     text: dictionary, writes: [] as string[], adapterWrites: [] as string[],
-    existing: new Set(['Tag-Dictionary.json']), created: [] as string[], files: new Map<string, string>(), mtimes: new Map<string, number>(), sizes: new Map<string, number>(),
+    existing: new Set(['Tag-Dictionary.json']), created: [] as string[], targetAppearsOnFolderCreate: false,
+    files: new Map<string, string>(), mtimes: new Map<string, number>(), sizes: new Map<string, number>(), renames: [],
     appearOnMkdir: false,
     adapter: {
       exists: async (path: string) => vault.existing.has(path),
@@ -97,10 +113,15 @@ async function setup(saved?: Promise<unknown>) {
       async stat(path: string) { return vault.mtimes.has(path) ? { mtime: vault.mtimes.get(path)!, size: vault.sizes.get(path) ?? 0 } : null; },
       async readdir(path: string) { return path === '.tow' && vault.existing.has('.tow') ? ['tag-dictionary.json'] : []; },
     },
-    async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); },
+    async createFolder(path: string) { vault.created.push(`folder:${path}`); vault.existing.add(path); if (vault.targetAppearsOnFolderCreate) vault.existing.add('tow/tag-dictionary.json'); },
     // Like Obsidian, create refuses a path that already exists.
-    async create(path: string, data: string) { if (vault.existing.has(path)) throw new Error('File already exists.'); vault.created.push(`file:${path}:${data}`); vault.existing.add(path); },
-    async cachedRead() { reads++; return vault.text; },
+    async create(path: string, data: string) {
+      if (vault.existing.has(path)) throw new Error('File already exists.');
+      const parent = path.split('/').slice(0, -1).join('/');
+      if (parent && !vault.existing.has(parent)) throw new Error('Folder does not exist.');
+      vault.created.push(`file:${path}:${data}`); vault.existing.add(path);
+    },
+    async cachedRead(file: unknown) { reads++; return vault.files.get((file as File).path) ?? vault.text; },
     // Like Obsidian, a throwing callback rejects without writing.
     async process(_file: unknown, fn: (text: string) => string) { const out = fn(vault.text); vault.text = out; vault.writes.push(out); return out; },
     on(name: string, callback: (file: { path: string }) => void) { events.set(name, callback); },
@@ -115,9 +136,15 @@ async function setup(saved?: Promise<unknown>) {
     setActiveLeaf(_leaf: unknown, { focus }: { focus: boolean }) { ui.push(focus ? 'focus' : 'active'); },
     on() {}, onLayoutReady(callback: () => void) { ready = callback; },
   };
+  const app = { vault, workspace, metadataCache, fileManager: { async renameFile(file: { path: string }, path: string) {
+    vault.renames.push([file.path, path]);
+    if (vault.existing.has(path)) throw new Error(`File already exists: ${path}`);
+    const data = file.path === 'Tag-Dictionary.json' ? vault.text : vault.files.get(file.path)!;
+    vault.existing.delete(file.path); vault.files.delete(file.path); vault.existing.add(path); vault.files.set(path, data); vault.text = data;
+  } } };
   class Plugin {
-    app = { vault, workspace, metadataCache };
-    loadData() { return saved ?? Promise.resolve({}); }
+    app = app;
+    loadData() { return saved ?? Promise.resolve({ locationNoticeShown: true }); }
     async saveData(data?: unknown) { savedWrites.push(data); }
     registerView() { ui.push('register-view'); }
     addRibbonIcon() {} addSettingTab(tab: object) { settingTabs.push(tab); } registerEvent() {}
@@ -159,8 +186,32 @@ async function setup(saved?: Promise<unknown>) {
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
   return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
-    restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: () => new File(), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
+    restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
+
+test('an existing install sees the new dictionary location notice only once', async () => {
+  const t = await setup(Promise.resolve({}));
+  await t.loaded;
+  assert.equal(t.notices.length, 1);
+  assert.match(t.notices[0]!, /tow\/tag-dictionary\.json/);
+  assert.match(t.notices[0]!, /Tag-Dictionary\.json keeps working/);
+  assert.equal((t.savedWrites.at(-1) as settings.Settings).locationNoticeShown, true);
+});
+
+test('a fresh install records the location notice flag without showing a notice', async () => {
+  const t = await setup(Promise.resolve(null));
+  await t.loaded;
+  assert.deepEqual(t.notices, []);
+  assert.equal((t.savedWrites.at(-1) as settings.Settings).locationNoticeShown, true);
+});
+
+test('an install already using tow/ records the location notice flag without a notice', async () => {
+  const t = await setup(Promise.resolve({}));
+  t.vault.existing.add('tow/tag-dictionary.json');
+  await t.loaded;
+  assert.deepEqual(t.notices, []);
+  assert.equal((t.savedWrites.at(-1) as settings.Settings).locationNoticeShown, true);
+});
 
 test('opening a graph still loads the dictionary, attaches and reveals it, and brings the sidebar tab forward', async () => {
   const t = await setup();
@@ -338,7 +389,7 @@ test('a file that cannot be read is not reported as invalid JSON', async () => {
 
 test('a missing dictionary at startup is left to the sidebar, without a notice', async () => {
   const t = await setup();
-  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  (t.vault as { getAbstractFileByPath: (path: string) => unknown }).getAbstractFileByPath = () => null;
   t.ready(); await settle();
   assert.deepEqual(t.notices, []);
   assert.match(t.plugin.error!, /^Tag dictionary not found/);
@@ -390,7 +441,101 @@ test('a successful manual reload updates the model and graph without an error no
   assert.deepEqual(t.errors, []);
 });
 
-test('without an explicit choice, .tow/tag-dictionary.json wins when it exists', async () => {
+test('without an explicit choice, tow/tag-dictionary.json wins over .tow/', async () => {
+  const t = await setup();
+  t.vault.existing.add('tow/tag-dictionary.json'); t.vault.text = JSON.stringify({ visible: { description: 'Visible', broader: [] } });
+  t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', dictionary);
+  await t.plugin.loadModel();
+  assert.equal(t.plugin.dictionaryPath, 'tow/tag-dictionary.json');
+  assert.deepEqual(t.plugin.model?.roots, ['visible']);
+});
+
+test('automatic lookup finds tow/tag-dictionary.json on disk before the vault index has it', async () => {
+  const t = await setup();
+  t.vault.adapter.exists = async path => path === 'tow/tag-dictionary.json' || t.vault.existing.has(path);
+  assert.equal(await t.plugin.resolveDictionary(), 'tow/tag-dictionary.json');
+});
+
+test('the dictionary path setting moves a chosen dictionary and updates its path', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom/tags.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
+  await t.loaded;
+  const contents = JSON.stringify({ moved: { description: 'Moved', broader: [] } });
+  t.vault.existing.add('custom/tags.json'); t.vault.files.set('custom/tags.json', contents);
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  assert.deepEqual(setting.buttonNames, ['Move to tow/']);
+  await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
+  assert.deepEqual(t.vault.renames, [['custom/tags.json', 'tow/tag-dictionary.json']]);
+  assert.equal(t.plugin.settings.dictionaryPath, 'tow/tag-dictionary.json');
+  assert.equal(t.plugin.dictionaryPath, 'tow/tag-dictionary.json');
+  assert.match(setting.desc!, /New installs create tow\/tag-dictionary\.json/);
+  assert.match(setting.desc!, /In use: tow\/tag-dictionary\.json\./);
+  assert.deepEqual(t.plugin.model?.roots, ['moved']);
+});
+
+test('the fallback settings path also offers the move action for an automatic dictionary', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true }));
+  await t.loaded;
+  t.vault.text = JSON.stringify({ automatic: { description: 'Automatic', broader: [] } });
+  (t.settingTabs[0] as { display(): void }).display();
+  const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
+  assert.deepEqual(setting.buttonNames, ['Move to tow/']);
+  await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
+  assert.deepEqual(t.vault.renames, [['Tag-Dictionary.json', 'tow/tag-dictionary.json']]);
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
+  assert.equal(t.plugin.dictionaryPath, 'tow/tag-dictionary.json');
+  assert.deepEqual(t.plugin.model?.roots, ['automatic']);
+});
+
+test('the move action refuses in a TOW vault whose config sits in hidden .tow/', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true }));
+  await t.loaded;
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  const exists = t.vault.adapter.exists;
+  t.vault.adapter.exists = async path => path === '.tow/config.json' || await exists(path);
+  await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
+  assert.deepEqual(t.vault.renames, []);
+  assert.match(t.notices.at(-1)!, /TOW manages this file/);
+});
+
+test('the move action stops if the target appears while creating tow/', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true }));
+  await t.loaded;
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  t.vault.targetAppearsOnFolderCreate = true;
+  await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
+  assert.deepEqual(t.vault.renames, []);
+  assert.ok(t.vault.existing.has('Tag-Dictionary.json'));
+  assert.match(t.notices.at(-1)!, /already exists; not moving/);
+});
+
+test('TOW vaults get migration guidance instead of a move button', async () => {
+  const t = await setup(Promise.resolve({ locationNoticeShown: true }));
+  await t.loaded;
+  t.vault.existing.add('tow/config.json');
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  assert.deepEqual(setting.buttonNames, []);
+  assert.deepEqual(setting.paragraphs, ['TOW manages this file: run the tow-setup skill or tow migrate to move it.']);
+});
+
+test('a dictionary already at the automatic tow path is not offered for moving', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'tow/tag-dictionary.json', dictionaryPathExplicit: true, locationNoticeShown: true }));
+  t.vault.existing.add('tow/tag-dictionary.json');
+  await t.loaded;
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  assert.deepEqual(setting.buttonNames, []);
+});
+
+test('without a visible TOW dictionary, .tow/ wins over the stored legacy path', async () => {
   const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', dictionary);
   await t.plugin.loadModel();
   assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
@@ -418,11 +563,11 @@ test('a hidden dictionary that reappears but cannot be read is reported as prese
 
 test('a visible dictionary that reappears but cannot be read is reported as present', async () => {
   const t = await setup();
-  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  (t.vault as { getAbstractFileByPath: (path: string) => unknown }).getAbstractFileByPath = () => null;
   await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found/);
   assert.equal(t.plugin.dictionaryFound, false);
 
-  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => t.file();
+  (t.vault as { getAbstractFileByPath: (path: string) => unknown }).getAbstractFileByPath = () => t.file();
   t.vault.cachedRead = async () => { throw new Error('EIO: i/o error, read'); };
   await assert.rejects(t.plugin.loadModel(), /EIO/);
   assert.equal(t.plugin.dictionaryFound, true);
@@ -439,9 +584,9 @@ test('a hidden dictionary that disappears before it is read is marked missing', 
   assert.equal(t.plugin.dictionaryFound, false);
 });
 
-test('an explicit path wins even when .tow/tag-dictionary.json exists', async () => {
+test('an explicit path wins even when both automatic locations exist', async () => {
   const t = await setup(Promise.resolve({ dictionaryPath: 'Tag-Dictionary.json', dictionaryPathExplicit: true }));
-  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json');
+  await t.loaded; t.vault.existing.add('tow/tag-dictionary.json'); t.vault.existing.add('.tow/tag-dictionary.json');
   await t.plugin.loadModel();
   assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
 });
@@ -458,7 +603,7 @@ test('resetDictionaryPath restores the default and clears the explicit choice', 
   assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
   assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
   assert.equal(t.plugin.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
-  assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS });
+  assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS, locationNoticeShown: true });
 });
 
 test('the declarative settings path row refreshes its description and can reset to automatic', async () => {
@@ -467,6 +612,9 @@ test('the declarative settings path row refreshes its description and can reset 
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
   const setting = t.newSetting();
   (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  assert.match(setting.desc!, /New installs create tow\/tag-dictionary\.json/);
+  assert.match(setting.desc!, /existing Tag-Dictionary\.json files keep working/);
+  assert.match(setting.desc!, /\.tow\/tag-dictionary\.json dictionaries from TOW 0\.5\.0–0\.5\.1 are still read/);
   setting.textValue = 'Tags.json'; await setting.textChanged!('Tags.json');
   assert.match(setting.desc!, /In use: Tags\.json\./);
   setting.buttons[0]!(); await settle();
@@ -691,11 +839,11 @@ test('saveChange writes nothing over a broken file', async () => {
   assert.match(t.notices.at(-1)!, /^Could not save the dictionary:/);
 });
 
-test('a fresh install creates an empty dictionary once the layout is ready', async () => {
+test('a fresh install creates an empty tow dictionary once the layout is ready', async () => {
   const t = await setup(Promise.resolve(null));
   await t.loaded; t.vault.existing.clear();
   t.ready(); await settle();
-  assert.deepEqual(t.vault.created, ['file:Tag-Dictionary.json:{\n}\n']);
+  assert.deepEqual(t.vault.created, ['folder:tow', 'file:tow/tag-dictionary.json:{\n}\n']);
 });
 
 test('after the first install a missing dictionary is not created on its own', async () => {
@@ -708,6 +856,23 @@ test('an existing dictionary is never overwritten, even when broken', async () =
   const t = await setup(Promise.resolve(null));
   await t.loaded; t.vault.text = '{ broken'; t.ready(); await settle();
   assert.deepEqual(t.vault.created, []);
+});
+
+test('visible dictionary folders are checked through the Vault API', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'tow/new/tag-dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.clear();
+  t.vault.adapter.exists = async path => {
+    if (path === 'tow') throw new Error('Visible folders must use the Vault API.');
+    return t.vault.existing.has(path);
+  };
+  assert.equal(await t.plugin.createDictionary(), true);
+  assert.deepEqual(t.vault.created, ['folder:tow', 'folder:tow/new', 'file:tow/new/tag-dictionary.json:{\n}\n']);
+});
+
+test('createDictionary creates the tow default when automatic locations are empty', async () => {
+  const t = await setup(); await t.loaded; t.vault.existing.clear();
+  assert.equal(await t.plugin.createDictionary(), true);
+  assert.deepEqual(t.vault.created, ['folder:tow', 'file:tow/tag-dictionary.json:{\n}\n']);
 });
 
 test('createDictionary makes the folder and an empty file, then reloads', async () => {
@@ -752,7 +917,7 @@ test('changing the dictionary path in settings does not create a file', async ()
 
 test('saveChange writes nothing when the dictionary file is gone', async () => {
   const t = await withBase();
-  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  (t.vault as { getAbstractFileByPath: (path: string) => unknown }).getAbstractFileByPath = () => null;
   assert.equal(await t.plugin.saveChange(describe('New'), base), false);
   assert.deepEqual(t.vault.writes, []);
   assert.equal(t.notices.at(-1), 'Tag dictionary not found: Tag-Dictionary.json');

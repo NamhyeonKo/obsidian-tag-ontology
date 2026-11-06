@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="../../LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-[English](../../README.md) | **한국어** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+<p align="center"><a href="../../README.md">English</a> | <b>한국어</b> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a></p>
 
 **노트를 잇듯 태그도 이어 보세요.**
 
@@ -68,7 +70,7 @@ Tag Ontology는 기본 그래프 뷰 안에서 동작합니다. Obsidian이 필�
 
 ## 설정
 
-사전 파일은 `.tow/` 안을 포함해 볼트의 `.json` 경로 어디에나 둘 수 있습니다. 이 버전 이전에 저장한 경로도 설정에서 명시적으로 선택한 것으로 간주하며, 기본값인 `Tag-Dictionary.json`은 예외입니다. 경로를 선택하지 않았다면 `.tow/tag-dictionary.json`이 있을 때 그 파일을 사용하고, 없으면 볼트 루트의 `Tag-Dictionary.json`을 사용합니다. 경로를 선택했다면 `.tow/` 사전이 있어도 해당 경로를 사용합니다.
+사전 경로는 설정에서 선택하지 않으면 `tow/tag-dictionary.json` → `.tow/tag-dictionary.json` → `Tag-Dictionary.json` 순서로 확인합니다. 새로 설치하면 첫 위치에 빈 사전을 만듭니다. 기존 `Tag-Dictionary.json`은 계속 작동하며, TOW 0.5.0–0.5.1의 `.tow/` 사전도 계속 읽습니다. 설정에서 선택한 경로가 항상 우선합니다.
 
 **Obsidian Sync는 `.obsidian` 외의 점으로 시작하는 폴더를 동기화하지 않습니다** ([Sync 설정](https://obsidian.md/help/sync/settings)). Obsidian Sync를 사용한다면 사전 경로를 숨김 폴더 밖으로 지정하세요. Git과 파일 단위 동기화 도구는 무시 설정이 없는 한 점으로 시작하는 폴더도 동기화합니다.
 
@@ -84,7 +86,7 @@ UI는 기본 영어로 제공됩니다.
 
 - 외부 네트워크 요청, 원격 분석(telemetry), 별도 계정 등록이 전혀 없습니다.
 - 볼트 내 노트의 메타데이터와 사전 JSON 파일만 읽습니다.
-- 플러그인 설정 파일(`data.json`)과 사이드바에서 저장할 때 사용 중인 사전 파일만 씁니다. 사전은 설정에서 선택한 경로(이전 버전에서 저장한 사용자 지정 경로 포함)를 사용하며, 선택하지 않았다면 `.tow/tag-dictionary.json`이 있을 때 그 파일을, 없으면 `Tag-Dictionary.json`을 사용합니다.
+- 플러그인 설정 파일과 사이드바에서 저장할 때 사용 중인 사전만 씁니다. 새 설치는 `tow/tag-dictionary.json`을 사용하며, 기존 `Tag-Dictionary.json`은 계속 작동하고 `.tow/tag-dictionary.json`도 읽습니다.
 
 ## 라이브러리와 CLI
 

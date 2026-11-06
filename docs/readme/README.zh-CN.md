@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="../../LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-[English](../../README.md) | [한국어](README.ko.md) | **简体中文** | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+<p align="center"><a href="../../README.md">English</a> | <a href="README.ko.md">한국어</a> | <b>简体中文</b> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a></p>
 
 **像连接笔记一样连接标签。**
 
@@ -60,7 +62,7 @@ Tag Ontology 允许你在侧边栏标签页中为每个标签指定父级、子�
 
 ## 设置
 
-字典可以保存在库中任意以 `.json` 结尾的路径，包括 `.tow/` 文件夹。此版本之前保存的自定义路径也视为用户已选择，默认的 `Tag-Dictionary.json` 除外。如果没有选择路径，插件会在 `.tow/tag-dictionary.json` 存在时使用它；否则使用库根目录下的 `Tag-Dictionary.json`。如果已选择路径，即使 `.tow/` 字典存在，也始终使用所选路径。
+如果未选择路径，插件会依次查找 `tow/tag-dictionary.json`、`.tow/tag-dictionary.json` 和 `Tag-Dictionary.json`。全新安装会在第一个位置创建字典。现有的 `Tag-Dictionary.json` 文件仍可使用，也会继续读取 TOW 0.5.0–0.5.1 的 `.tow/` 字典。设置中选择的路径始终优先。
 
 **Obsidian Sync 不会同步 `.obsidian` 以外以点开头的隐藏文件夹**（[Sync 设置](https://obsidian.md/help/sync/settings)）。如果使用 Obsidian Sync，请为字典选择一个可见路径。除非配置为忽略，Git 和按文件同步工具会同步点开头的文件夹。
 
@@ -68,7 +70,7 @@ Tag Ontology 允许你在侧边栏标签页中为每个标签指定父级、子�
 
 - 完全离线运行：无任何网络请求、遥测或用户账号系统。
 - 仅读取笔记元数据与标签字典 JSON 文件。
-- 插件只会写入自身配置文件（`data.json`），以及在侧边栏保存时写入当前使用的字典文件：设置中选择的路径（包括此前版本保存的自定义路径）；若未选择，则在 `.tow/tag-dictionary.json` 存在时使用它，否则使用 `Tag-Dictionary.json`。绝不修改库内的 Markdown 文档。
+- 插件只写入自身配置文件，以及在侧边栏保存时写入当前使用的字典：设置中选择的路径，或按上述顺序自动查找的路径。绝不修改库内的 Markdown 文档。
 
 ## 独立库与 CLI
 

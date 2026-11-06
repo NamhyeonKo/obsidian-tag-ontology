@@ -1,5 +1,5 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
-import { DEFAULT_SETTINGS, TOW_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
+import { DEFAULT_SETTINGS, TOW_DICTIONARY, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, type Change, type Note, type RawDictionary } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -42,6 +42,13 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.disposed) return;
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
+    if (!this.settings.locationNoticeShown) {
+      const fresh = saved === null || saved === undefined;
+      await this.resolveDictionary();
+      if (!fresh && this.dictionaryPath !== TOW_FOLDER_DICTIONARY) new Notice(`Tag Ontology now keeps the tag dictionary in ${TOW_FOLDER_DICTIONARY}. Your dictionary at ${this.dictionaryPath} keeps working. To move it, use “Move to tow/” in the plugin settings (TOW vaults: use the tow-setup skill or tow migrate).`);
+      this.settings.locationNoticeShown = true;
+      await this.saveData(this.settings);
+    }
     await this.resolveDictionary();
     if (this.disposed) return;
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
@@ -93,9 +100,23 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async resolveDictionary(): Promise<string> {
-    this.dictionaryPath = !this.settings.dictionaryPathExplicit && await this.app.vault.adapter.exists(TOW_DICTIONARY)
-      ? TOW_DICTIONARY : this.settings.dictionaryPath;
+    // Disk checks, not the vault index: this also runs in onload, before the index has every file.
+    const { adapter } = this.app.vault, automatic = !this.settings.dictionaryPathExplicit;
+    this.dictionaryPath = automatic && await adapter.exists(TOW_FOLDER_DICTIONARY) ? TOW_FOLDER_DICTIONARY
+      : automatic && await adapter.exists(TOW_DICTIONARY) ? TOW_DICTIONARY : this.settings.dictionaryPath;
     return this.dictionaryPath;
+  }
+
+  private async dictionaryExists(path: string): Promise<boolean> {
+    return isHiddenPath(path) ? await this.app.vault.adapter.exists(path) : this.app.vault.getAbstractFileByPath(path) !== null;
+  }
+
+  private async pathForCreation(): Promise<string> {
+    if (!this.settings.dictionaryPathExplicit
+      && !await this.dictionaryExists(TOW_FOLDER_DICTIONARY)
+      && !await this.app.vault.adapter.exists(TOW_DICTIONARY)
+      && !await this.dictionaryExists(this.settings.dictionaryPath)) return TOW_FOLDER_DICTIONARY;
+    return this.resolveDictionary();
   }
 
   private async readModel(): Promise<Ontology> {
@@ -149,15 +170,17 @@ export default class TagOntologyPlugin extends Plugin {
   private async ensureDictionary(): Promise<void> {
     const { vault } = this.app;
     try {
-      const path = await this.resolveDictionary();
-      if (!this.firstRun || !isValidDictionaryPath(path, vault.configDir) || await vault.adapter.exists(path) || this.disposed) return;
+      const path = await this.pathForCreation();
+      if (!this.firstRun || !isValidDictionaryPath(path, vault.configDir) || await this.dictionaryExists(path) || this.disposed) return;
       await this.writeEmpty(path);
     } catch (error) { console.error('Tag Ontology:', error); }
   }
 
   async createDictionary(): Promise<boolean> {
-    try { await this.writeEmpty(await this.resolveDictionary()); }
-    catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
+    try {
+      const path = await this.pathForCreation();
+      await this.writeEmpty(path);
+    } catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
     await this.reload();
     return true;
   }
@@ -190,8 +213,9 @@ export default class TagOntologyPlugin extends Plugin {
     }
     for (let i = 1; i <= parts.length; i++) {
       const folder = parts.slice(0, i).join('/');
-      if (!await vault.adapter.exists(folder)) await vault.createFolder(folder);
+      if (!vault.getAbstractFileByPath(folder)) await vault.createFolder(folder);
     }
+    if (await this.dictionaryExists(path)) throw new Error('File already exists.');
     await vault.create(path, '{\n}\n');
   }
 
@@ -365,7 +389,10 @@ class DictionaryView extends ItemView {
 }
 
 const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary JSON file. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (chosen automatically)'}.`;
+const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary JSON file. Without a chosen path, uses ${TOW_FOLDER_DICTIONARY}, then ${TOW_DICTIONARY}, then ${DEFAULT_SETTINGS.dictionaryPath}. New installs create ${TOW_FOLDER_DICTIONARY}; existing ${DEFAULT_SETTINGS.dictionaryPath} files keep working, and ${TOW_DICTIONARY} dictionaries from TOW 0.5.0–0.5.1 are still read. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (chosen automatically)'}.`;
+const TOW_MARKERS = ['tow.json', '.tow/config.json', 'tow/config.json'];
+const TOW_VAULT_NOTICE ='TOW manages this file: run the tow-setup skill or tow migrate to move it.';
+const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dictionary.`;
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
@@ -402,7 +429,7 @@ class OntologySettingsTab extends PluginSettingTab {
 
   private dictionaryPathSetting(setting: Setting): Setting {
     let input: TextComponent;
-    return setting.setName('Dictionary path').setDesc(pathDescription(this.owner))
+    setting.setName('Dictionary path').setDesc(pathDescription(this.owner))
       .addText(text => {
         input = text;
         text.setValue(this.owner.settings.dictionaryPath).onChange(async path => {
@@ -417,6 +444,29 @@ class OntologySettingsTab extends PluginSettingTab {
         input.setValue(this.owner.settings.dictionaryPath);
         setting.setDesc(pathDescription(this.owner));
       }));
+    if (TOW_MARKERS.some(path => this.app.vault.getAbstractFileByPath(path))) {
+      setting.controlEl.createEl('p', { text: TOW_VAULT_NOTICE });
+    } else {
+      const path = this.owner.dictionaryPath;
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile && !path.startsWith('tow/') && !isHiddenPath(path)
+        && !this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) {
+        setting.addButton(button => button.setButtonText('Move to tow/').onClick(async () => {
+          try {
+            // The vault index has no hidden files, so .tow/config.json is only visible on disk.
+            for (const marker of TOW_MARKERS) if (await this.app.vault.adapter.exists(marker)) { new Notice(TOW_VAULT_NOTICE); return; }
+            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(MOVE_NOTICE); return; }
+            if (!this.app.vault.getAbstractFileByPath('tow')) await this.app.vault.createFolder('tow');
+            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(MOVE_NOTICE); return; }
+            await this.app.fileManager.renameFile(file, TOW_FOLDER_DICTIONARY);
+            if (this.owner.settings.dictionaryPathExplicit) await this.owner.setDictionaryPath(TOW_FOLDER_DICTIONARY);
+            await this.owner.reload();
+            setting.setDesc(pathDescription(this.owner));
+          } catch (error) { new Notice(`Could not move the dictionary: ${reason(error)}`); }
+        }));
+      }
+    }
+    return setting;
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {

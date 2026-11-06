@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="../../LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-[English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | **日本語** | [Español](README.es.md) | [Français](README.fr.md)
+<p align="center"><a href="../../README.md">English</a> | <a href="README.ko.md">한국어</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <b>日本語</b> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a></p>
 
 **ノートをリンクするように、タグをつなぐ。**
 
@@ -60,7 +62,7 @@ Tag Ontology は、サイドバータブからタグごとに親・子・関連�
 
 ## 設定
 
-辞書ファイルは `.tow/` 内を含め、保管庫内の `.json` ファイルパスに保存できます。このバージョンより前に保存されたカスタムパスも選択済みとして扱います。ただし、デフォルトの `Tag-Dictionary.json` は除きます。パスを選択していない場合、`.tow/tag-dictionary.json` があればそれを使い、なければ保管庫のルートにある `Tag-Dictionary.json` を使います。パスを選択している場合は、`.tow/` の辞書があっても選択したパスを使います。
+パスを選択していない場合、プラグインは `tow/tag-dictionary.json` → `.tow/tag-dictionary.json` → `Tag-Dictionary.json` の順に確認します。新規インストールでは最初の場所に辞書を作成します。既存の `Tag-Dictionary.json` は引き続き使用でき、TOW 0.5.0–0.5.1 の `.tow/` 辞書も読み込みます。
 
 **Obsidian Sync は `.obsidian` 以外のドットフォルダーを同期しません** ([Sync の設定](https://obsidian.md/help/sync/settings))。Obsidian Sync を使う場合は、辞書を非表示フォルダー以外のパスに保存してください。Git やファイル単位の同期ツールは、除外設定がない限りドットフォルダーも同期します。
 
@@ -68,7 +70,7 @@ Tag Ontology は、サイドバータブからタグごとに親・子・関連�
 
 - 完全オフライン動作: 外部ネットワーク通信、テレメトリ収集、ユーザーアカウント等は一切不要です。
 - ノートのメタデータとタグ辞書 JSON ファイルのみを読み取ります。
-- プラグイン自体の設定ファイル (`data.json`) と、サイドバーで保存したときに使用中のタグ辞書だけを書き込みます。辞書は設定で選んだパス（以前のバージョンで保存されたカスタムパスを含む）を使い、未選択の場合は `.tow/tag-dictionary.json` があればそれを、なければ `Tag-Dictionary.json` を使います。
+- プラグインは自身の設定ファイルと、サイドバーで保存するときに使用中の辞書だけを書き込みます。新規インストールでは `tow/tag-dictionary.json` を使用し、既存の `Tag-Dictionary.json` は引き続き動作し、`.tow/tag-dictionary.json` も読み込みます。
 
 ## ライブラリと CLI
 
