@@ -29,12 +29,16 @@ export function readFrontmatter(text: string): Frontmatter {
   return isRecord(value) ? { frontmatter: value, body } : { frontmatter: null, body, error: 'The frontmatter is not a YAML mapping.' };
 }
 
+// Trim tags, drop empty or space-containing ones, and remove one leading #.
+export function cleanTags(items: readonly string[]): string[] {
+  return items.map(item => item.trim()).filter(item => item !== '' && !item.includes(' ')).map(item => item.replace(/^#/, ''));
+}
+
 // Obsidian's parseFrontMatterTags: the first key named tags in any case; a string is one tag and a list gives its strings.
-// Each is trimmed, and empty ones or ones with a space are dropped. Obsidian then adds a # where there is none; this removes one.
 export function frontmatterTags(frontmatter: Record<string, unknown> | null): string[] {
   if (!frontmatter) return [];
   const key = Object.keys(frontmatter).find(name => /^tags$/i.test(name));
   const value = key === undefined ? undefined : frontmatter[key];
   const items = typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-  return items.map(item => item.trim()).filter(item => item !== '' && !item.includes(' ')).map(item => item.replace(/^#/, ''));
+  return cleanTags(items);
 }

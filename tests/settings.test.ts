@@ -1,16 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SETTINGS, cssColorToHex, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
+import { DEFAULT_SETTINGS, cssColorToHex, isHiddenPath, isValidDictionaryPath, sanitizeSettings } from '../src/settings.ts';
 
 test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
-    dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
+    dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
+  assert.equal(sanitizeSettings({}, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPathExplicit: true }, '.obsidian').dictionaryPathExplicit, true);
+  assert.equal(sanitizeSettings({ dictionaryPathExplicit: 'yes' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json' }, '.obsidian').dictionaryPathExplicit, true);
+  assert.equal(sanitizeSettings({ dictionaryPath: 'Tag-Dictionary.json' }, '.obsidian').dictionaryPathExplicit, false);
+  assert.equal(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: false }, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ titleAccent: false }, '.obsidian').titleAccent, false);
   assert.equal(sanitizeSettings({ focus: true }, '.obsidian').focus, true);
   assert.deepEqual(sanitizeSettings({ focusDescendants: false, focusNotes: 'x', focusAncestors: true }, '.obsidian'), { ...DEFAULT_SETTINGS, focusDescendants: false });
@@ -26,6 +32,11 @@ test('sanitizes saved settings to the supported fields', () => {
   }
   assert.equal(sanitizeSettings({ layout: 'radial' }, '.obsidian').layout, 'tree', 'Radial is gone; it opens as the vertical tree');
   assert.equal(sanitizeSettings({ layout: 'tree-horizontal' }, '.obsidian').layout, 'tree-horizontal');
+});
+
+test('detects a hidden path segment', () => {
+  for (const path of ['.tow/tags.json', 'folder/.private/tags.json']) assert.equal(isHiddenPath(path), true, path);
+  for (const path of ['tags.json', 'folder/tags.json']) assert.equal(isHiddenPath(path), false, path);
 });
 
 test('rejects dictionary paths outside the allowed vault scope', () => {

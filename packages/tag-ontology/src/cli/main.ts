@@ -4,12 +4,15 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { Ontology } from '../core/ontology.ts';
 import { planChanges } from '../core/plan.ts';
 import { usage } from '../core/usage.ts';
+import { serialize } from '../core/dictionary.ts';
 import { compareIssues, isWellFormed, validate, type Issue } from '../core/validate.ts';
 import { readDictionary, writeDictionary } from '../vault/dictionary-file.ts';
 import { PathError, scan } from '../vault/scan.ts';
 import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
-import { show } from './show.ts';
+import { overlayIssues, readOverlay } from './overlay.ts';
+import { show, type NoteSources } from './show.ts';
+import { subset } from './subset.ts';
 import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
@@ -22,6 +25,7 @@ function run(): void {
   const { command, rest, values, names } = args;
   const root = resolve(values.root ?? '.');
   if (!statSync(root).isDirectory()) throw new UsageError(`${root} is not a vault folder.`);
+  const overlay = readOverlay(root, values['tags-file'] ?? []);
   const dictionary = resolve(root, values.dictionary ?? 'Tag-Dictionary.json');
   const failed = (issues: Issue[]) => issues.some(item => item.severity === 'error' || values.strict);
   // --json prints the contract's document; otherwise `text` says the same for people (checkText for a bare list of issues).
@@ -33,7 +37,12 @@ function run(): void {
   const exclude = values.exclude ?? [];
   if (command === 'scan') {
     const result = scan(root, { paths: rest.length ? rest : ['.'], exclude });
-    output(result.issues, { notes: result.notes }, undefined, sorted => scanText(result.notes, sorted));
+    const scanned = new Set(result.notes.map(note => note.path));
+    const notes = values['tags-file']?.length
+      ? result.notes.map(note => ({ ...note, overlayTags: overlay.get(note.path) ?? [] }))
+      : result.notes;
+    const issues = [...result.issues, ...overlayIssues(root, overlay, scanned)];
+    output(issues, { notes }, undefined, sorted => scanText(result.notes, sorted));
     return;
   }
   const file = readDictionary(dictionary);
@@ -65,19 +74,29 @@ function run(): void {
   const issues = file.issues.length ? file.issues : validate(file.raw, { names });
   if (command === 'check' || issues.some(item => item.severity === 'error')) { output(issues); return; }
   if (!isWellFormed(file.raw, issues)) { output(issues); return; }
+  if (command === 'subset') {
+    const result = subset(new Ontology(file.raw, []), file.raw, rest);
+    if (values.json) output(issues, { dictionary: result });
+    else process.stdout.write(serialize(result));
+    return;
+  }
   const all = scan(root, { exclude });
-  const notes = all.notes.map(note => ({ path: note.path, tags: [...note.tags, ...note.bodyTags] }));
+  const sources = new Map<string, NoteSources>(all.notes.map(note => [note.path, {
+    tags: note.tags, bodyTags: note.bodyTags, overlayTags: overlay.get(note.path) ?? [],
+  }]));
+  const notes = all.notes.map(note => ({ path: note.path, tags: [...note.tags, ...note.bodyTags, ...overlay.get(note.path) ?? []] }));
   if (command === 'usage') {
     const scoped = rest.length ? scan(root, { paths: rest, exclude }) : all;
     const paths = new Set(scoped.notes.map(note => note.path));
     const result = usage(file.raw, notes, path => paths.has(path));
-    const found = [...issues, ...scoped.issues];
+    const found = [...issues, ...scoped.issues, ...overlayIssues(root, overlay, new Set(all.notes.map(note => note.path)))];
     const problems = failed(found) || values.strict && [result.unregistered, result.nonCanonical, result.unused].some(items => items.length);
     output(found, { ...result }, problems ? 1 : 0, sorted => usageText(result, sorted));
     return;
   }
-  const result = show(new Ontology(file.raw, notes), file.raw, rest[0]!, values.notes ?? false, values.exact ?? false);
-  output(issues.filter(item => item.tag === result.tag || item.target === result.tag), result, undefined, sorted => showText(result, sorted));
+  const result = show(new Ontology(file.raw, notes), file.raw, rest[0]!, values.notes ?? false, values.exact ?? false, sources);
+  const found = [...issues.filter(item => item.tag === result.tag || item.target === result.tag), ...overlayIssues(root, overlay, new Set(all.notes.map(note => note.path)))];
+  output(found, result, undefined, sorted => showText(result, sorted));
 }
 
 try { run(); }

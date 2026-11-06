@@ -20,6 +20,7 @@ const SEVERITY = {
   'unplaced': 'warning',
   'redundant-broader': 'warning',
   'invalid-frontmatter': 'warning',
+  'overlay-missing-note': 'warning',
   'invalid-change': 'error',
 } as const satisfies Record<string, Severity>;
 
