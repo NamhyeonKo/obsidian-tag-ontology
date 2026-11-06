@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="../../LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-[English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | **繁體中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+<p align="center"><a href="../../README.md">English</a> | <a href="README.ko.md">한국어</a> | <a href="README.zh-CN.md">简体中文</a> | <b>繁體中文</b> | <a href="README.ja.md">日本語</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a></p>
 
 **像連結筆記一樣連結標籤。**
 
@@ -60,7 +62,7 @@ Tag Ontology 讓你在側邊欄分頁中為每個標籤指定父層、子層與�
 
 ## 設定
 
-字典可以儲存在保管庫中任何以 `.json` 結尾的路徑，包括 `.tow/` 資料夾。此版本之前儲存的自訂路徑也視為使用者已選擇，預設的 `Tag-Dictionary.json` 除外。若未選擇路徑，外掛會在 `.tow/tag-dictionary.json` 存在時使用它；否則使用保管庫根目錄下的 `Tag-Dictionary.json`。若已選擇路徑，即使 `.tow/` 字典存在，也一律使用所選路徑。
+若未選擇路徑，外掛依序尋找 `tow/tag-dictionary.json`、`.tow/tag-dictionary.json` 與 `Tag-Dictionary.json`。全新安裝會在第一個位置建立字典。現有的 `Tag-Dictionary.json` 檔案仍可使用，也會繼續讀取 TOW 0.5.0–0.5.1 的 `.tow/` 字典。設定中選擇的路徑永遠優先。
 
 **Obsidian Sync 不會同步 `.obsidian` 以外以點開頭的隱藏資料夾**（[Sync 設定](https://obsidian.md/help/sync/settings)）。如果使用 Obsidian Sync，請為字典選擇可見路徑。除非設定為忽略，Git 和檔案層級同步工具會同步點開頭的資料夾。
 
@@ -68,7 +70,7 @@ Tag Ontology 讓你在側邊欄分頁中為每個標籤指定父層、子層與�
 
 - 完全離線運作：無任何網路請求、遙測追蹤或使用者帳號系統。
 - 僅讀取筆記中繼資料與標籤字典 JSON 檔案。
-- 外掛只會寫入自身設定檔（`data.json`），以及在側邊欄儲存時寫入目前使用的字典檔案：設定中選擇的路徑（包括先前版本儲存的自訂路徑）；若未選擇，則在 `.tow/tag-dictionary.json` 存在時使用它，否則使用 `Tag-Dictionary.json`。絕不修改庫內的 Markdown 檔案。
+- 外掛只會寫入自身設定檔，以及在側邊欄儲存時寫入目前使用的字典：設定中選擇的路徑，或依上述順序自動尋找的路徑。絕不修改庫內的 Markdown 檔案。
 
 ## 獨立套件與 CLI
 

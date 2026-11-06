@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="../../LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-[English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | **Español** | [Français](README.fr.md)
+<p align="center"><a href="../../README.md">English</a> | <a href="README.ko.md">한국어</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <b>Español</b> | <a href="README.fr.md">Français</a></p>
 
 **Vincula tus etiquetas de la misma forma que vinculas tus notas.**
 
@@ -60,7 +62,7 @@ Para obtener instrucciones completas paso a paso, compilaciones de desarrollo y 
 
 ## Configuración
 
-El diccionario puede estar en cualquier ruta del almacén que termine en `.json`, incluida una carpeta `.tow/`. Las rutas personalizadas guardadas antes de esta versión también cuentan como elegidas, excepto la ruta predeterminada `Tag-Dictionary.json`. Si no hay una ruta elegida, el plugin usa `.tow/tag-dictionary.json` cuando existe; de lo contrario, usa `Tag-Dictionary.json` en la raíz. Si hay una ruta elegida, siempre se usa esa ruta, aunque exista el diccionario en `.tow/`.
+Sin una ruta elegida, el plugin busca `tow/tag-dictionary.json`, después `.tow/tag-dictionary.json` y, por último, `Tag-Dictionary.json`. Una instalación nueva crea el diccionario en la primera ubicación. Los archivos `Tag-Dictionary.json` existentes siguen funcionando y también se leen los diccionarios `.tow/` de TOW 0.5.0–0.5.1.
 
 **Obsidian Sync no sincroniza las carpetas ocultas que empiezan por punto, excepto `.obsidian`** ([ajustes de Sync](https://obsidian.md/help/sync/settings)). Si usas Obsidian Sync, elige una ruta visible para el diccionario. Git y las herramientas de sincronización por archivos incluyen las carpetas ocultas, salvo que estén excluidas.
 
@@ -68,7 +70,7 @@ El diccionario puede estar en cualquier ruta del almacén que termine en `.json`
 
 - Funcionamiento 100% local y offline: Sin peticiones de red, sin telemetría y sin necesidad de cuentas.
 - Solo lee los metadatos de las notas y el archivo JSON del diccionario.
-- Nunca modifica tus notas Markdown; solo escribe en su archivo de configuración interno (`data.json`) y, al guardar cambios en la barra lateral, en el archivo de diccionario que se esté usando: la ruta elegida (incluidas las rutas personalizadas guardadas en versiones anteriores) o, si no se eligió ninguna, `.tow/tag-dictionary.json` si existe y, en caso contrario, `Tag-Dictionary.json`.
+- El plugin solo escribe su archivo de configuración y, al guardar desde la barra lateral, el diccionario en uso: la ruta elegida o, si no hay ninguna, `tow/tag-dictionary.json`, `.tow/tag-dictionary.json` y `Tag-Dictionary.json`, en ese orden.
 
 ## Biblioteca y CLI
 

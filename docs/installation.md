@@ -166,7 +166,7 @@ tag-ontology --version
 
 - **Tag hierarchy is not showing in Graph view**:
   - Check that **Filters → Tags** is enabled in Obsidian's Graph settings.
-  - Check that your vault contains a valid `Tag-Dictionary.json` or create your first tags using the **+** button in the sidebar panel.
+  - Without a chosen path, the plugin checks `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`. New installs create the dictionary in `tow/`; existing `Tag-Dictionary.json` files and `.tow/` dictionaries from TOW 0.5.0–0.5.1 remain supported. If none exists, create your first tags using the **+** button in the sidebar panel.
 - **Plugin does not appear in Community plugins after manual install**:
   - Ensure the files are placed directly in `.obsidian/plugins/tag-ontology/`, not inside a nested subfolder.
   - Ensure the file names match exactly: `main.js`, `manifest.json`, `styles.css`.

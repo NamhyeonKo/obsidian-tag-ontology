@@ -1,10 +1,12 @@
-# Tag Ontology
+<h1 align="center">Tag Ontology</h1>
 
-[![Latest release](https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github)](https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest)
-[![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NamhyeonKo/obsidian-tag-ontology?logo=github"></a>
+  <a href="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml"><img alt="Build" src="https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md)
+<p align="center"><b>English</b> | <a href="docs/readme/README.ko.md">한국어</a> | <a href="docs/readme/README.zh-CN.md">简体中文</a> | <a href="docs/readme/README.zh-TW.md">繁體中文</a> | <a href="docs/readme/README.ja.md">日本語</a> | <a href="docs/readme/README.es.md">Español</a> | <a href="docs/readme/README.fr.md">Français</a></p>
 
 **Link your tags the way you link notes.**
 
@@ -177,7 +179,7 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 
 | Setting | Description |
 | --- | --- |
-| Dictionary path | Vault-relative path to a `.json` file. A custom path saved before this version counts as chosen; the default `Tag-Dictionary.json` does not. If no path is chosen, the plugin uses `.tow/tag-dictionary.json` when it exists; otherwise it uses `Tag-Dictionary.json`. A chosen path is always used, even when the `.tow/` dictionary exists. |
+| Dictionary path | Vault-relative path to a `.json` file. A custom path saved before this version counts as chosen; the default `Tag-Dictionary.json` does not. Without a chosen path, the plugin uses `tow/tag-dictionary.json` if it exists, then `.tow/tag-dictionary.json` if it exists, then `Tag-Dictionary.json`. Existing root dictionaries keep working; a chosen path is always used. |
 | Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
@@ -192,7 +194,7 @@ At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
 The sidebar tab reads and writes this file, so you never have to open it. It is plain JSON in your vault, so you can also edit it by hand.
 
-The dictionary can live at any vault-relative path ending in `.json`, including inside `.tow/`. A custom path saved before this version counts as chosen; the default `Tag-Dictionary.json` does not. If no path is chosen in settings, the plugin uses `.tow/tag-dictionary.json` when it exists; otherwise it uses `Tag-Dictionary.json` at the vault root. A chosen path is always used, even when `.tow/tag-dictionary.json` exists. With no dictionary at the selected path, the plugin creates an empty dictionary; if it goes missing later, the sidebar tab offers to create one.
+The dictionary can live at any vault-relative path ending in `.json`, including inside `tow/` or `.tow/`. Without a chosen path, the plugin checks `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`. New installs create `tow/tag-dictionary.json`; existing `Tag-Dictionary.json` files keep working, and `.tow/tag-dictionary.json` from TOW 0.5.0–0.5.1 is still read. A chosen path is always used. If the dictionary goes missing later, the sidebar tab offers to create it.
 
 **Obsidian Sync does not sync dot-folders other than `.obsidian`** ([Sync settings](https://obsidian.md/help/sync/settings)). If you use Obsidian Sync, choose a visible path for the dictionary. Git and file-level sync tools carry dot-folders unless they are ignored.
 
@@ -239,7 +241,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 
 - No network requests, telemetry or accounts.
 - Reads your notes' metadata and the dictionary file only.
-- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`) and, when you save a change in the sidebar, the dictionary file in use: the path you chose (including a custom path saved in an earlier version), or `.tow/tag-dictionary.json` if it exists when no path was chosen, otherwise `Tag-Dictionary.json`.
+- Writes only its own settings file (`plugins/tag-ontology/data.json` in the config folder, usually `.obsidian/`) and, when you save a change in the sidebar, the dictionary file in use: the path you chose (including a custom path saved in an earlier version), or `tow/tag-dictionary.json`, `.tow/tag-dictionary.json`, or `Tag-Dictionary.json` in automatic lookup order.
 
 ## Compatibility and known limitations
 
@@ -315,7 +317,7 @@ packages/tag-ontology/
 ├── src/cli/        # Command-line arguments, JSON results and exit codes
 └── tests/          # Package unit and real-process CLI tests
 docs/cli.md         # Versioned CLI contract
-examples/           # Sample vault with a Tag-Dictionary.json
+examples/           # Sample vault with a tag dictionary
 scripts/deploy.mjs  # Copies the build into a local vault
 scripts/check-package.mjs  # Inspects and exercises the packed npm package
 ```
