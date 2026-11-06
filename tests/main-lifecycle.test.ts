@@ -9,6 +9,7 @@ import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
 import type { NativeData } from '../src/layer.ts';
+import type { Setting, SettingDefinitionItem } from 'obsidian';
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -34,13 +35,13 @@ class NativeGraphs {
 
 interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
-  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>;
+  dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
-  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [];
+  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; buttons: (() => void)[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -50,6 +51,34 @@ async function setup(saved?: Promise<unknown>) {
   let watching = 0, focusListener: (() => void) | undefined;
   let ready = () => {}, timer = 0, reads = 0;
   class File {}
+  class TestSetting {
+    settingEl = { toggle() {} };
+    name = ''; desc?: string; textValue?: string; textChanged?: (value: string) => Promise<void> | void; toggleChanged?: (value: boolean) => void;
+    buttons: (() => void)[] = [];
+    constructor() { settingRows.push(this); }
+    setName(name: string) { this.name = name; return this; }
+    setDesc(desc: string) { this.desc = desc; return this; }
+    addText(callback: (text: { setValue(value: string): { onChange(callback: (value: string) => void): void }; onChange(callback: (value: string) => void): void }) => void) {
+      callback({ setValue: value => { this.textValue = value; return { onChange: cb => { this.textChanged = cb; } }; }, onChange: cb => { this.textChanged = cb; } }); return this;
+    }
+    addToggle(callback: (toggle: { setValue(value: boolean): { onChange(callback: (value: boolean) => void): void }; onChange(callback: (value: boolean) => void): void }) => void) {
+      const onChange = (cb: (value: boolean) => void) => { this.toggleChanged = cb; };
+      callback({ setValue: () => ({ onChange }), onChange }); return this;
+    }
+    addColorPicker(callback: (picker: { setValue(value: string): { onChange(callback: (value: string) => void): void }; onChange(callback: (value: string) => void): void }) => void) {
+      callback({ setValue: () => ({ onChange() {} }), onChange() {} }); return this;
+    }
+    addExtraButton(callback: (button: { setIcon(icon: string): { setTooltip(text: string): { onClick(callback: () => void): void } }; setTooltip(text: string): { onClick(callback: () => void): void }; onClick(callback: () => void): void }) => void) {
+      const click = (cb: () => void) => { this.buttons.push(cb); };
+      const button = { setIcon: (_icon: string) => ({ setTooltip: (_text: string) => ({ onClick: click }) }),
+        setTooltip: (_text: string) => ({ onClick: click }), onClick: click };
+      callback(button); return this;
+    }
+  }
+  class TestPluginSettingTab {
+    app: unknown; containerEl = { empty() {} };
+    constructor(app: unknown) { this.app = app; }
+  }
   const types: string[] = [], open = new Map<string, unknown[]>();
   const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
   const vault = {
@@ -89,9 +118,9 @@ async function setup(saved?: Promise<unknown>) {
   class Plugin {
     app = { vault, workspace, metadataCache };
     loadData() { return saved ?? Promise.resolve({}); }
-    async saveData() {}
+    async saveData(data?: unknown) { savedWrites.push(data); }
     registerView() { ui.push('register-view'); }
-    addRibbonIcon() {} addSettingTab() {} registerEvent() {}
+    addRibbonIcon() {} addSettingTab(tab: object) { settingTabs.push(tab); } registerEvent() {}
     registerDomEvent(target: { addEventListener(type: string, callback: () => void): void }, type: string, callback: () => void) { target.addEventListener(type, callback); }
     register(cleanup: () => void) { cleanups.push(cleanup); }
     addCommand({ id, callback, checkCallback }: { id: string; callback?: () => void; checkCallback?: (checking: boolean) => boolean }) {
@@ -111,7 +140,7 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { Plugin, ItemView: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: File, getAllTags: () => [],
+      ? { Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './settings.ts' ? { ...settings }
       : specifier === 'tag-ontology' ? { ...coreModule }
@@ -130,7 +159,7 @@ async function setup(saved?: Promise<unknown>) {
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
   return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
-    restyle, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
+    restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: () => new File(), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
 test('opening a graph still loads the dictionary, attaches and reveals it, and brings the sidebar tab forward', async () => {
@@ -268,11 +297,11 @@ test('a background reload failure only logs and keeps the last valid model', asy
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'render-panel', 'draw-linked']);
 });
 
-test('dictionary presence stays unknown until the first dictionary read completes', async () => {
+test('dictionary presence is true as soon as the first read finds the file', async () => {
   const t = await setup(), read = deferred<string>();
   t.vault.cachedRead = () => read.promise;
   t.ready(); await settle();
-  assert.equal(t.plugin.dictionaryFound, undefined);
+  assert.equal(t.plugin.dictionaryFound, true);
   read.resolve(dictionary); await settle();
   assert.equal(t.plugin.dictionaryFound, true);
 });
@@ -334,7 +363,7 @@ test('note edits still skip graph redraws and a coalesced dictionary edit still 
   assert.equal(t.reads(), 3);
 });
 
-test('every time Obsidian has resolved the links, the views refresh, so the 3D view gets note links resolved after a note edit', async () => {
+test('each metadata resolution refreshes the views', async () => {
   const t = await setup();
   t.ready(); await settle(); t.plugin.native.calls.length = 0;
   t.metaEvents.get('resolved')!(); t.runTimers(); await settle();
@@ -375,6 +404,30 @@ test('a dictionary under .tow/ loads through the adapter', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(t.plugin.raw)), base);
 });
 
+test('a hidden dictionary that reappears but cannot be read is reported as present', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: '.tow/tag-dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded;
+  await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found/);
+  assert.equal(t.plugin.dictionaryFound, false);
+
+  t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.adapter.read = async () => { throw new Error('EIO: i/o error, read'); };
+  await assert.rejects(t.plugin.loadModel(), /EIO/);
+  assert.equal(t.plugin.dictionaryFound, true);
+});
+
+test('a visible dictionary that reappears but cannot be read is reported as present', async () => {
+  const t = await setup();
+  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => null;
+  await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found/);
+  assert.equal(t.plugin.dictionaryFound, false);
+
+  (t.vault as { getAbstractFileByPath: () => unknown }).getAbstractFileByPath = () => t.file();
+  t.vault.cachedRead = async () => { throw new Error('EIO: i/o error, read'); };
+  await assert.rejects(t.plugin.loadModel(), /EIO/);
+  assert.equal(t.plugin.dictionaryFound, true);
+});
+
 test('a hidden dictionary that disappears before it is read is marked missing', async () => {
   const t = await setup(); t.vault.existing.add('.tow/tag-dictionary.json');
   t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
@@ -396,6 +449,46 @@ test('an explicit path wins even when .tow/tag-dictionary.json exists', async ()
 test('setting the path marks it explicit', async () => {
   const t = await setup(); await t.plugin.setDictionaryPath('Tags.json');
   assert.equal(t.plugin.settings.dictionaryPathExplicit, true);
+});
+
+test('resetDictionaryPath restores the default and clears the explicit choice', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
+  await t.loaded;
+  await t.plugin.resetDictionaryPath();
+  assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
+  assert.equal(t.plugin.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS });
+});
+
+test('the declarative settings path row refreshes its description and can reset to automatic', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
+  const setting = t.newSetting();
+  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  setting.textValue = 'Tags.json'; await setting.textChanged!('Tags.json');
+  assert.match(setting.desc!, /In use: Tags\.json\./);
+  setting.buttons[0]!(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
+  assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
+  assert.equal(setting.textValue, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(chosen automatically\)\./);
+});
+
+test('the fallback settings path row refreshes its description and can reset to automatic', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: 'custom.json', dictionaryPathExplicit: true }));
+  await t.loaded; t.vault.existing.add('.tow/tag-dictionary.json'); t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  (t.settingTabs[0] as { display(): void }).display();
+  const setting = t.settingRows.find(row => row.name === 'Dictionary path')!;
+  setting.textValue = 'Tags.json'; await setting.textChanged!('Tags.json');
+  assert.match(setting.desc!, /In use: Tags\.json\./);
+  setting.buttons[0]!(); await settle();
+  assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
+  assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
+  assert.equal(t.plugin.dictionaryPath, '.tow/tag-dictionary.json');
+  assert.match(setting.desc!, /In use: \.tow\/tag-dictionary\.json \(chosen automatically\)\./);
 });
 
 const base: RawDictionary = { root: { description: 'Root', broader: [] }, child: { description: 'Child', broader: ['root'] } };
@@ -430,12 +523,34 @@ test('an outside edit to a .tow/ dictionary reloads on window focus', async () =
 });
 
 test('an outside edit with unchanged mtime reloads when the file size changes', async () => {
-  const t = await withTowBase(), mtime = t.vault.mtimes.get('.tow/tag-dictionary.json');
+  const t = await setup();
+  t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 1);
+  t.vault.sizes.set('.tow/tag-dictionary.json', t.vault.files.get('.tow/tag-dictionary.json')!.length);
+  t.ready(); await settle();
+  const mtime = t.vault.mtimes.get('.tow/tag-dictionary.json');
   t.vault.files.set('.tow/tag-dictionary.json', serialize({ ...base, extra: { description: 'Extra entry', broader: ['root'] } }));
   t.vault.sizes.set('.tow/tag-dictionary.json', t.vault.files.get('.tow/tag-dictionary.json')!.length);
   t.vault.mtimes.set('.tow/tag-dictionary.json', mtime!);
   await t.focus(); t.runTimers(); await settle();
   assert.ok(t.plugin.model?.entries.has('extra'));
+});
+
+test('focus does not repeatedly reload a missing hidden dictionary and reloads when it appears', async () => {
+  const t = await setup(Promise.resolve({ dictionaryPath: '.tow/tag-dictionary.json', dictionaryPathExplicit: true }));
+  await t.loaded;
+  await assert.rejects(t.plugin.loadModel(), /Tag dictionary not found/);
+  await t.plugin.checkOutsideChange(); await t.plugin.checkOutsideChange();
+  t.runTimers(); await settle();
+  assert.equal(t.errors.length, 0);
+
+  t.vault.existing.add('.tow/tag-dictionary.json');
+  t.vault.files.set('.tow/tag-dictionary.json', serialize(base));
+  t.vault.mtimes.set('.tow/tag-dictionary.json', 1);
+  t.vault.sizes.set('.tow/tag-dictionary.json', t.vault.files.get('.tow/tag-dictionary.json')!.length);
+  await t.plugin.checkOutsideChange(); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.model?.roots, ['root']);
 });
 
 test('focus without a change does not reload', async () => {

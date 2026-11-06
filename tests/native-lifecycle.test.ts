@@ -1278,12 +1278,12 @@ test('an alias typed without Enter counts as a change and is saved', async () =>
   assert.deepEqual([...t.owner.changes[0]!.kind === 'edit' ? (t.owner.changes[0] as { draft: { aliases: string[] } }).draft.aliases : []], ['Machine learning']);
 });
 
-test('a missing automatic dictionary explains that both automatic paths were checked', async () => {
+test('a missing automatic dictionary reports the resolved path in use', async () => {
   const t = await setup();
   t.owner.dictionaryFound = false;
   t.controller.refresh(false);
-  assert.ok(t.sidebar.all().some(el => el.text.includes('.tow/tag-dictionary.json')));
-  assert.ok(t.sidebar.all().some(el => el.text.includes('Tag-Dictionary.json')));
+  assert.ok(t.sidebar.all().some(el => el.text.includes('Tag-Dictionary.json is not in the vault.')));
+  assert.ok(!t.sidebar.all().some(el => el.text.includes('.tow/tag-dictionary.json')));
 });
 
 test('a missing dictionary file shows the resolved path and how to create one', async () => {

@@ -559,8 +559,7 @@ export class NativeGraphs {
   // Creating is left to the user: a file that is still syncing looks missing too, and it shows up here on its own when it arrives.
   private notFound(panel: HTMLElement) {
     panel.createEl('h4', { text: 'Tag dictionary not found' });
-    const automatic = this.owner.settings.dictionaryPathExplicit ? '' : ' The plugin looked for .tow/tag-dictionary.json and Tag-Dictionary.json.';
-    panel.createEl('p', { text: `${this.owner.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.${automatic}` });
+    panel.createEl('p', { text: `${this.owner.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.` });
     const create = panel.createEl('button', { text: 'Create empty dictionary', cls: 'mod-cta' });
     create.addEventListener('click', () => { create.disabled = true; void this.owner.createDictionary().finally(() => { create.disabled = false; }); });
   }
