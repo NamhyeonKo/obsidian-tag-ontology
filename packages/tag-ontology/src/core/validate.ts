@@ -50,6 +50,8 @@ interface Checked { description: string; aliases: string[]; broader?: string[]; 
 
 const LISTS = ['aliases', 'broader', 'related'] as const;
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// The --names kebab rule, shared with the plugin's edit form.
+export const isKebabName = (name: string): boolean => KEBAB.test(name);
 const RANK: Record<Severity, number> = { error: 0, warning: 1 };
 
 // Code-unit order, so the result doesn't depend on the locale it runs in.
@@ -133,7 +135,7 @@ export function validate(raw: unknown, options: ValidateOptions = {}): Issue[] {
   for (const tag of tags) {
     const error = tagNameError(tag);
     if (error) report('invalid-name', `Tag "${tag}" is not a valid Obsidian tag. ${error}`, { tag });
-    else if (options.names === 'kebab' && !KEBAB.test(tag)) report('name-format', `Tag "${tag}" is not lowercase words joined by hyphens.`, { tag });
+    else if (options.names === 'kebab' && !isKebabName(tag)) report('name-format', `Tag "${tag}" is not lowercase words joined by hyphens.`, { tag });
   }
 
   // Tag names are taken first, then aliases, each in tag order; a later name equal to an earlier one ignoring case collides with it.

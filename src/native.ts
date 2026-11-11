@@ -4,7 +4,8 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
-import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
+import { groupNonCanonical, groupRedundant } from './check.ts';
+import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
 interface NativeLink {
@@ -59,7 +60,7 @@ type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'che
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
 // query: text typed in an open parent, child or related input, so a redraw keeps it.
-type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
+type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; facet: string; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
@@ -88,6 +89,18 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 function typed(mode: Mode): Draft {
   const alias = mode.alias?.trim();
   return alias && !mode.draft.aliases.includes(alias) ? { ...mode.draft, aliases: [...mode.draft.aliases, alias] } : mode.draft;
+}
+
+// A Change can't carry facet (docs/cli.md), so the form keeps it next to the draft and the plugin writes it after the change.
+function facetOf(dict: RawDictionary, tag: string | undefined): string {
+  const value = tag !== undefined && Object.hasOwn(dict, tag) ? dict[tag]?.facet : undefined;
+  return typeof value === 'string' ? value : '';
+}
+
+// Unsaved changes in an edit form: the draft's fields, plus the facet.
+function changeCount(mode: Mode): number {
+  if (mode.kind !== 'edit') return 0;
+  return changedFields(mode.base, mode.tag, typed(mode)) + (mode.facet.trim() === facetOf(mode.base, mode.tag) ? 0 : 1);
 }
 
 // A question with a few answers, in the middle of the window like Obsidian's own delete confirmation.
@@ -135,7 +148,7 @@ export class NativeGraphs {
   private leave(next: () => void) {
     // A save or delete that is writing can't be called off, and it moves the sidebar itself when it ends.
     if (this.saving) return;
-    const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
+    const mode = this.mode, changes = mode ? changeCount(mode) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
     new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
       { text: 'Keep editing', action: () => {} },
@@ -596,11 +609,36 @@ export class NativeGraphs {
   }
 
   private inventory(panel: HTMLElement, model: Ontology) {
+    const found = this.owner.checkUsage();
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
       const details = panel.createEl('details'); details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
+      if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
+    }
+    if (found) {
+      const aliases = groupNonCanonical(found.nonCanonical);
+      if (aliases.length) {
+        const details = panel.createEl('details'); details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
+        for (const group of aliases) {
+          const nested = details.createEl('details');
+          nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          this.noteLinks(nested, group.notes);
+        }
+      }
+      const broader = groupRedundant(found.redundant);
+      if (broader.length) {
+        const details = panel.createEl('details'); details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
+        for (const group of broader) {
+          const nested = details.createEl('details');
+          nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          this.noteLinks(nested, group.notes);
+        }
+      }
     }
     const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
@@ -626,7 +664,7 @@ export class NativeGraphs {
     const tag = this.selected, raw = this.owner.raw;
     if (!tag || !raw || !Object.hasOwn(raw, tag)) return;
     const base = structuredClone(raw);
-    this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag) };
+    this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag), facet: facetOf(base, tag) };
     this.drawForm();
   }
 
@@ -673,8 +711,14 @@ export class NativeGraphs {
     const raw = this.owner.raw;
     if (!raw) return;
     const base = structuredClone(raw);
-    this.mode = { kind: 'new', base, draft: emptyDraft() };
+    this.mode = { kind: 'new', base, draft: emptyDraft(), facet: '' };
     this.drawForm();
+  }
+
+  // Obsidian's tag rules, plus kebab-case names while that setting is on.
+  private nameProblem(name: string, base: RawDictionary, current?: string): string | undefined {
+    return nameError(name, base, current)
+      ?? (this.owner.settings.kebabNames && !isKebabName(name) ? 'Use lowercase letters and digits joined by hyphens (kebab-case tag names are on in settings).' : undefined);
   }
 
   private drawForm() {
@@ -718,14 +762,20 @@ export class NativeGraphs {
       });
       alias.focus();
     };
+    const facet = () => {
+      form.createEl('label', { text: 'Facet' });
+      const input = form.createEl('input', { type: 'text', attr: { 'aria-label': 'Facet', placeholder: 'Optional, for example language' } });
+      input.value = mode.facet;
+      input.addEventListener('input', () => { mode.facet = input.value; this.syncForm(); });
+    };
     const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder); };
     if (tag === undefined) {
       list('parents', 'Parents', 'Add a parent');
       if (!draft.parents.length) form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
       list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
-      describe(); aliases();
+      describe(); aliases(); facet();
     } else {
-      describe(); aliases();
+      describe(); aliases(); facet();
       list('parents', 'Parents', 'Add a parent'); list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
     }
     const status = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
@@ -740,8 +790,8 @@ export class NativeGraphs {
     this.syncForm = () => {
       // A new tag's empty name is not an error yet, only not ready.
       // An unchanged name is never an error, so a key written before these rules can still be edited.
-      const error = tag === undefined ? draft.name ? nameError(draft.name, base) : undefined : draft.name === tag ? undefined : nameError(draft.name, base, tag);
-      const changes = tag === undefined ? 0 : changedFields(base, tag, typed(mode));
+      const error = tag === undefined ? draft.name ? this.nameProblem(draft.name, base) : undefined : draft.name === tag ? undefined : this.nameProblem(draft.name, base, tag);
+      const changes = changeCount(mode);
       // Notes match dictionary tags ignoring case, so a case-only rename keeps them.
       const hint = tag === undefined ? 'Pick one, or type a new name.'
         : draft.name.toLowerCase() !== tag.toLowerCase() && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
@@ -807,10 +857,11 @@ export class NativeGraphs {
     try {
       const { base } = mode, draft = typed(mode), name = draft.name, tag = mode.kind === 'edit' ? mode.tag : name;
       // The dialog's Save reaches here without the form's checks.
-      const error = mode.kind === 'edit' && name === mode.tag ? undefined : nameError(name, base, mode.kind === 'edit' ? mode.tag : undefined);
+      const error = mode.kind === 'edit' && name === mode.tag ? undefined : this.nameProblem(name, base, mode.kind === 'edit' ? mode.tag : undefined);
       if (error) { new Notice(error); return false; }
+      const facet = mode.facet.trim(), newFacet = facet === facetOf(base, mode.kind === 'edit' ? mode.tag : undefined) ? undefined : facet;
       const change: Change = mode.kind === 'edit' ? { kind: 'edit', tag, draft } : { kind: 'add', draft };
-      if (!await this.owner.saveChange(change, base)) return false;
+      if (!await this.owner.saveChange(change, base, newFacet)) return false;
       if (name !== tag) {
         this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
         this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name } : view);

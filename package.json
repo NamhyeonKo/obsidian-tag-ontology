@@ -1,6 +1,6 @@
 {
   "name": "obsidian-tag-ontology",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "license": "MIT",
   "private": true,
   "type": "module",

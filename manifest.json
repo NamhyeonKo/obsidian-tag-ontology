@@ -1,7 +1,7 @@
 {
   "id": "tag-ontology",
   "name": "Tag Ontology",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "minAppVersion": "1.7.2",
   "description": "Link your tags the way you link notes, with parents, children, and related tags. Explore your tag hierarchy in interactive 2D and 3D graph views with tree layouts.",
   "author": "NamhyeonKo",
