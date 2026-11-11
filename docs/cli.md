@@ -1,6 +1,6 @@
 # tag-ontology CLI
 
-> **Contract: `schemaVersion` 1, for `tag-ontology` 0.3.0.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
+> **Contract: `schemaVersion` 1, for `tag-ontology` 0.3.1.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
 
 `tag-ontology` checks, queries and edits a tag dictionary (`Tag-Dictionary.json`) against the Markdown notes of a vault. It applies the same rules as the Obsidian plugin in this repository, because both use the `tag-ontology` package.
 
@@ -254,7 +254,7 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 tag-ontology suggest <term> [--limit N] [--json]
 ```
 
-Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name substring, alias prefix, then alias substring. Each tag appears once. `--limit` must be a positive integer and defaults to 10. No matches is successful and returns an empty `suggestions` list. If the dictionary has errors, `suggest` reports them and exits 1.
+Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name substring, alias prefix, then alias substring. Each tag appears once. When nothing matches, the term is shortened one character at a time, down to three characters, and the first shorter term with matches is used, so a misspelled tag still gets suggestions. `--limit` must be a positive integer and defaults to 10. No matches is successful and returns an empty `suggestions` list. If the dictionary has errors, `suggest` reports them and exits 1.
 
 ```json
 {
@@ -263,6 +263,7 @@ Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name
   "ok": true,
   "issues": [],
   "query": "ont",
+  "matched": "ont",
   "suggestions": [
     { "tag": "ontology" },
     { "tag": "wiki", "alias": "Ontology" }
@@ -271,6 +272,7 @@ Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name
 ```
 
 - `query`: the search term as supplied.
+- `matched`: the term the suggestions came from: `query` itself, a shortened form of it, or `null` when nothing matched. Added in 0.3.1.
 - `suggestions`: matching tags in rank order; `alias` is present only when the match was through an alias.
 
 Without `--json`, the CLI prints one tag per line, with the matched alias in parentheses when applicable. An empty result prints `No matching tags.`
