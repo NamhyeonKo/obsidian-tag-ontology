@@ -25,7 +25,7 @@ Only `--json` output, issue codes and exit codes are a contract. The text printe
 | Option | Commands | Meaning |
 | --- | --- | --- |
 | `--root <dir>` | all | Vault folder. Default: the current directory. |
-| `--dictionary <file>` | all but `scan` | Dictionary file, relative to `--root` unless absolute. Default: `Tag-Dictionary.json`. |
+| `--dictionary <file>` | all but `scan` | Dictionary file, relative to `--root` unless absolute. By default, the CLI uses the first file found in this order: `tow/tag-dictionary.json`, `.tow/tag-dictionary.json`, `Tag-Dictionary.json`. This shared order was introduced in 0.3.0; previously, the default was `Tag-Dictionary.json`. |
 | `--exclude <glob>` | `scan`, `usage`, `show` | Skip notes. Repeatable. See [Notes](#notes). |
 | `--tags-file <file>` | `scan`, `usage`, `show` | JSON object mapping note paths to `{ "tags": string[] }`; repeatable. File paths are relative to `--root` unless absolute. |
 | `--names <rule>` | all but `scan` | Tag name rule for warnings: `obsidian` (default) or `kebab`. See [`name-format`](#issue-codes). |

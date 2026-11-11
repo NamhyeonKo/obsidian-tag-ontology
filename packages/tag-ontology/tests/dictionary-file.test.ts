@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import test from 'node:test';
 import { serialize } from '../src/core/dictionary.ts';
-import { readDictionary, writeDictionary } from '../src/vault/dictionary-file.ts';
+import { findDictionary, readDictionary, writeDictionary } from '../src/vault/dictionary-file.ts';
 
 const temp = (t: { after: (fn: () => void) => void }) => {
   const dir = mkdtempSync(join(tmpdir(), 'tag-ontology-'));
@@ -13,6 +13,32 @@ const temp = (t: { after: (fn: () => void) => void }) => {
   return dir;
 };
 const sha256 = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+
+test('findDictionary prefers the shared tow location when multiple dictionaries exist', t => {
+  const root = temp(t);
+  mkdirSync(join(root, 'tow'));
+  writeFileSync(join(root, 'tow', 'tag-dictionary.json'), '{}');
+  writeFileSync(join(root, 'Tag-Dictionary.json'), '{}');
+  assert.equal(findDictionary(root), join(root, 'tow', 'tag-dictionary.json'));
+});
+
+test('findDictionary returns the root dictionary when it is the only dictionary', t => {
+  const root = temp(t);
+  writeFileSync(join(root, 'Tag-Dictionary.json'), '{}');
+  assert.equal(findDictionary(root), join(root, 'Tag-Dictionary.json'));
+});
+
+test('findDictionary returns the .tow dictionary when it is the only dictionary', t => {
+  const root = temp(t);
+  mkdirSync(join(root, '.tow'));
+  writeFileSync(join(root, '.tow', 'tag-dictionary.json'), '{}');
+  assert.equal(findDictionary(root), join(root, '.tow', 'tag-dictionary.json'));
+});
+
+test('findDictionary returns the shared tow path when no dictionary exists', t => {
+  const root = temp(t);
+  assert.equal(relative(root, findDictionary(root)), 'tow/tag-dictionary.json');
+});
 
 test('reading gives the parsed dictionary and the SHA-256 of its bytes', t => {
   const file = join(temp(t), 'Tag-Dictionary.json');

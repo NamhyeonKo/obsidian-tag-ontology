@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -43,6 +43,17 @@ test('--root points at the vault from anywhere', () => {
   assert.equal(json(['check', '--root', fixture], tmpdir()).code, 0);
   assert.equal(json(['--root', fixture, 'check'], tmpdir()).code, 0);
   assert.equal(json(['check', '--dictionary', join(fixture, 'Tag-Dictionary.json')], tmpdir()).code, 0);
+});
+
+test('check uses tow/tag-dictionary.json by default when it exists beside the root dictionary', t => {
+  const vault = copyOfFixture(t);
+  mkdirSync(join(vault, 'tow'));
+  writeFileSync(join(vault, 'tow', 'tag-dictionary.json'), JSON.stringify({ valid: { description: 'Valid', broader: [] } }));
+  writeFileSync(join(vault, 'Tag-Dictionary.json'), '{');
+  const run = json(['check', '--root', vault]);
+  assert.equal(run.code, 0);
+  assert.equal(run.doc.ok, true);
+  assert.deepEqual(run.doc.issues, []);
 });
 
 test('a dictionary that is not JSON is an invalid-dictionary error, exit 1', t => {

@@ -19,7 +19,7 @@ Commands:
 
 Options:
   --root <dir>          Vault folder (default: current directory)
-  --dictionary <file>   Dictionary relative to root (default: Tag-Dictionary.json)
+  --dictionary <file>   Dictionary relative to root (default: tow/tag-dictionary.json, .tow/tag-dictionary.json, then Tag-Dictionary.json, the first that exists)
   --exclude <glob>      Skip notes; repeatable (scan, usage, show)
   --tags-file <file>    Tags for files without them; repeatable (scan, usage, show)
   --names <rule>        obsidian (default) or kebab (all but scan)
