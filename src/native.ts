@@ -4,6 +4,7 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
+import { groupNonCanonical, groupRedundant } from './check.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -596,11 +597,36 @@ export class NativeGraphs {
   }
 
   private inventory(panel: HTMLElement, model: Ontology) {
+    const found = this.owner.checkUsage();
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
       const details = panel.createEl('details'); details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
+      if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
+    }
+    if (found) {
+      const aliases = groupNonCanonical(found.nonCanonical);
+      if (aliases.length) {
+        const details = panel.createEl('details'); details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
+        for (const group of aliases) {
+          const nested = details.createEl('details');
+          nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          this.noteLinks(nested, group.notes);
+        }
+      }
+      const broader = groupRedundant(found.redundant);
+      if (broader.length) {
+        const details = panel.createEl('details'); details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
+        for (const group of broader) {
+          const nested = details.createEl('details');
+          nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          this.noteLinks(nested, group.notes);
+        }
+      }
     }
     const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });

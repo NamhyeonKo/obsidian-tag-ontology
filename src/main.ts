@@ -1,7 +1,7 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
-import { Ontology, apply, conflicts, isIncludedNote, serialize, type Change, type Note, type RawDictionary } from 'tag-ontology';
+import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Change, type Note, type RawDictionary, type Usage } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
 import { Graph3DView, VIEW_3D } from './graph3d.ts';
 import type { NativeData } from './layer.ts';
@@ -22,6 +22,7 @@ export default class TagOntologyPlugin extends Plugin {
   model?: Ontology;
   // The parsed dictionary the model was built from; editors start from a copy of it.
   raw?: RawDictionary;
+  private checked?: { model: Ontology; usage: Usage };
   // Why the last reload failed; the sidebar shows it until one works again.
   error?: string;
   native = new NativeGraphs(this);
@@ -226,6 +227,16 @@ export default class TagOntologyPlugin extends Plugin {
       const cache = this.app.metadataCache.getFileCache(note);
       return cache ? [{ path: note.path, tags: [...new Set((getAllTags(cache) ?? []).map(tag => tag.replace(/^#/, '')))] }] : [];
     });
+  }
+
+  // The dictionary check's extra findings. Computed when the check panel asks, and kept until the model is rebuilt.
+  checkUsage(): Usage | undefined {
+    if (!this.model || !this.raw) return undefined;
+    if (this.checked?.model !== this.model) {
+      try { this.checked = { model: this.model, usage: usage(this.raw, this.notes()) }; }
+      catch { return undefined; }
+    }
+    return this.checked.usage;
   }
 
   // The core graph's data, built from the vault for the 3D view: notes, their tags and links between included notes.

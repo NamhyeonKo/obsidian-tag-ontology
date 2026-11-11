@@ -5,10 +5,11 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
+import * as checkModule from '../src/check.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
-import { apply, type Change, type RawDictionary } from 'tag-ontology';
+import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology';
 
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
@@ -103,6 +104,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
+      : specifier === './check.ts' ? { ...checkModule }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -148,6 +150,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
+    usage: undefined as Usage | undefined, checkUsage() { return owner.usage; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
     raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
     dictionaryFound: dictionaryFound === null ? undefined : dictionaryFound, created: 0, error: undefined as string | undefined,
@@ -714,6 +717,34 @@ test('revealing a tag that left the dictionary shows a notice instead of throwin
   assert.doesNotThrow(() => t.suggests[0]!.onChoose('dl'));
   assert.deepEqual(t.notices, ['That tag is no longer in the dictionary.']);
   assert.ok(!t.sidebar.all().some(el => el.text === '#overfitting'), 'the dictionary check is redrawn from the reloaded dictionary');
+});
+
+test('the dictionary check shows similar names, alias spellings and broader tags next to narrower ones', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['mls'] }]);
+  t.owner.usage = {
+    scanned: 3,
+    unregistered: [{ tag: 'mls', notes: ['A.md'], similar: ['ml'] }],
+    nonCanonical: [{ path: 'B.md', tag: 'ML', canonical: 'ml' }],
+    unused: [],
+    redundant: [{ path: 'C.md', tag: 'ml', narrower: ['dl'] }],
+  };
+  t.click('Dictionary check');
+  const texts = t.sidebar.all().map(el => el.text);
+  for (const text of ['Similar: #ml', 'Written as an alias or in another case (1)', '#ML → #ml · 1 note', 'Broader tag next to a narrower tag (1)', '#ml · 1 note']) {
+    assert.ok(texts.includes(text), text);
+  }
+});
+
+test('the dictionary check draws no extra sections without findings', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['mls'] }]);
+  t.click('Dictionary check');
+  const texts = t.sidebar.all().map(el => el.text);
+  assert.ok(texts.some(text => text.startsWith('Not in dictionary')));
+  assert.ok(!texts.some(text => text.startsWith('Similar:') || text.startsWith('Written as an alias') || text.startsWith('Broader tag next to')));
 });
 
 const tagLinks = (el: Element) => el.all().filter(child => child.classes.has('tag')).map(child => child.text);
