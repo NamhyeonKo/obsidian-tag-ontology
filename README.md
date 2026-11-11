@@ -21,7 +21,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 
 ## Features
 
-- **Build your hierarchy in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, parents, children and related tags, and delete tags. No file editing, and saving never overwrites changes made elsewhere.
+- **Build your hierarchy in the sidebar.** Add tags your notes already use or new names, edit a tag's name, description, aliases, facet, parents, children and related tags, and delete tags. No file editing, and saving never overwrites changes made elsewhere.
 - **An extension of the core graph.** Notes, note links, filters, color groups, arrows and the other core settings work as usual.
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags. Double-click it again to collapse it.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
@@ -29,7 +29,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
-- **Dictionary check.** Lists tags used in your vault but missing from the dictionary, and dictionary tags no note uses yet. It only reports and never changes anything.
+- **Dictionary check.** Lists tags used in your vault but missing from the dictionary, with similar dictionary names; dictionary tags no note uses yet; notes that write a tag as an alias or in another case; and notes that carry a broader tag next to a narrower one. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
 - **Focus (optional).** Keep the selected tag and the tags next to it (parents, children and related tags) bright while the rest fades. Options add every tag below it and its notes.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
@@ -127,7 +127,8 @@ Then try the sidebar tab: press **+** to add a tag of your own under `machine-le
 ### Editing the dictionary
 
 - **New tag** (`+` in the bar): pick a tag your notes use but the dictionary lacks, listed by how many notes use it, or type a new name. Choose parents to place it under other tags; without parents it becomes a root tag. You can add children and related tags too, from the tags already in the dictionary.
-- **Edit tag** (the pencil): change the name, description, aliases, parents, children and related tags. Press **+** after the last item of a field to add to it. Parents, children and related tags must already be in the dictionary, and related tags are saved on both sides. Renaming a tag doesn't change the notes that use it: they keep the old tag, which then shows as not in the dictionary. Changing only the case (`ml` to `ML`) keeps them linked, since tags match regardless of case.
+- **Edit tag** (the pencil): change the name, description, aliases, facet, parents, children and related tags. Press **+** after the last item of a field to add to it. Parents, children and related tags must already be in the dictionary, and related tags are saved on both sides. Renaming a tag doesn't change the notes that use it: they keep the old tag, which then shows as not in the dictionary. Changing only the case (`ml` to `ML`) keeps them linked, since tags match regardless of case.
+- **Kebab-case tag names** (a setting, off by default): a new or renamed tag must be lowercase letters and digits joined by hyphens, such as `machine-learning`, the names TOW checks. Existing names are kept.
 - **Delete** (in the edit form) asks first and shows what happens: the tag's children move under its parents, it leaves the related lists, and notes keep their tags.
 - Changes stay in the form until you press **Save**, and leaving with unsaved changes asks first. If the tags you changed were changed elsewhere in the meantime, the save stops and tells you, and your edits stay in the form.
 - The dictionary is saved one tag per line, so a save changes only the lines involved. A file written in another layout is reformatted on its first save. Its line endings (LF or CRLF) are kept.

@@ -106,7 +106,7 @@ const result = usage(raw, notes.map(note => ({
 console.log(result.unregistered);
 ```
 
-`validate()` returns errors for dictionaries the plugin cannot open, and warnings for consistency/style issues. `planChanges(raw, changes, options)` applies the same `Change` objects as the CLI, without I/O, and returns the changed dictionary, entry diff and issues.
+`validate()` returns errors for dictionaries the plugin cannot open, and warnings for consistency/style issues. `isKebabName(name)` checks one name against the `--names kebab` rule, as the plugin's edit form does. `planChanges(raw, changes, options)` applies the same `Change` objects as the CLI, without I/O, and returns the changed dictionary, entry diff and issues.
 
 ## Limits
 

@@ -21,7 +21,7 @@ Le plugin ne modifie jamais vos notes Markdown. Il écrit uniquement dans le dic
 
 ## Fonctionnalités principales
 
-- **Construisez votre hiérarchie dans la barre latérale** : Ajoutez des étiquettes déjà présentes dans vos notes ou de nouveaux termes, modifiez leur nom, description, alias, parents, enfants et liens associés, ou supprimez des étiquettes. Aucune modification manuelle de fichier, et l'enregistrement n'écrase jamais les changements externes.
+- **Construisez votre hiérarchie dans la barre latérale** : Ajoutez des étiquettes déjà présentes dans vos notes ou de nouveaux termes, modifiez leur nom, description, alias, facet, parents, enfants et liens associés, ou supprimez des étiquettes. Aucune modification manuelle de fichier, et l'enregistrement n'écrase jamais les changements externes.
 - **Extension transparente du graphique natif** : Les notes, liens entre notes, filtres, groupes de couleurs et flèches fonctionnent comme d'habitude.
 - **Hiérarchie repliable et dépliable** : Les étiquettes du dictionnaire sont initialement repliées sur leurs racines, et chaque note est reliée à son ancêtre visible le plus proche. Cliquez pour sélectionner, double-cliquez pour développer d'un niveau (les notes se repositionnent sur les étiquettes enfants plus spécifiques), et double-cliquez à nouveau pour replier.
 - **Compteur de notes cumulé (Roll-up)** : Visualisez instantanément les notes associées *directement* à une étiquette, ainsi que le total incluant toutes ses sous-étiquettes.
@@ -29,7 +29,7 @@ Le plugin ne modifie jamais vos notes Markdown. Il écrit uniquement dans le dic
 - **Trois dispositions** : Force (physique), arbre vertical et arbre horizontal.
 - **Vue 3D (Bêta)** : Explorez la même hiérarchie en trois dimensions : pivotez librement dans l'espace et cliquez sur une étiquette pour zoomer vers elle.
 - **Onglet dédié dans la barre latérale** : Recherchez par nom ou par alias, consultez les détails d'une étiquette et lancez une vérification du dictionnaire en un clic.
-- **Vérification du dictionnaire (Dictionary Check)** : Répertorie les étiquettes utilisées dans votre coffre mais absentes du dictionnaire, ainsi que les étiquettes enregistrées qu'aucune note n'utilise encore. Génère un simple rapport sans rien modifier de son propre chef.
+- **Vérification du dictionnaire (Dictionary Check)** : Répertorie les étiquettes utilisées dans votre coffre mais absentes du dictionnaire, avec les noms similaires du dictionnaire ; les étiquettes du dictionnaire qu'aucune note n'utilise encore ; les notes qui utilisent une étiquette comme alias ou avec une casse différente ; et les notes qui associent une étiquette plus générale à une autre plus spécifique. Le contrôle signale uniquement ces cas et ne modifie jamais rien.
 - **Couleur personnalisée (optionnel)** : Attribuez une couleur uniforme à toutes les étiquettes dans le graphique et le panneau latéral (la couleur d'accentuation par défaut).
 - **Mise en valeur ciblée (optionnel)** : Gardez l'étiquette sélectionnée et ses nœuds voisins lumineux pendant que le reste s'estompe.
 - **Mémorisation de l'affichage** : Les étiquettes développées et les options d'affichage sont conservées et partagées entre tous les onglets de graphique.
@@ -63,6 +63,8 @@ Pour consulter des instructions détaillées, les builds de développement et le
 Sans chemin choisi, le plugin cherche `tow/tag-dictionary.json`, puis `.tow/tag-dictionary.json`, puis `Tag-Dictionary.json`. Une nouvelle installation crée le dictionnaire au premier emplacement. Les fichiers `Tag-Dictionary.json` existants restent compatibles, tout comme les dictionnaires `.tow/` de TOW 0.5.0–0.5.1.
 
 **Obsidian Sync ne synchronise pas les dossiers cachés commençant par un point, à l'exception de `.obsidian`** ([paramètres de Sync](https://obsidian.md/help/sync/settings)). Si vous utilisez Obsidian Sync, choisissez un chemin visible pour le dictionnaire. Git et les outils de synchronisation au niveau des fichiers prennent en charge les dossiers cachés, sauf s'ils sont ignorés.
+
+**Kebab-case tag names** (désactivé par défaut) : une fois activé, le formulaire de modification n'accepte une nouvelle étiquette ou une étiquette renommée qu'en lettres minuscules et chiffres séparés par des tirets, comme `machine-learning`, le format vérifié par TOW. Les noms existants sont conservés.
 
 ## Confidentialité et Sécurité
 
