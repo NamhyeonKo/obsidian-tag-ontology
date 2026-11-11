@@ -21,7 +21,7 @@ Nunca modifica tus notas. Solo escribe en el diccionario de etiquetas (un archiv
 
 ## Características principales
 
-- **Construye tu jerarquía en la barra lateral**: Agrega etiquetas que tus notas ya usan o nuevos términos, edita nombre, descripción, alias, padres, hijos y etiquetas relacionadas, o elimina etiquetas. Sin edición manual de archivos y sin sobrescribir cambios externos al guardar.
+- **Construye tu jerarquía en la barra lateral**: Agrega etiquetas que tus notas ya usan o nuevos términos, edita nombre, descripción, alias, facet, padres, hijos y etiquetas relacionadas, o elimina etiquetas. Sin edición manual de archivos y sin sobrescribir cambios externos al guardar.
 - **Extensión nativa del gráfico principal**: Las notas, enlaces entre notas, filtros, grupos de color y flechas funcionan con total normalidad.
 - **Jerarquía de etiquetas colapsable**: Las etiquetas del diccionario comienzan colapsadas en sus raíces y cada nota se enlaza a su ancestro visible más cercano. Haz clic para seleccionar una etiqueta y doble clic para expandirla un nivel, viendo cómo las notas se desplazan hacia las etiquetas hijas más específicas. Vuelve a hacer doble clic para colapsar.
 - **Recuento de notas acumulado (Roll-up)**: Visualiza tanto las notas etiquetadas *directamente* como el total que incluye a todos sus descendientes.
@@ -29,7 +29,7 @@ Nunca modifica tus notas. Solo escribe en el diccionario de etiquetas (un archiv
 - **Tres disposiciones de gráfico**: Fuerza (Force), árbol vertical (Vertical tree) y árbol horizontal (Horizontal tree).
 - **Vista 3D (Beta)**: Explora la misma jerarquía en tres dimensiones: orbita libremente y haz clic en una etiqueta para volar hacia ella.
 - **Panel dedicado en la barra lateral**: Busca por nombre o alias, consulta los detalles de una etiqueta y ejecuta comprobaciones de integridad del diccionario en un clic.
-- **Comprobación del diccionario (Dictionary Check)**: Enumera etiquetas utilizadas en tu bóveda pero ausentes en el diccionario, y etiquetas registradas que ninguna nota utiliza aún. Solo genera un informe y nunca altera nada por sí mismo.
+- **Comprobación del diccionario (Dictionary Check)**: Enumera las etiquetas utilizadas en tu bóveda pero ausentes del diccionario, junto con nombres similares del diccionario; las etiquetas del diccionario que aún no usa ninguna nota; las notas que usan una etiqueta como alias o con mayúsculas y minúsculas distintas; y las notas que incluyen una etiqueta más amplia junto a otra más específica. Solo informa y nunca modifica nada.
 - **Colores personalizados (opcional)**: Asigna un color unificado a todas las etiquetas en el gráfico y la barra lateral (por defecto, el color de acento).
 - **Enfoque resaltado (opcional)**: Mantén la etiqueta seleccionada y sus nodos vecinos (padres, hijos y relacionados) iluminados mientras el resto se atenúa.
 - **Memoria de estado de vista**: Las etiquetas expandidas y las opciones de visualización se guardan y comparten en todas las pestañas de gráfico.
@@ -63,6 +63,8 @@ Para obtener instrucciones completas paso a paso, compilaciones de desarrollo y 
 Sin una ruta elegida, el plugin busca `tow/tag-dictionary.json`, después `.tow/tag-dictionary.json` y, por último, `Tag-Dictionary.json`. Una instalación nueva crea el diccionario en la primera ubicación. Los archivos `Tag-Dictionary.json` existentes siguen funcionando y también se leen los diccionarios `.tow/` de TOW 0.5.0–0.5.1.
 
 **Obsidian Sync no sincroniza las carpetas ocultas que empiezan por punto, excepto `.obsidian`** ([ajustes de Sync](https://obsidian.md/help/sync/settings)). Si usas Obsidian Sync, elige una ruta visible para el diccionario. Git y las herramientas de sincronización por archivos incluyen las carpetas ocultas, salvo que estén excluidas.
+
+**Kebab-case tag names** (desactivado de forma predeterminada): al activarlo, el formulario de edición solo acepta etiquetas nuevas o renombradas con letras minúsculas y números unidos por guiones, como `machine-learning`, el formato que comprueba TOW. Se conservan los nombres existentes.
 
 ## Privacidad y Seguridad
 

@@ -1,6 +1,6 @@
 # tag-ontology CLI
 
-> **Contract: `schemaVersion` 1, for `tag-ontology` 0.2.0.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
+> **Contract: `schemaVersion` 1, for `tag-ontology` 0.2.1.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
 
 `tag-ontology` checks, queries and edits a tag dictionary (`Tag-Dictionary.json`) against the Markdown notes of a vault. It applies the same rules as the Obsidian plugin in this repository, because both use the `tag-ontology` package.
 
