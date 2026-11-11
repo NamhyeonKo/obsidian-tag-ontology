@@ -29,6 +29,7 @@ node packages/tag-ontology/dist/cli/main.js check --root /path/to/vault --json
 | `scan [paths…]` | Read frontmatter, tags, body tags and headings |
 | `usage [paths…]` | Find unregistered, non-canonical, unused and redundant tags |
 | `show <tag>` | Show hierarchy, note counts and an editable draft; `--notes` lists paths |
+| `suggest <term>` | Suggest matching tags; `--limit` caps results (default 10) |
 | `subset <tag…>` | Print selected tags and their broader ancestors as a dictionary |
 | `plan <changes.json>` | Preview changes in memory and return the dictionary hash |
 | `apply <changes.json> --base <hash>` | Write validated changes only while the hash still matches |

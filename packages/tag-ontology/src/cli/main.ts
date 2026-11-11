@@ -13,7 +13,7 @@ import { readChanges } from './changes.ts';
 import { overlayIssues, readOverlay } from './overlay.ts';
 import { show, type NoteSources } from './show.ts';
 import { subset } from './subset.ts';
-import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
+import { checkText, editText, scanText, showText, suggestText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
   const args = argumentsOf(process.argv.slice(2));
@@ -78,6 +78,11 @@ function run(): void {
     const result = subset(new Ontology(file.raw, []), file.raw, rest);
     if (values.json) output(issues, { dictionary: result });
     else process.stdout.write(serialize(result));
+    return;
+  }
+  if (command === 'suggest') {
+    const result = new Ontology(file.raw, []).suggest(rest[0]!, args.limit);
+    output([], { query: rest[0], suggestions: result }, 0, () => suggestText(result));
     return;
   }
   const all = scan(root, { exclude });

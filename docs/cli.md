@@ -14,6 +14,7 @@ npx tag-ontology <command> [arguments] [options]
 | [`scan [paths…]`](#scan) | Reads notes: frontmatter, tags, body tags, headings | nothing |
 | [`usage [paths…]`](#usage) | Compares the tags on notes with the dictionary | nothing |
 | [`show <tag>`](#show) | One tag: its place in the hierarchy, notes, and an editable draft | nothing |
+| [`suggest <term>`](#suggest) | Suggest matching tags | nothing |
 | [`subset <tag…>`](#subset) | Prints selected tags and their broader ancestors as a dictionary | nothing |
 | [`plan <changes.json>`](#plan) | Applies changes in memory and reports the result | nothing |
 | [`apply <changes.json> --base <hash>`](#apply) | Writes the result of `plan` if the dictionary hasn't changed | the dictionary |
@@ -29,6 +30,7 @@ Only `--json` output, issue codes and exit codes are a contract. The text printe
 | `--exclude <glob>` | `scan`, `usage`, `show` | Skip notes. Repeatable. See [Notes](#notes). |
 | `--tags-file <file>` | `scan`, `usage`, `show` | JSON object mapping note paths to `{ "tags": string[] }`; repeatable. File paths are relative to `--root` unless absolute. |
 | `--names <rule>` | all but `scan` | Tag name rule for warnings: `obsidian` (default) or `kebab`. See [`name-format`](#issue-codes). |
+| `--limit <n>` | `suggest` | Maximum results. Positive integer; default: 10. |
 | `--strict` | `check`, `usage`, `plan`, `apply` | Treat warnings, and `usage` findings, as failures (exit code 1). |
 | `--json` | all | Print one JSON document on stdout. See [JSON output](#json-output). |
 | `--help`, `--version` | — | Print help or the version, exit 0. |
@@ -245,6 +247,33 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 - `notePaths`: only with `--notes`. Notes with the tag or a descendant, or only the tag with `--exact`.
 - `noteMatches`: only with `--notes`, in `notePaths` order. Each note has matching dictionary tags (the dictionary key, ignoring case) and their source: `tags`, `bodyTags` or `overlay`. Matches are sorted by tag, then by source in that order; with `--exact`, only the queried tag is included.
 - `draft`: the tag as the edit form sees it, with `children` and two-way `related` filled in. Change it and put it in an `edit` change.
+
+### suggest
+
+```sh
+tag-ontology suggest <term> [--limit N] [--json]
+```
+
+Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name substring, alias prefix, then alias substring. Each tag appears once. `--limit` must be a positive integer and defaults to 10. No matches is successful and returns an empty `suggestions` list. If the dictionary has errors, `suggest` reports them and exits 1.
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "suggest",
+  "ok": true,
+  "issues": [],
+  "query": "ont",
+  "suggestions": [
+    { "tag": "ontology" },
+    { "tag": "wiki", "alias": "Ontology" }
+  ]
+}
+```
+
+- `query`: the search term as supplied.
+- `suggestions`: matching tags in rank order; `alias` is present only when the match was through an alias.
+
+Without `--json`, the CLI prints one tag per line, with the matched alias in parentheses when applicable. An empty result prints `No matching tags.`
 
 ### subset
 
