@@ -34,7 +34,7 @@ node packages/tag-ontology/dist/cli/main.js check --root /path/to/vault --json
 | `plan <changes.json>` | Preview changes in memory and return the dictionary hash |
 | `apply <changes.json> --base <hash>` | Write validated changes only while the hash still matches |
 
-The vault root defaults to the current directory; the dictionary defaults to `Tag-Dictionary.json`. `--exclude` globs are repeatable for `scan`, `usage` and `show`. Repeat `--tags-file <file>` on `scan`, `usage` or `show` to add overlay tags from JSON path-to-tags mappings. Folder conventions are supplied by the caller. `scan` does not need a dictionary.
+The vault root defaults to the current directory; without `--dictionary`, the CLI uses the first dictionary it finds: `tow/tag-dictionary.json`, `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`. `--exclude` globs are repeatable for `scan`, `usage` and `show`. Repeat `--tags-file <file>` on `scan`, `usage` or `show` to add overlay tags from JSON path-to-tags mappings. Folder conventions are supplied by the caller. `scan` does not need a dictionary.
 
 `--json` prints one document with `schemaVersion: 1`, `command`, `ok` and `issues`, followed by command-specific fields. Exit codes are 0 (success), 1 (problems found), 2 (wrong usage), 3 (dictionary changed) and 70 (internal error).
 
