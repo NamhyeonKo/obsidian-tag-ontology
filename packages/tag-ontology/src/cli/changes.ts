@@ -12,9 +12,10 @@ function isChange(value: unknown): value is Change {
   if (!onlyKeys(value, value.kind === 'add' ? ['kind', 'draft'] : ['kind', 'tag', 'draft'])) return false;
   if (value.kind === 'edit' && typeof value.tag !== 'string') return false;
   const draft = value.draft;
-  return isRecord(draft) && onlyKeys(draft, ['name', 'description', 'aliases', 'parents', 'children', 'related'])
+  return isRecord(draft) && onlyKeys(draft, ['name', 'description', 'aliases', 'parents', 'children', 'related', 'facet'])
     && typeof draft.name === 'string' && typeof draft.description === 'string'
-    && isStringList(draft.aliases) && isStringList(draft.parents) && isStringList(draft.children) && isStringList(draft.related);
+    && isStringList(draft.aliases) && isStringList(draft.parents) && isStringList(draft.children) && isStringList(draft.related)
+    && (!Object.hasOwn(draft, 'facet') || typeof draft.facet === 'string' || draft.facet === null);
 }
 
 export function readChanges(file: string): Change[] {
@@ -28,7 +29,7 @@ export function readChanges(file: string): Change[] {
   }
   const changes: Change[] = [];
   for (const [index, value] of raw.changes.entries()) {
-    if (!isChange(value)) throw new UsageError(`${file}: changes[${index}] has an invalid shape or unknown fields. Every draft field is required.`);
+    if (!isChange(value)) throw new UsageError(`${file}: changes[${index}] has an invalid shape or unknown fields. Every draft field except facet is required.`);
     changes.push(value);
   }
   return changes;

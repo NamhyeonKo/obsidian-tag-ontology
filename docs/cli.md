@@ -1,6 +1,6 @@
 # tag-ontology CLI
 
-> **Contract: `schemaVersion` 1, for `tag-ontology` 0.2.1.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
+> **Contract: `schemaVersion` 1, for `tag-ontology` 0.3.0.** JSON fields, issue codes and exit codes are versioned below. Breaking JSON changes require a new schema version; additive fields do not. Contract changes are documented here before the code changes.
 
 `tag-ontology` checks, queries and edits a tag dictionary (`Tag-Dictionary.json`) against the Markdown notes of a vault. It applies the same rules as the Obsidian plugin in this repository, because both use the `tag-ontology` package.
 
@@ -14,6 +14,7 @@ npx tag-ontology <command> [arguments] [options]
 | [`scan [paths…]`](#scan) | Reads notes: frontmatter, tags, body tags, headings | nothing |
 | [`usage [paths…]`](#usage) | Compares the tags on notes with the dictionary | nothing |
 | [`show <tag>`](#show) | One tag: its place in the hierarchy, notes, and an editable draft | nothing |
+| [`suggest <term>`](#suggest) | Suggest matching tags | nothing |
 | [`subset <tag…>`](#subset) | Prints selected tags and their broader ancestors as a dictionary | nothing |
 | [`plan <changes.json>`](#plan) | Applies changes in memory and reports the result | nothing |
 | [`apply <changes.json> --base <hash>`](#apply) | Writes the result of `plan` if the dictionary hasn't changed | the dictionary |
@@ -25,10 +26,11 @@ Only `--json` output, issue codes and exit codes are a contract. The text printe
 | Option | Commands | Meaning |
 | --- | --- | --- |
 | `--root <dir>` | all | Vault folder. Default: the current directory. |
-| `--dictionary <file>` | all but `scan` | Dictionary file, relative to `--root` unless absolute. Default: `Tag-Dictionary.json`. |
+| `--dictionary <file>` | all but `scan` | Dictionary file, relative to `--root` unless absolute. By default, the CLI uses the first file found in this order: `tow/tag-dictionary.json`, `.tow/tag-dictionary.json`, `Tag-Dictionary.json`. This shared order was introduced in 0.3.0; previously, the default was `Tag-Dictionary.json`. |
 | `--exclude <glob>` | `scan`, `usage`, `show` | Skip notes. Repeatable. See [Notes](#notes). |
 | `--tags-file <file>` | `scan`, `usage`, `show` | JSON object mapping note paths to `{ "tags": string[] }`; repeatable. File paths are relative to `--root` unless absolute. |
 | `--names <rule>` | all but `scan` | Tag name rule for warnings: `obsidian` (default) or `kebab`. See [`name-format`](#issue-codes). |
+| `--limit <n>` | `suggest` | Maximum results. Positive integer; default: 10. |
 | `--strict` | `check`, `usage`, `plan`, `apply` | Treat warnings, and `usage` findings, as failures (exit code 1). |
 | `--json` | all | Print one JSON document on stdout. See [JSON output](#json-output). |
 | `--help`, `--version` | — | Print help or the version, exit 0. |
@@ -246,6 +248,33 @@ Finds `<tag>` by name, then by name ignoring case, then by alias ignoring case. 
 - `noteMatches`: only with `--notes`, in `notePaths` order. Each note has matching dictionary tags (the dictionary key, ignoring case) and their source: `tags`, `bodyTags` or `overlay`. Matches are sorted by tag, then by source in that order; with `--exact`, only the queried tag is included.
 - `draft`: the tag as the edit form sees it, with `children` and two-way `related` filled in. Change it and put it in an `edit` change.
 
+### suggest
+
+```sh
+tag-ontology suggest <term> [--limit N] [--json]
+```
+
+Suggests dictionary tags matching `<term>`, ordered by tag-name prefix, tag-name substring, alias prefix, then alias substring. Each tag appears once. `--limit` must be a positive integer and defaults to 10. No matches is successful and returns an empty `suggestions` list. If the dictionary has errors, `suggest` reports them and exits 1.
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "suggest",
+  "ok": true,
+  "issues": [],
+  "query": "ont",
+  "suggestions": [
+    { "tag": "ontology" },
+    { "tag": "wiki", "alias": "Ontology" }
+  ]
+}
+```
+
+- `query`: the search term as supplied.
+- `suggestions`: matching tags in rank order; `alias` is present only when the match was through an alias.
+
+Without `--json`, the CLI prints one tag per line, with the matched alias in parentheses when applicable. An empty result prints `No matching tags.`
+
 ### subset
 
 ```sh
@@ -331,7 +360,7 @@ The file is written in the dictionary layout the plugin uses: one entry per line
 }
 ```
 
-The shape is the `Change` type exported by `tag-ontology`, which the plugin's edit form also produces. `schemaVersion` is optional; any value but 1 is rejected. Unknown keys are rejected too, so a typo such as `parent` fails (exit 2) instead of being ignored. Every `draft` field is required.
+The shape is the `Change` type exported by `tag-ontology`, which the plugin's edit form also produces. `schemaVersion` is optional; any value but 1 is rejected. Unknown keys are rejected too, so a typo such as `parent` fails (exit 2) instead of being ignored. Every `draft` field except `facet` is required. The optional `facet` is a string to set it, `null` to remove it, or absent to keep the current value.
 
 Each change applies to the result of the one before:
 
@@ -339,4 +368,4 @@ Each change applies to the result of the one before:
 - `edit`: the full draft replaces the tag's description, aliases and parents. A different `name` renames the tag and every reference to it. Children added or removed in the draft gain or lose this tag as a parent. `related` is rewritten only if the set changed. Start from `show --json`'s `draft` so `children` and `related` are complete.
 - `delete`: removes the entry. Its children move up to its parents, and references to it are removed.
 
-Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. A change can't set them, so `facet` is edited in the file itself or in the plugin's edit form.
+Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. The draft's optional `facet` field can be used to set or remove `facet`.

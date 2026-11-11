@@ -28,6 +28,31 @@ test('plan applies changes in memory, reports the diff and the base hash, and wr
   assert.equal(readFileSync(dictionary, 'utf8'), before);
 });
 
+test('plan accepts string or null facets and rejects other facet values', t => {
+  const vault = copyOfFixture(t);
+  for (const facet of ['language', null]) {
+    const run = cli(['plan', write(vault, { changes: [{ kind: 'edit', tag: 'ai', draft: draft({ name: 'ai', facet }) }] }), '--json'], vault);
+    assert.equal(run.code, 0);
+  }
+  const invalid = cli(['plan', write(vault, { changes: [{ kind: 'edit', tag: 'ai', draft: draft({ name: 'ai', facet: 3 }) }] }), '--json'], vault);
+  assert.equal(invalid.code, 2);
+  assert.equal(invalid.stdout, '');
+});
+
+test('a show JSON draft with a facet can be planned unchanged', t => {
+  const vault = copyOfFixture(t), dictionaryPath = join(vault, 'Tag-Dictionary.json');
+  const dictionary = JSON.parse(readFileSync(dictionaryPath, 'utf8')) as Record<string, Record<string, unknown>>;
+  dictionary['machine-learning']!.facet = 'field';
+  writeFileSync(dictionaryPath, JSON.stringify(dictionary));
+  const shown = json(['show', 'machine-learning'], vault);
+  assert.equal(shown.code, 0);
+  assert.equal((shown.doc.draft as Record<string, unknown>).facet, 'field');
+  const file = write(vault, { changes: [{ kind: 'edit', tag: 'machine-learning', draft: shown.doc.draft }] });
+  const planned = json(['plan', file], vault);
+  assert.equal(planned.code, 0);
+  assert.deepEqual(planned.doc.diff, []);
+});
+
 test('a change that cannot apply is an invalid-change, exit 1, with no diff', t => {
   const vault = copyOfFixture(t);
   const run = json(['plan', write(vault, { changes: [{ kind: 'delete', tag: 'gone' }] })], vault);
