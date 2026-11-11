@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { Ontology } from '../core/ontology.ts';
+import { Ontology, type Suggestion } from '../core/ontology.ts';
 import { planChanges } from '../core/plan.ts';
 import { usage } from '../core/usage.ts';
 import { serialize } from '../core/dictionary.ts';
@@ -81,8 +81,15 @@ function run(): void {
     return;
   }
   if (command === 'suggest') {
-    const result = new Ontology(file.raw, []).suggest(rest[0]!, args.limit);
-    output([], { query: rest[0], suggestions: result }, 0, () => suggestText(result));
+    // A term with no match is shortened one character at a time, down to three, so a typo still gets suggestions.
+    const model = new Ontology(file.raw, []), chars = Array.from(rest[0]!.trim());
+    let result: Suggestion[] = [], matched: string | null = null;
+    for (let length = chars.length; length >= Math.min(3, chars.length) && length > 0 && !result.length; length--) {
+      const term = chars.slice(0, length).join('');
+      result = model.suggest(term, args.limit);
+      if (result.length) matched = term;
+    }
+    output([], { query: rest[0], matched, suggestions: result }, 0, () => suggestText(result));
     return;
   }
   const all = scan(root, { exclude });

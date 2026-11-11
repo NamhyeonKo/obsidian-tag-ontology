@@ -122,7 +122,7 @@ test('suggest returns ranked tag and alias matches and honors --limit', t => {
   assert.equal(raw.code, 0);
   const doc = JSON.parse(raw.stdout) as Record<string, unknown>;
   assert.deepEqual(doc, {
-    schemaVersion: 1, command: 'suggest', ok: true, issues: [], query: 'ont',
+    schemaVersion: 1, command: 'suggest', ok: true, issues: [], query: 'ont', matched: 'ont',
     suggestions: [
       { tag: 'ontology' }, { tag: 'ontology-wiki' }, { tag: 'tag-ontology' },
       { tag: 'wiki', alias: 'Ontology' }, { tag: 'concept', alias: 'About ontology' },
@@ -139,10 +139,21 @@ test('suggest returns ranked tag and alias matches and honors --limit', t => {
   assert.equal((json(['suggest', 'ont'], vault).doc.suggestions as unknown[]).length, 10);
 });
 
+test('suggest shortens a term with no match one character at a time, down to three', () => {
+  const typo = json(['suggest', 'machinne-lerning']);
+  assert.equal(typo.code, 0);
+  assert.equal(typo.doc.matched, 'machin');
+  assert.deepEqual(typo.doc.suggestions, [{ tag: 'machine-learning' }]);
+  assert.deepEqual(json(['suggest', 'aix']).doc, {
+    schemaVersion: 1, command: 'suggest', ok: true, issues: [], query: 'aix', matched: null, suggestions: [],
+  });
+});
+
 test('suggest returns no matches successfully and rejects non-positive integer limits', () => {
   const empty = json(['suggest', 'not-a-tag']);
   assert.equal(empty.code, 0);
   assert.deepEqual(empty.doc.suggestions, []);
+  assert.equal(empty.doc.matched, null);
   assert.equal(cli(['suggest', 'not-a-tag']).stdout.trim(), 'No matching tags.');
   for (const limit of ['0', 'x', '1e2']) {
     const run = cli(['suggest', 'ont', '--limit', limit, '--json']);
