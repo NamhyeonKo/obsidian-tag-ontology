@@ -331,7 +331,7 @@ The file is written in the dictionary layout the plugin uses: one entry per line
 }
 ```
 
-The shape is the `Change` type exported by `tag-ontology`, which the plugin's edit form also produces. `schemaVersion` is optional; any value but 1 is rejected. Unknown keys are rejected too, so a typo such as `parent` fails (exit 2) instead of being ignored. Every `draft` field is required.
+The shape is the `Change` type exported by `tag-ontology`, which the plugin's edit form also produces. `schemaVersion` is optional; any value but 1 is rejected. Unknown keys are rejected too, so a typo such as `parent` fails (exit 2) instead of being ignored. Every `draft` field except `facet` is required. The optional `facet` is a string to set it, `null` to remove it, or absent to keep the current value.
 
 Each change applies to the result of the one before:
 
@@ -339,4 +339,4 @@ Each change applies to the result of the one before:
 - `edit`: the full draft replaces the tag's description, aliases and parents. A different `name` renames the tag and every reference to it. Children added or removed in the draft gain or lose this tag as a parent. `related` is rewritten only if the set changed. Start from `show --json`'s `draft` so `children` and `related` are complete.
 - `delete`: removes the entry. Its children move up to its parents, and references to it are removed.
 
-Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. A change can't set them, so `facet` is edited in the file itself or in the plugin's edit form.
+Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. The draft's optional `facet` field can be used to set or remove `facet`.

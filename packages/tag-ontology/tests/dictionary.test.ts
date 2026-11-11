@@ -25,8 +25,9 @@ const raw: RawDictionary = {
   loose: { description: '' },
 };
 
-test('draftOf lists children and related from both sides', () => {
-  assert.deepEqual(draftOf(raw, 'ml'), { name: 'ml', description: '', aliases: [], parents: ['cs'], children: ['ai-sec', 'dl'], related: ['py'] });
+test('draftOf lists children and related from both sides and includes a set facet', () => {
+  assert.deepEqual(draftOf(raw, 'ml'), { name: 'ml', description: '', aliases: [], parents: ['cs'], children: ['ai-sec', 'dl'], related: ['py'], facet: 'x' });
+  assert.equal(Object.hasOwn(draftOf(raw, 'loose'), 'facet'), false);
 });
 
 test('rename moves the key and every reference and keeps unknown fields', () => {
@@ -51,6 +52,18 @@ test('an unplaced entry stays unplaced unless parents are set', () => {
   assert.equal('broader' in apply(raw, { kind: 'edit', tag: 'loose', draft: { ...draftOf(raw, 'loose'), description: 'd' } }).loose!, false);
 });
 
+test('edit sets, removes, or keeps facet according to the draft', () => {
+  const set = apply(raw, { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), facet: 'language' } });
+  assert.equal(set.ml!.facet, 'language');
+  for (const facet of [null, '']) {
+    const removed = apply(raw, { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), facet } });
+    assert.equal('facet' in removed.ml!, false);
+  }
+  const withoutFacet = { ...draftOf(raw, 'ml') };
+  delete withoutFacet.facet;
+  assert.equal(apply(raw, { kind: 'edit', tag: 'ml', draft: withoutFacet }).ml!.facet, 'x');
+});
+
 test('edited fields keep their order, new ones follow and empty aliases are left out', () => {
   const next = apply(raw, { kind: 'edit', tag: 'ml', draft: { ...draftOf(raw, 'ml'), description: 'd', aliases: ['ML'] } });
   assert.deepEqual(Object.keys(next.ml!), ['description', 'broader', 'facet', 'aliases']);
@@ -61,6 +74,12 @@ test('edited fields keep their order, new ones follow and empty aliases are left
 test('add writes a root when no parent is chosen and leaves empty aliases out', () => {
   assert.deepEqual(apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'book' } }).book, { description: '', broader: [] });
   assert.deepEqual(Object.keys(apply(raw, { kind: 'add', draft: { ...emptyDraft(['cs']), name: 'b', aliases: ['B'] } }).b!), ['aliases', 'description', 'broader']);
+});
+
+test('add writes a facet after the existing fields', () => {
+  const added = apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'language', facet: 'language' } }).language!;
+  assert.equal(added.facet, 'language');
+  assert.deepEqual(Object.keys(added), ['description', 'broader', 'facet']);
 });
 
 test('add links children and related too, the way edit does', () => {
@@ -114,6 +133,8 @@ test('changedFields counts fields, not items', () => {
   assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), aliases: ['a', 'b'], related: [] }), 2);
   assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), children: ['dl', 'ai-sec'] }), 0);
   assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), name: 'm', description: 'd' }), 2);
+  assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), facet: 'language' }), 1);
+  assert.equal(changedFields(raw, 'ml', { ...draftOf(raw, 'ml'), facet: 'x' }), 0);
 });
 
 test('deletion preview names where children go', () => {
