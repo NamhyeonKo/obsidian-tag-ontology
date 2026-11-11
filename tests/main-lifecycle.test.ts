@@ -37,7 +37,7 @@ interface Main {
   native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
-  saveChange(change: Change, base: RawDictionary, facet?: string): Promise<boolean>; createDictionary(): Promise<boolean>;
+  saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
   onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
@@ -842,14 +842,11 @@ test('saveChange writes the applied change in the one-entry-per-line format', as
   assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
 });
 
-test('saveChange writes a facet from the edit form onto the saved entry, and an empty one removes it', async () => {
+test('saveChange applies the edit draft facet to the saved entry', async () => {
   const t = await withBase();
-  assert.equal(await t.plugin.saveChange(describe('New'), t.plugin.raw!, 'language'), true);
-  const withFacet = apply(base, describe('New'));
-  withFacet.child!.facet = 'language';
-  assert.equal(t.vault.text, serialize(withFacet));
-  assert.equal(await t.plugin.saveChange(describe('New'), withFacet, ''), true);
-  assert.equal(t.vault.text, serialize(apply(base, describe('New'))));
+  const change: Change = { kind: 'edit', tag: 'child', draft: { ...draftOf(base, 'child'), facet: 'language' } };
+  assert.equal(await t.plugin.saveChange(change, t.plugin.raw!), true);
+  assert.equal(t.vault.text, serialize(apply(base, change)));
 });
 
 test('a visible dictionary still goes through the Vault API', async () => {
