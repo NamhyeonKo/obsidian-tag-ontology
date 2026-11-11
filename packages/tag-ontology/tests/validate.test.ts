@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validate, type Issue } from '../src/core/validate.ts';
+import { isKebabName, validate, type Issue } from '../src/core/validate.ts';
 
 // What an issue points at, without the message, which is for people and may change.
 const where = (issues: Issue[]) => issues.map(({ message, ...rest }) => {
@@ -166,4 +166,9 @@ test('a 10,000-level chain validates in about linear time', () => {
   const start = performance.now();
   assert.deepEqual(validate(chain), []);
   assert.ok(performance.now() - start < 1000, `took ${Math.round(performance.now() - start)} ms`);
+});
+
+test('isKebabName accepts only lowercase words and digits joined by single hyphens', () => {
+  for (const name of ['ml', 'machine-learning', 'cve-2026-41266']) assert.ok(isKebabName(name), name);
+  for (const name of ['', 'ML', 'Python', 'machine_learning', 'a--b', '-a', 'a-', 'a/b']) assert.ok(!isKebabName(name), name);
 });

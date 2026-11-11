@@ -247,13 +247,13 @@ export default class TagOntologyPlugin extends Plugin {
 
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
-  async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
+  async saveChange(change: Change, base: RawDictionary, facet?: string): Promise<boolean> {
     const path = await this.resolveDictionary();
     if (!isHiddenPath(path)) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
       try {
-        await this.app.vault.process(file, (text) => this.changedText(text, change, base));
+        await this.app.vault.process(file, (text) => this.changedText(text, change, base, facet));
         return true;
       } catch (error) {
         new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
@@ -263,7 +263,7 @@ export default class TagOntologyPlugin extends Plugin {
     try {
       if (!await this.app.vault.adapter.exists(path)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
       const adapter = this.app.vault.adapter;
-      const text = await adapter.read(path), out = this.changedText(text, change, base);
+      const text = await adapter.read(path), out = this.changedText(text, change, base, facet);
       // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
       await adapter.write(path, out);
       try {
@@ -277,10 +277,15 @@ export default class TagOntologyPlugin extends Plugin {
     }
   }
 
-  private changedText(text: string, change: Change, base: RawDictionary): string {
+  private changedText(text: string, change: Change, base: RawDictionary, facet?: string): string {
     const latest = JSON.parse(text) as RawDictionary;
     if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
     const next = apply(latest, change);
+    // A Change can't set facet (docs/cli.md); the edit form's facet goes onto the saved entry, and '' removes it.
+    if (facet !== undefined && change.kind !== 'delete') {
+      const entry = next[change.draft.name];
+      if (entry) { if (facet) entry.facet = facet; else delete entry.facet; }
+    }
     // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
     new Ontology(next, []);
     // A file kept with CRLF line endings stays that way, so a save still changes only the lines it touches.
@@ -407,6 +412,7 @@ const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dic
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
+const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
@@ -424,6 +430,7 @@ class OntologySettingsTab extends PluginSettingTab {
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
       { name: 'Dictionary path', desc: pathDescription(this.owner), render: (setting) => { this.dictionaryPathSetting(setting); } },
+      { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
       { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
@@ -526,6 +533,9 @@ class OntologySettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     this.dictionaryPathSetting(new Setting(containerEl));
+    new Setting(containerEl).setName(KEBAB_NAMES.name).setDesc(KEBAB_NAMES.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.kebabNames).onChange(value => this.setControlValue('kebabNames', value));
+    });
     new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
     });

@@ -152,10 +152,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     usage: undefined as Usage | undefined, checkUsage() { return owner.usage; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
-    raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
+    raw, changes: [] as Change[], facets: [] as (string | undefined)[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
     dictionaryFound: dictionaryFound === null ? undefined : dictionaryFound, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
-    async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
+    async saveChange(change: Change, _base?: RawDictionary, facet?: string): Promise<boolean> { owner.changes.push(change); owner.facets.push(facet); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
@@ -996,7 +996,7 @@ const byClass = (t: { sidebar: Element }, cls: string) => t.sidebar.all().find(e
 test('Edit opens a labeled form with the tag\'s values and no note lists', async () => {
   const t = await setup();
   t.click('#cs'); t.click('Edit tag');
-  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Parents', 'Children', 'Related']);
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Facet', 'Parents', 'Children', 'Related']);
   assert.equal(field(t, 'Name').value, 'cs');
   assert.deepEqual(tagLinks(t.sidebar), ['#crypto', '#ml']);
   assert.ok(!t.sidebar.all().some(el => el.tag === 'summary'));
@@ -1134,7 +1134,7 @@ test('Add sends an add change with no parent and shows the new tag', async () =>
   const t = await setup();
   t.click('New tag');
   assert.ok(navButton(t, 'New tag').classes.has('is-active'));
-  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Children', 'Related', 'Description', 'Aliases']);
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Children', 'Related', 'Description', 'Aliases', 'Facet']);
   type(field(t, 'Name'), '#book');
   t.click('Add'); await settle();
   assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'book', description: '', aliases: [], parents: [], children: [], related: [] } }]);
@@ -1423,4 +1423,47 @@ test('text typed in a tag picker survives a redraw, and choosing a tag or switch
   type(input(), 'se');
   t.click('Add a parent'); t.click('Add a related tag');
   assert.equal(input().value, '');
+});
+
+test('with kebab-case names on, the form refuses other new and renamed names', async () => {
+  const t = await setup({ kebabNames: true });
+  t.click('#cs'); t.click('Edit tag');
+  type(field(t, 'Name'), 'MachineLearning');
+  assert.equal(button(t, 'Save').disabled, true);
+  assert.ok(t.sidebar.all().some(el => el.text === 'Use lowercase letters and digits joined by hyphens (kebab-case tag names are on in settings).'));
+  type(field(t, 'Name'), 'machine-learning');
+  assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('without the kebab-case setting, the form accepts other valid names', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  type(field(t, 'Name'), 'MachineLearning');
+  assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('the edit form saves a facet next to the change, and only when it changed', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.equal(field(t, 'Facet').value, '');
+  type(field(t, 'Facet'), ' language ');
+  assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  t.click('Edit tag');
+  type(field(t, 'Description'), 'Computer science');
+  t.click('Save'); await settle();
+  assert.deepEqual(t.owner.facets, ['language', undefined]);
+});
+
+test('the edit form saves a facet next to the change, and only when it changed', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.equal(field(t, 'Facet').value, '');
+  type(field(t, 'Facet'), ' language ');
+  assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  t.click('Edit tag');
+  type(field(t, 'Description'), 'Computer science');
+  t.click('Save'); await settle();
+  assert.deepEqual(t.owner.facets, ['language', undefined]);
 });
