@@ -5,10 +5,11 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
+import * as checkModule from '../src/check.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
-import { apply, type Change, type RawDictionary } from 'tag-ontology';
+import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology';
 
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
@@ -103,6 +104,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
+      : specifier === './check.ts' ? { ...checkModule }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -148,11 +150,12 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
+    usage: undefined as Usage | undefined, checkUsage() { return owner.usage; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
-    raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
+    raw, changes: [] as Change[], facets: [] as (string | undefined)[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
     dictionaryFound: dictionaryFound === null ? undefined : dictionaryFound, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
-    async saveChange(change: Change): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
+    async saveChange(change: Change, _base?: RawDictionary, facet?: string): Promise<boolean> { owner.changes.push(change); owner.facets.push(facet); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
@@ -716,6 +719,34 @@ test('revealing a tag that left the dictionary shows a notice instead of throwin
   assert.ok(!t.sidebar.all().some(el => el.text === '#overfitting'), 'the dictionary check is redrawn from the reloaded dictionary');
 });
 
+test('the dictionary check shows similar names, alias spellings and broader tags next to narrower ones', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['mls'] }]);
+  t.owner.usage = {
+    scanned: 3,
+    unregistered: [{ tag: 'mls', notes: ['A.md'], similar: ['ml'] }],
+    nonCanonical: [{ path: 'B.md', tag: 'ML', canonical: 'ml' }],
+    unused: [],
+    redundant: [{ path: 'C.md', tag: 'ml', narrower: ['dl'] }],
+  };
+  t.click('Dictionary check');
+  const texts = t.sidebar.all().map(el => el.text);
+  for (const text of ['Similar: #ml', 'Written as an alias or in another case (1)', '#ML → #ml · 1 note', 'Broader tag next to a narrower tag (1)', '#ml · 1 note']) {
+    assert.ok(texts.includes(text), text);
+  }
+});
+
+test('the dictionary check draws no extra sections without findings', async () => {
+  const t = await setup();
+  t.controller.attach();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['mls'] }]);
+  t.click('Dictionary check');
+  const texts = t.sidebar.all().map(el => el.text);
+  assert.ok(texts.some(text => text.startsWith('Not in dictionary')));
+  assert.ok(!texts.some(text => text.startsWith('Similar:') || text.startsWith('Written as an alias') || text.startsWith('Broader tag next to')));
+});
+
 const tagLinks = (el: Element) => el.all().filter(child => child.classes.has('tag')).map(child => child.text);
 
 test('a sidebar mounted before the first dictionary load does not claim the dictionary is missing', async () => {
@@ -965,7 +996,7 @@ const byClass = (t: { sidebar: Element }, cls: string) => t.sidebar.all().find(e
 test('Edit opens a labeled form with the tag\'s values and no note lists', async () => {
   const t = await setup();
   t.click('#cs'); t.click('Edit tag');
-  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Parents', 'Children', 'Related']);
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Description', 'Aliases', 'Facet', 'Parents', 'Children', 'Related']);
   assert.equal(field(t, 'Name').value, 'cs');
   assert.deepEqual(tagLinks(t.sidebar), ['#crypto', '#ml']);
   assert.ok(!t.sidebar.all().some(el => el.tag === 'summary'));
@@ -1103,7 +1134,7 @@ test('Add sends an add change with no parent and shows the new tag', async () =>
   const t = await setup();
   t.click('New tag');
   assert.ok(navButton(t, 'New tag').classes.has('is-active'));
-  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Children', 'Related', 'Description', 'Aliases']);
+  assert.deepEqual(t.sidebar.all().filter(el => el.tag === 'label').map(el => el.text), ['Name', 'Parents', 'Children', 'Related', 'Description', 'Aliases', 'Facet']);
   type(field(t, 'Name'), '#book');
   t.click('Add'); await settle();
   assert.deepEqual(JSON.parse(JSON.stringify(t.owner.changes)), [{ kind: 'add', draft: { name: 'book', description: '', aliases: [], parents: [], children: [], related: [] } }]);
@@ -1392,4 +1423,47 @@ test('text typed in a tag picker survives a redraw, and choosing a tag or switch
   type(input(), 'se');
   t.click('Add a parent'); t.click('Add a related tag');
   assert.equal(input().value, '');
+});
+
+test('with kebab-case names on, the form refuses other new and renamed names', async () => {
+  const t = await setup({ kebabNames: true });
+  t.click('#cs'); t.click('Edit tag');
+  type(field(t, 'Name'), 'MachineLearning');
+  assert.equal(button(t, 'Save').disabled, true);
+  assert.ok(t.sidebar.all().some(el => el.text === 'Use lowercase letters and digits joined by hyphens (kebab-case tag names are on in settings).'));
+  type(field(t, 'Name'), 'machine-learning');
+  assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('without the kebab-case setting, the form accepts other valid names', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  type(field(t, 'Name'), 'MachineLearning');
+  assert.equal(button(t, 'Save').disabled, false);
+});
+
+test('the edit form saves a facet next to the change, and only when it changed', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.equal(field(t, 'Facet').value, '');
+  type(field(t, 'Facet'), ' language ');
+  assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  t.click('Edit tag');
+  type(field(t, 'Description'), 'Computer science');
+  t.click('Save'); await settle();
+  assert.deepEqual(t.owner.facets, ['language', undefined]);
+});
+
+test('the edit form saves a facet next to the change, and only when it changed', async () => {
+  const t = await setup();
+  t.click('#cs'); t.click('Edit tag');
+  assert.equal(field(t, 'Facet').value, '');
+  type(field(t, 'Facet'), ' language ');
+  assert.equal(button(t, 'Save').disabled, false);
+  t.click('Save'); await settle();
+  t.click('Edit tag');
+  type(field(t, 'Description'), 'Computer science');
+  t.click('Save'); await settle();
+  assert.deepEqual(t.owner.facets, ['language', undefined]);
 });

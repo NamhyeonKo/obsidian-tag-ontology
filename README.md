@@ -178,6 +178,7 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 | Setting | Description |
 | --- | --- |
 | Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
+| Kebab-case tag names | Off by default. On: the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens, the names TOW checks. Existing names are kept. |
 | Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
@@ -224,7 +225,7 @@ The file is a single JSON object. Each key is a tag **without `#`**, matched cas
 | `aliases` | no | string[] | Other names. Used by search and by the dictionary check to suggest a match for an unregistered tag. |
 | `broader` | no | string[] | Parent tags. **`[]` marks a root tag.** |
 | `related` | no | string[] | Non-hierarchical links, drawn as dashed lines. |
-| `facet` | no | string | Free-form category. Validated but not displayed yet. |
+| `facet` | no | string | Free-form category, such as `language`. Set it in the edit form; a facet tag next to its narrower tags is not reported as redundant. |
 
 Rules:
 

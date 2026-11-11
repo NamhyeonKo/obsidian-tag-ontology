@@ -339,4 +339,4 @@ Each change applies to the result of the one before:
 - `edit`: the full draft replaces the tag's description, aliases and parents. A different `name` renames the tag and every reference to it. Children added or removed in the draft gain or lose this tag as a parent. `related` is rewritten only if the set changed. Start from `show --json`'s `draft` so `children` and `related` are complete.
 - `delete`: removes the entry. Its children move up to its parents, and references to it are removed.
 
-Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. A change can't set them, so `facet` is edited in the file itself, as in the plugin.
+Fields other than `description`, `aliases`, `broader` and `related` are kept on every entry a change touches. A change can't set them, so `facet` is edited in the file itself or in the plugin's edit form.
