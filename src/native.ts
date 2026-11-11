@@ -60,7 +60,7 @@ type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'che
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
 // query: text typed in an open parent, child or related input, so a redraw keeps it.
-type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; facet: string; alias?: string; query?: string; open?: 'aliases' | ListKey };
+type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
@@ -89,18 +89,6 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 function typed(mode: Mode): Draft {
   const alias = mode.alias?.trim();
   return alias && !mode.draft.aliases.includes(alias) ? { ...mode.draft, aliases: [...mode.draft.aliases, alias] } : mode.draft;
-}
-
-// A Change can't carry facet (docs/cli.md), so the form keeps it next to the draft and the plugin writes it after the change.
-function facetOf(dict: RawDictionary, tag: string | undefined): string {
-  const value = tag !== undefined && Object.hasOwn(dict, tag) ? dict[tag]?.facet : undefined;
-  return typeof value === 'string' ? value : '';
-}
-
-// Unsaved changes in an edit form: the draft's fields, plus the facet.
-function changeCount(mode: Mode): number {
-  if (mode.kind !== 'edit') return 0;
-  return changedFields(mode.base, mode.tag, typed(mode)) + (mode.facet.trim() === facetOf(mode.base, mode.tag) ? 0 : 1);
 }
 
 // A question with a few answers, in the middle of the window like Obsidian's own delete confirmation.
@@ -148,7 +136,7 @@ export class NativeGraphs {
   private leave(next: () => void) {
     // A save or delete that is writing can't be called off, and it moves the sidebar itself when it ends.
     if (this.saving) return;
-    const mode = this.mode, changes = mode ? changeCount(mode) : 0;
+    const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
     new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
       { text: 'Keep editing', action: () => {} },
@@ -664,7 +652,7 @@ export class NativeGraphs {
     const tag = this.selected, raw = this.owner.raw;
     if (!tag || !raw || !Object.hasOwn(raw, tag)) return;
     const base = structuredClone(raw);
-    this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag), facet: facetOf(base, tag) };
+    this.mode = { kind: 'edit', tag, base, draft: draftOf(base, tag) };
     this.drawForm();
   }
 
@@ -711,7 +699,7 @@ export class NativeGraphs {
     const raw = this.owner.raw;
     if (!raw) return;
     const base = structuredClone(raw);
-    this.mode = { kind: 'new', base, draft: emptyDraft(), facet: '' };
+    this.mode = { kind: 'new', base, draft: emptyDraft() };
     this.drawForm();
   }
 
@@ -765,8 +753,14 @@ export class NativeGraphs {
     const facet = () => {
       form.createEl('label', { text: 'Facet' });
       const input = form.createEl('input', { type: 'text', attr: { 'aria-label': 'Facet', placeholder: 'Optional, for example language' } });
-      input.value = mode.facet;
-      input.addEventListener('input', () => { mode.facet = input.value; this.syncForm(); });
+      input.value = draft.facet ?? '';
+      input.addEventListener('input', () => {
+        const facet = input.value.trim();
+        if (facet) draft.facet = facet;
+        else if (tag !== undefined && typeof base[tag]?.facet === 'string') draft.facet = null;
+        else delete draft.facet;
+        this.syncForm();
+      });
     };
     const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder); };
     if (tag === undefined) {
@@ -791,7 +785,7 @@ export class NativeGraphs {
       // A new tag's empty name is not an error yet, only not ready.
       // An unchanged name is never an error, so a key written before these rules can still be edited.
       const error = tag === undefined ? draft.name ? this.nameProblem(draft.name, base) : undefined : draft.name === tag ? undefined : this.nameProblem(draft.name, base, tag);
-      const changes = changeCount(mode);
+      const changes = mode.kind === 'edit' ? changedFields(base, mode.tag, typed(mode)) : 0;
       // Notes match dictionary tags ignoring case, so a case-only rename keeps them.
       const hint = tag === undefined ? 'Pick one, or type a new name.'
         : draft.name.toLowerCase() !== tag.toLowerCase() && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
@@ -859,9 +853,8 @@ export class NativeGraphs {
       // The dialog's Save reaches here without the form's checks.
       const error = mode.kind === 'edit' && name === mode.tag ? undefined : this.nameProblem(name, base, mode.kind === 'edit' ? mode.tag : undefined);
       if (error) { new Notice(error); return false; }
-      const facet = mode.facet.trim(), newFacet = facet === facetOf(base, mode.kind === 'edit' ? mode.tag : undefined) ? undefined : facet;
       const change: Change = mode.kind === 'edit' ? { kind: 'edit', tag, draft } : { kind: 'add', draft };
-      if (!await this.owner.saveChange(change, base, newFacet)) return false;
+      if (!await this.owner.saveChange(change, base)) return false;
       if (name !== tag) {
         this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
         this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name } : view);

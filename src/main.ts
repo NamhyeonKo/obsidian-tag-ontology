@@ -247,13 +247,13 @@ export default class TagOntologyPlugin extends Plugin {
 
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
-  async saveChange(change: Change, base: RawDictionary, facet?: string): Promise<boolean> {
+  async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
     const path = await this.resolveDictionary();
     if (!isHiddenPath(path)) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
       try {
-        await this.app.vault.process(file, (text) => this.changedText(text, change, base, facet));
+        await this.app.vault.process(file, (text) => this.changedText(text, change, base));
         return true;
       } catch (error) {
         new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
@@ -263,7 +263,7 @@ export default class TagOntologyPlugin extends Plugin {
     try {
       if (!await this.app.vault.adapter.exists(path)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
       const adapter = this.app.vault.adapter;
-      const text = await adapter.read(path), out = this.changedText(text, change, base, facet);
+      const text = await adapter.read(path), out = this.changedText(text, change, base);
       // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
       await adapter.write(path, out);
       try {
@@ -277,15 +277,10 @@ export default class TagOntologyPlugin extends Plugin {
     }
   }
 
-  private changedText(text: string, change: Change, base: RawDictionary, facet?: string): string {
+  private changedText(text: string, change: Change, base: RawDictionary): string {
     const latest = JSON.parse(text) as RawDictionary;
     if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
     const next = apply(latest, change);
-    // A Change can't set facet (docs/cli.md); the edit form's facet goes onto the saved entry, and '' removes it.
-    if (facet !== undefined && change.kind !== 'delete') {
-      const entry = next[change.draft.name];
-      if (entry) { if (facet) entry.facet = facet; else delete entry.facet; }
-    }
     // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
     new Ontology(next, []);
     // A file kept with CRLF line endings stays that way, so a save still changes only the lines it touches.

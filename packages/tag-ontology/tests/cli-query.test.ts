@@ -44,7 +44,7 @@ test('usage with paths reports on those notes, and judges unused over the whole 
 test('usage and show report a dictionary with errors and nothing else, exit 1', t => {
   const vault = copyOfFixture(t);
   writeFileSync(join(vault, 'Tag-Dictionary.json'), JSON.stringify({ ai: { description: 'AI', broader: ['gone'] } }));
-  for (const args of [['usage'], ['show', 'ai']]) {
+  for (const args of [['usage'], ['show', 'ai'], ['suggest', 'ai']]) {
     const run = json(args, vault);
     assert.equal(run.code, 1);
     assert.deepEqual(Object.keys(run.doc), ['schemaVersion', 'command', 'ok', 'issues']);
@@ -107,6 +107,48 @@ test('show prefers tag names over aliases, rejects ambiguous aliases, and filter
   const loose = json(['show', 'loose'], vault).doc;
   assert.equal(loose.placed, false);
   assert.deepEqual(loose.paths, [['loose']]);
+});
+
+test('suggest returns ranked tag and alias matches and honors --limit', t => {
+  const vault = copyOfFixture(t);
+  writeFileSync(join(vault, 'Tag-Dictionary.json'), JSON.stringify({
+    ontology: { description: 'Ontology', broader: [] },
+    'ontology-wiki': { description: 'Wiki', broader: [] },
+    'tag-ontology': { description: 'Tag ontology', broader: [] },
+    concept: { description: 'Concept', aliases: ['About ontology'], broader: [] },
+    wiki: { description: 'Wiki', aliases: ['Ontology'], broader: [] },
+  }));
+  const raw = cli(['suggest', 'ont', '--json'], vault);
+  assert.equal(raw.code, 0);
+  const doc = JSON.parse(raw.stdout) as Record<string, unknown>;
+  assert.deepEqual(doc, {
+    schemaVersion: 1, command: 'suggest', ok: true, issues: [], query: 'ont',
+    suggestions: [
+      { tag: 'ontology' }, { tag: 'ontology-wiki' }, { tag: 'tag-ontology' },
+      { tag: 'wiki', alias: 'Ontology' }, { tag: 'concept', alias: 'About ontology' },
+    ],
+  });
+  assert.deepEqual(json(['suggest', 'ont', '--limit', '1'], vault).doc.suggestions, [{ tag: 'ontology' }]);
+  assert.deepEqual(json(['suggest', 'ont', '--limit', '01'], vault).doc.suggestions, [{ tag: 'ontology' }]);
+  assert.deepEqual(cli(['suggest', 'ont'], vault).stdout.trim().split('\n'), [
+    'ontology', 'ontology-wiki', 'tag-ontology', 'wiki (Ontology)', 'concept (About ontology)',
+  ]);
+  writeFileSync(join(vault, 'Tag-Dictionary.json'), JSON.stringify(Object.fromEntries(
+    Array.from({ length: 12 }, (_, index) => [`ont-${String(index).padStart(2, '0')}`, { description: 'Match' }]),
+  )));
+  assert.equal((json(['suggest', 'ont'], vault).doc.suggestions as unknown[]).length, 10);
+});
+
+test('suggest returns no matches successfully and rejects non-positive integer limits', () => {
+  const empty = json(['suggest', 'not-a-tag']);
+  assert.equal(empty.code, 0);
+  assert.deepEqual(empty.doc.suggestions, []);
+  assert.equal(cli(['suggest', 'not-a-tag']).stdout.trim(), 'No matching tags.');
+  for (const limit of ['0', 'x', '1e2']) {
+    const run = cli(['suggest', 'ont', '--limit', limit, '--json']);
+    assert.equal(run.code, 2);
+    assert.equal(run.stdout, '');
+  }
 });
 
 test('show lists every parent chain and preserves unknown entry fields', t => {

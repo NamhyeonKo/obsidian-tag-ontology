@@ -4,7 +4,7 @@ export type RawEntry = { description: string; aliases?: string[]; broader?: stri
 export type RawDictionary = Record<string, RawEntry>;
 
 // What the edit form works on; children and two-way related are derived, the file stores broader and related only.
-export interface Draft { name: string; description: string; aliases: string[]; parents: string[]; children: string[]; related: string[] }
+export interface Draft { name: string; description: string; aliases: string[]; parents: string[]; children: string[]; related: string[]; facet?: string | null }
 export type Change = { kind: 'add'; draft: Draft } | { kind: 'edit'; tag: string; draft: Draft } | { kind: 'delete'; tag: string };
 
 // Tag names come from users, and `next[name] = …` with "__proto__" would set the prototype instead of adding an entry.
@@ -27,6 +27,7 @@ export function draftOf(dict: RawDictionary, tag: string): Draft {
     name: tag, description: entry.description, aliases: [...entry.aliases ?? []], parents: [...entry.broader ?? []],
     children: keys.filter(key => entryOf(dict, key).broader?.includes(tag)).sort(),
     related: [...new Set([...entry.related ?? [], ...keys.filter(key => entryOf(dict, key).related?.includes(tag))])],
+    ...typeof entry.facet === 'string' ? { facet: entry.facet } : {},
   };
 }
 
@@ -35,8 +36,8 @@ export const emptyDraft = (parents: string[] = []): Draft => ({ name: '', descri
 export function apply(dict: RawDictionary, change: Change): RawDictionary {
   const next = structuredClone(dict);
   if (change.kind === 'add') {
-    const { name, description, aliases, parents, children, related } = change.draft;
-    put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] });
+    const { name, description, aliases, parents, children, related, facet } = change.draft;
+    put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents], ...typeof facet === 'string' && facet ? { facet } : {} });
     // A new tag has no links yet, so every child and related tag is one to add, as in an edit.
     for (const child of children) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
     setList(entryOf(next, name), 'related', related);
@@ -63,6 +64,10 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   const entry = entryOf(next, name);
   setList(entry, 'aliases', draft.aliases);
   entry.description = draft.description;
+  if (draft.facet !== undefined) {
+    if (typeof draft.facet === 'string' && draft.facet) entry.facet = draft.facet;
+    else delete entry.facet;
+  }
   if (entry.broader || draft.parents.length) entry.broader = [...draft.parents];
   for (const child of without(before.children, draft.children)) entryOf(next, child).broader = without(entryOf(next, child).broader ?? [], [name]);
   for (const child of without(draft.children, before.children)) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
@@ -101,7 +106,8 @@ export function nameError(name: string, dict: RawDictionary, current?: string): 
 export function changedFields(dict: RawDictionary, tag: string, draft: Draft): number {
   const before = draftOf(dict, tag);
   return [before.name === draft.name, before.description === draft.description,
-    ...(['aliases', 'parents', 'children', 'related'] as const).map(key => sameSet(before[key], draft[key]))].filter(same => !same).length;
+    ...(['aliases', 'parents', 'children', 'related'] as const).map(key => sameSet(before[key], draft[key])),
+    draft.facet === undefined || (draft.facet || null) === (before.facet ?? null)].filter(same => !same).length;
 }
 
 // A new tag has no entry yet; this stands in for it, and a space can't be in a tag name.

@@ -1,3 +1,5 @@
+import { DICTIONARY_LOCATIONS } from 'tag-ontology';
+
 export interface Settings {
   dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
@@ -20,10 +22,10 @@ export interface Settings {
   perspectiveLabels: boolean; labelSize: number; locationNoticeShown: boolean;
 }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
-export const TOW_DICTIONARY = '.tow/tag-dictionary.json';
-export const TOW_FOLDER_DICTIONARY = 'tow/tag-dictionary.json';
-export const LEGACY_DICTIONARY = 'Tag-Dictionary.json';
-export const AUTOMATIC_DICTIONARIES = [TOW_FOLDER_DICTIONARY, TOW_DICTIONARY, LEGACY_DICTIONARY];
+export const TOW_FOLDER_DICTIONARY = DICTIONARY_LOCATIONS[0];
+export const TOW_DICTIONARY = DICTIONARY_LOCATIONS[1];
+export const LEGACY_DICTIONARY = DICTIONARY_LOCATIONS[2];
+export const AUTOMATIC_DICTIONARIES: readonly string[] = DICTIONARY_LOCATIONS;
 export function isHiddenPath(path: string): boolean {
   return path.split('/').some(segment => segment.startsWith('.'));
 }

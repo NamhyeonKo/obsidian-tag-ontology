@@ -3,6 +3,7 @@ import type { EntryDiff } from '../core/plan.ts';
 import type { Usage } from '../core/usage.ts';
 import type { Issue } from '../core/validate.ts';
 import type { ScannedNote } from '../vault/scan.ts';
+import type { Suggestion } from '../core/ontology.ts';
 import type { Shown } from './show.ts';
 
 // Note content reaches the terminal here, and a control character there would act instead of show: an escape sequence can
@@ -64,6 +65,10 @@ export function usageText(found: Usage, issues: readonly Issue[]): string[] {
   if (!unregistered.length && !nonCanonical.length && !redundant.length) lines.push('No unregistered, non-canonical or redundant tags.');
   if (unused.length) lines.push(`Unused (${unused.length}): ${unused.join(', ')}`);
   return [...lines, ...issueLines(issues)];
+}
+
+export function suggestText(suggestions: readonly Suggestion[]): string[] {
+  return suggestions.length ? suggestions.map(item => `${item.tag}${item.alias === undefined ? '' : ` (${item.alias})`}`) : ['No matching tags.'];
 }
 
 export function showText(shown: Shown, issues: readonly Issue[]): string[] {

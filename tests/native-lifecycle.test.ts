@@ -152,10 +152,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
     usage: undefined as Usage | undefined, checkUsage() { return owner.usage; },
     // Saving applies the change to the raw dictionary; reloading rebuilds the model from it, as the plugin does from the file.
-    raw, changes: [] as Change[], facets: [] as (string | undefined)[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
+    raw, changes: [] as Change[], reloads: 0, dictionaryPath: settings.dictionaryPath ?? DEFAULT_SETTINGS.dictionaryPath,
     dictionaryFound: dictionaryFound === null ? undefined : dictionaryFound, created: 0, error: undefined as string | undefined,
     async createDictionary() { owner.created++; return true; },
-    async saveChange(change: Change, _base?: RawDictionary, facet?: string): Promise<boolean> { owner.changes.push(change); owner.facets.push(facet); owner.raw = apply(owner.raw, change); return true; },
+    async saveChange(change: Change, _base?: RawDictionary): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
       getLeavesOfType: () => leaves,
@@ -1442,28 +1442,36 @@ test('without the kebab-case setting, the form accepts other valid names', async
   assert.equal(button(t, 'Save').disabled, false);
 });
 
-test('the edit form saves a facet next to the change, and only when it changed', async () => {
+test('the edit form stores a trimmed facet in the saved draft', async () => {
   const t = await setup();
   t.click('#cs'); t.click('Edit tag');
   assert.equal(field(t, 'Facet').value, '');
   type(field(t, 'Facet'), ' language ');
   assert.equal(button(t, 'Save').disabled, false);
   t.click('Save'); await settle();
-  t.click('Edit tag');
-  type(field(t, 'Description'), 'Computer science');
-  t.click('Save'); await settle();
-  assert.deepEqual(t.owner.facets, ['language', undefined]);
+  assert.equal(t.owner.changes.length, 1);
+  assert.equal(t.owner.changes[0]?.kind, 'edit');
+  if (t.owner.changes[0]?.kind === 'edit') assert.equal(t.owner.changes[0].draft.facet, 'language');
 });
 
-test('the edit form saves a facet next to the change, and only when it changed', async () => {
+test('clearing an existing facet saves null in the draft', async () => {
+  const t = await setup();
+  t.owner.raw = { ...raw, cs: { ...raw.cs!, facet: 'language' } };
+  t.owner.model = new Ontology(t.owner.raw, []);
+  t.click('#cs'); t.click('Edit tag');
+  assert.equal(field(t, 'Facet').value, 'language');
+  type(field(t, 'Facet'), '');
+  assert.equal(button(t, 'Save').disabled, false);
+  assert.match(t.sidebar.all().find(el => el.classes.has('tag-ontology-count'))?.text ?? '', /1 change not saved/);
+  t.click('Save'); await settle();
+  assert.equal(t.owner.changes.length, 1);
+  assert.equal(t.owner.changes[0]?.kind, 'edit');
+  if (t.owner.changes[0]?.kind === 'edit') assert.equal(t.owner.changes[0].draft.facet, null);
+});
+
+test('changing only a facet counts as one unsaved change', async () => {
   const t = await setup();
   t.click('#cs'); t.click('Edit tag');
-  assert.equal(field(t, 'Facet').value, '');
   type(field(t, 'Facet'), ' language ');
-  assert.equal(button(t, 'Save').disabled, false);
-  t.click('Save'); await settle();
-  t.click('Edit tag');
-  type(field(t, 'Description'), 'Computer science');
-  t.click('Save'); await settle();
-  assert.deepEqual(t.owner.facets, ['language', undefined]);
+  assert.match(t.sidebar.all().find(el => el.classes.has('tag-ontology-count'))?.text ?? '', /1 change not saved/);
 });

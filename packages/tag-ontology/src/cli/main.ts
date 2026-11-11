@@ -6,14 +6,14 @@ import { planChanges } from '../core/plan.ts';
 import { usage } from '../core/usage.ts';
 import { serialize } from '../core/dictionary.ts';
 import { compareIssues, isWellFormed, validate, type Issue } from '../core/validate.ts';
-import { readDictionary, writeDictionary } from '../vault/dictionary-file.ts';
+import { findDictionary, readDictionary, writeDictionary } from '../vault/dictionary-file.ts';
 import { PathError, scan } from '../vault/scan.ts';
 import { argumentsOf, HELP, UsageError } from './arguments.ts';
 import { readChanges } from './changes.ts';
 import { overlayIssues, readOverlay } from './overlay.ts';
 import { show, type NoteSources } from './show.ts';
 import { subset } from './subset.ts';
-import { checkText, editText, scanText, showText, usageText, visible, type EditFields } from './text.ts';
+import { checkText, editText, scanText, showText, suggestText, usageText, visible, type EditFields } from './text.ts';
 
 function run(): void {
   const args = argumentsOf(process.argv.slice(2));
@@ -26,7 +26,7 @@ function run(): void {
   const root = resolve(values.root ?? '.');
   if (!statSync(root).isDirectory()) throw new UsageError(`${root} is not a vault folder.`);
   const overlay = readOverlay(root, values['tags-file'] ?? []);
-  const dictionary = resolve(root, values.dictionary ?? 'Tag-Dictionary.json');
+  const dictionary = values.dictionary === undefined ? findDictionary(root) : resolve(root, values.dictionary);
   const failed = (issues: Issue[]) => issues.some(item => item.severity === 'error' || values.strict);
   // --json prints the contract's document; otherwise `text` says the same for people (checkText for a bare list of issues).
   const output = (issues: Issue[], fields: object = {}, code = failed(issues) ? 1 : 0, text: (sorted: Issue[]) => string[] = checkText) => {
@@ -78,6 +78,11 @@ function run(): void {
     const result = subset(new Ontology(file.raw, []), file.raw, rest);
     if (values.json) output(issues, { dictionary: result });
     else process.stdout.write(serialize(result));
+    return;
+  }
+  if (command === 'suggest') {
+    const result = new Ontology(file.raw, []).suggest(rest[0]!, args.limit);
+    output([], { query: rest[0], suggestions: result }, 0, () => suggestText(result));
     return;
   }
   const all = scan(root, { exclude });

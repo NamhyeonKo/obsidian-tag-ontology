@@ -229,7 +229,7 @@ The file is a single JSON object. Each key is a tag **without `#`**, matched cas
 | `aliases` | no | string[] | Other names. Used by search and by the dictionary check to suggest a match for an unregistered tag. |
 | `broader` | no | string[] | Parent tags. **`[]` marks a root tag.** |
 | `related` | no | string[] | Non-hierarchical links, drawn as dashed lines. |
-| `facet` | no | string | Free-form category, such as `language`. Set it in the edit form; a facet tag next to its narrower tags is not reported as redundant. |
+| `facet` | no | string | Free-form category, such as `language`. Set it in the edit form or in the draft of a CLI changes file; a facet tag next to its narrower tags is not reported as redundant. |
 
 Rules:
 
