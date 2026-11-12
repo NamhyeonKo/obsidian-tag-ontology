@@ -80,6 +80,8 @@ test('add writes a facet after the existing fields', () => {
   const added = apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'language', facet: 'language' } }).language!;
   assert.equal(added.facet, 'language');
   assert.deepEqual(Object.keys(added), ['description', 'broader', 'facet']);
+  const linked = apply(raw, { kind: 'add', draft: { ...emptyDraft(), name: 'go', related: ['py'], facet: 'language' } }).go!;
+  assert.deepEqual(Object.keys(linked), ['description', 'broader', 'related', 'facet']);
 });
 
 test('add links children and related too, the way edit does', () => {

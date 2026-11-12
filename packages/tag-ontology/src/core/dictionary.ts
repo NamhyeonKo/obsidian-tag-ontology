@@ -37,10 +37,12 @@ export function apply(dict: RawDictionary, change: Change): RawDictionary {
   const next = structuredClone(dict);
   if (change.kind === 'add') {
     const { name, description, aliases, parents, children, related, facet } = change.draft;
-    put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents], ...typeof facet === 'string' && facet ? { facet } : {} });
+    put(next, name, { ...aliases.length ? { aliases: [...aliases] } : {}, description, broader: [...parents] });
     // A new tag has no links yet, so every child and related tag is one to add, as in an edit.
     for (const child of children) entryOf(next, child).broader = [...entryOf(next, child).broader ?? [], name];
     setList(entryOf(next, name), 'related', related);
+    // Facet goes last, as in the dictionaries people write by hand.
+    if (typeof facet === 'string' && facet) entryOf(next, name).facet = facet;
     for (const other of related) entryOf(next, other).related = [...entryOf(next, other).related ?? [], name];
     return next;
   }
