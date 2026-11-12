@@ -1,7 +1,7 @@
 {
   "name": "tag-ontology",
-  "version": "0.3.1",
-  "description": "Validate, query and edit a tag ontology dictionary (Tag-Dictionary.json) for Markdown vaults.",
+  "version": "0.3.2",
+  "description": "Validate, query and edit a tag ontology dictionary (tow/tag-dictionary.json or Tag-Dictionary.json) for Markdown vaults.",
   "license": "MIT",
   "author": "NamhyeonKo",
   "repository": {
@@ -28,7 +28,8 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22.18"

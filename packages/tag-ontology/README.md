@@ -1,6 +1,6 @@
 # tag-ontology
 
-Validate, query and edit a `Tag-Dictionary.json` against the Markdown notes in a vault. The MIT-licensed library and CLI share their dictionary rules with the [Tag Ontology Obsidian plugin](https://github.com/NamhyeonKo/obsidian-tag-ontology).
+Validate, query and edit a tag dictionary (`tow/tag-dictionary.json`, or `Tag-Dictionary.json` in older vaults) against the Markdown notes in a vault. The MIT-licensed library and CLI share their dictionary rules with the [Tag Ontology Obsidian plugin](https://github.com/NamhyeonKo/obsidian-tag-ontology).
 
 Requires **Node.js 22.18 or later**. The CLI does not require Obsidian. The library is ESM; CommonJS callers can use dynamic `import()`.
 
@@ -38,7 +38,7 @@ The vault root defaults to the current directory; without `--dictionary`, the CL
 
 `--json` prints one document with `schemaVersion: 1`, `command`, `ok` and `issues`, followed by command-specific fields. Exit codes are 0 (success), 1 (problems found), 2 (wrong usage), 3 (dictionary changed) and 70 (internal error).
 
-The [full CLI contract](https://github.com/NamhyeonKo/obsidian-tag-ontology/blob/dev/docs/cli.md) defines every option, field, issue code and note-parsing rule. Text output is for people and is not a versioned interface.
+Changes by version are in the [changelog](https://github.com/NamhyeonKo/obsidian-tag-ontology/blob/main/packages/tag-ontology/CHANGELOG.md). The [full CLI contract](https://github.com/NamhyeonKo/obsidian-tag-ontology/blob/dev/docs/cli.md) defines every option, field, issue code and note-parsing rule. Text output is for people and is not a versioned interface.
 
 ## Editing safely
 
@@ -96,7 +96,7 @@ Node-only file access is under `tag-ontology/vault`:
 import { readDictionary, scan } from 'tag-ontology/vault';
 import { usage, validate } from 'tag-ontology';
 
-const { raw, issues: fileIssues } = readDictionary('/path/to/vault/Tag-Dictionary.json');
+const { raw, issues: fileIssues } = readDictionary('/path/to/vault/tow/tag-dictionary.json');
 const issues = fileIssues.length ? fileIssues : validate(raw);
 if (issues.some(issue => issue.severity === 'error')) throw new Error('Invalid dictionary');
 const { notes } = scan('/path/to/vault', { exclude: ['**/archive'] });
