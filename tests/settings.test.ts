@@ -23,7 +23,7 @@ test('sanitizes saved settings to the supported fields', () => {
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
-    perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false,
+    perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -80,6 +80,12 @@ test('reads the CSS colors a theme gives back as hex', () => {
   assert.equal(cssColorToHex('hsl(258, 88%, 66%)'), '#8a5cf5');
   assert.equal(cssColorToHex(' hsl(0, 100%, 50%) '), '#ff0000');
   for (const css of ['', 'red', 'color-mix(in srgb, red, blue)']) assert.equal(cssColorToHex(css), undefined, css);
+});
+
+test('the explorer is on by default and only a saved false turns it off', () => {
+  assert.equal(DEFAULT_SETTINGS.enableExplorer, true);
+  assert.equal(sanitizeSettings({ enableExplorer: false }, '.obsidian').enableExplorer, false);
+  for (const enableExplorer of ['no', 0, undefined]) assert.equal(sanitizeSettings({ enableExplorer }, '.obsidian').enableExplorer, true);
 });
 
 test('the 3D view is on by default and only a saved false turns it off', () => {

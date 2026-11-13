@@ -471,14 +471,14 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box', 'waypoints']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
 });
 
-test('the 3D button at the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
+test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
   const t = await setup();
   t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-4, -2);
   assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
   assert.deepEqual(last.map(el => el.hidden), [false, false]);
   t.click('Open in 3D (beta)');
@@ -514,6 +514,22 @@ test('the layout buttons fold into the current one, open in their own order, and
   assert.deepEqual(active(), ['Layout: Vertical tree'], 'with the current one marked where it sits');
   t.click('Layout: Horizontal tree');
   assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.deepEqual(shown(), ['Layout: Horizontal tree']);
+});
+
+test('the explorer button follows the 3D button, opens the explorer, and hides with its separator while the explorer is off', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open ontology explorer (beta)');
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  t.click('Open ontology explorer (beta)');
+  assert.deepEqual(t.owner.opened, ['explorer']);
+  t.owner.settings.enableExplorer = false; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  // The 3D button keeps its own setting.
+  assert.equal(tools.children.at(-3)!.hidden, false);
+  t.owner.settings.enableExplorer = true; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
 });
 
 test('a click elsewhere in the graph or Escape folds the open layout buttons', async () => {
