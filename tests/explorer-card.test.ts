@@ -47,3 +47,8 @@ test('uses the theme font with the system fallback', () => {
   const svg = svgOf(cardImage(card(), theme, measure).uri);
   assert.match(svg, /font-family="&quot;Inter&quot;, -apple-system/);
 });
+
+test('a row label takes the room its value leaves', () => {
+  const svg = svgOf(cardImage(card({ rows: [['Including descendants', '6']] }), theme, measure).uri);
+  assert.ok(svg.includes('>Including descendants<'));
+});

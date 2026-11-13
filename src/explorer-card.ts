@@ -40,8 +40,12 @@ export function cardImage(card: Card, theme: CardTheme, measure: (text: string, 
     text(52, 24, 13, true, theme.title, card.title, w - 64),
     text(52, 39, 11, false, theme.sub, card.sub, w - 64),
     card.rows.length ? `<line x1="1" x2="${w - 1}" y1="52" y2="52" stroke="${theme.divider}"/>` : '',
-    ...card.rows.map(([label, value], i) => text(10, 70 + i * 20, 11, true, theme.row, label, w / 2 - 12)
-      + text(w - 12, 70 + i * 20, 11, false, theme.row, value, w / 2 - 12, true)),
+    // Values are short (counts, dates), so a label takes whatever room its value leaves.
+    ...card.rows.map(([label, value], i) => {
+      const shown = fit(value, w / 2 - 12, t => measure(t, 11, false));
+      return text(10, 70 + i * 20, 11, true, theme.row, label, w - 34 - measure(shown, 11, false))
+        + text(w - 12, 70 + i * 20, 11, false, theme.row, shown, w / 2 - 12, true);
+    }),
   ];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="${esc(`${theme.font}, ${SYSTEM_FONTS}`)}">${parts.join('')}</svg>`;
   return { uri: 'data:image/svg+xml;utf8,' + encodeURIComponent(svg), width, height };

@@ -1,16 +1,27 @@
-import { ItemView, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
-import type { Core } from 'cytoscape';
+import { ItemView, Menu, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
 import type { LinkedGraph } from './native.ts';
+import { TagSuggest } from './search.ts';
+import { cssColorToHex } from './settings.ts';
+import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
+import { canvasEdges, facetColors, placeAside, placeColumn, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
+
+// Used when a theme leaves a color unset or in a format cssColorToHex can't read.
+const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', background: '#1e1e1e', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
+const WIDTH = { tag: 230, note: 210, group: 220 };
+type Expand = 'children' | 'parents' | 'related';
 
 // Palantir-style exploration: start from an empty canvas and bring tags, notes and note groups out one relation at a time.
 // It shares the sidebar with the other graphs through NativeGraphs, but not their expansion or focus.
 export class ExplorerView extends ItemView implements LinkedGraph {
   private cy?: Core;
   private closed = false;
-  private stage?: HTMLElement; private status?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
+  private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
+  private measurer?: CanvasRenderingContext2D;
 
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return VIEW_EXPLORER; }
@@ -27,17 +38,38 @@ export class ExplorerView extends ItemView implements LinkedGraph {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-explorer');
     this.stage = root.createDiv('tag-ontology-explorer-stage');
+    // The canvas has its own right-click menu.
+    this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
-    this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); });
+    this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); });
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
+    this.buildStart(root);
+    this.measurer = createEl('canvas').getContext('2d') ?? undefined;
+    this.readTheme();
     const { default: cytoscape } = await import('cytoscape');
     if (this.closed) return;
-    this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3 });
+    const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, style: this.style() });
+    // The tab can still be laying out when Cytoscape measures its container, and a resized tab needs a new measure too.
+    const resize = new ResizeObserver(() => cy.resize());
+    resize.observe(this.stage);
+    this.register(() => resize.disconnect());
+    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
+    cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
+    cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
+    this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
+    // Obsidian's accent color setting only rewrites the accent variables on <body>, with no css-change, so <body> is watched too.
+    const accentWatch = new MutationObserver(() => this.recolor());
+    accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
+    this.register(() => accentWatch.disconnect());
     this.owner.native.link(this);
+    this.changed();
   }
+
+  // Obsidian calls this when the tab changes size; the observer in onOpen covers the first layout too.
+  onResize(): void { this.cy?.resize(); }
 
   onClose(): Promise<void> {
     this.closed = true;
@@ -47,11 +79,190 @@ export class ExplorerView extends ItemView implements LinkedGraph {
     return Promise.resolve();
   }
 
-  draw(): void {}
-  paint(): void {}
+  draw(operation: string): void {
+    // A settings change (tag color) or a dictionary or note edit can change what the cards say.
+    if (operation === 'refresh') this.recolor();
+  }
+  paint(): void { this.updateStart(); }
   // Any dictionary tag can be brought onto the canvas.
   has(tag: string): boolean { return !!this.owner.model?.entries.has(tag); }
   focusOn(): void {}
+
+  // The start screen fills an empty canvas: a search, the sidebar's tag to continue from, and the root tags.
+  private buildStart(root: HTMLElement) {
+    const start = this.start = root.createDiv('tag-ontology-explorer-start');
+    start.createEl('h3', { text: 'Where do you want to start?' });
+    start.createEl('p', { text: 'Search for a tag or pick a root tag.', cls: 'tag-ontology-muted' });
+    const search = start.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+    new TagSuggest(this.app, search, query => (this.owner.model?.suggest(query) ?? []).filter(item => this.owner.model?.entries.has(item.tag)), tag => this.addTag(tag));
+    this.continueChip = start.createDiv('tag-ontology-tags');
+    start.createDiv('tag-ontology-explorer-roots');
+  }
+
+  private updateStart() {
+    const start = this.start, model = this.owner.model;
+    if (!start || !this.continueChip) return;
+    start.hidden = !!this.cy && this.cy.nodes().nonempty();
+    this.continueChip.empty();
+    const selected = this.owner.native.selectedTag;
+    if (model && selected && model.entries.has(selected)) this.chip(this.continueChip, `Continue from #${selected}`, selected);
+    const roots = start.querySelector<HTMLElement>('.tag-ontology-explorer-roots');
+    if (!roots) return;
+    roots.empty();
+    if (!model) return;
+    roots.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
+    const list = roots.createDiv('tag-ontology-tags');
+    for (const tag of model.roots) this.chip(list, '#' + tag, tag);
+  }
+
+  private chip(parent: HTMLElement, text: string, tag: string) {
+    parent.createEl('a', { href: '#', text, cls: 'tag' }).addEventListener('click', event => { event.preventDefault(); this.addTag(tag); });
+  }
+
+  // Everything that changes what is on the canvas ends here.
+  private changed() {
+    this.syncEdges();
+    this.updateStart();
+    const on = this.onCanvas(), status = this.status;
+    if (status) status.textContent = `${on.tags.size} tags · ${on.notes.size} notes · ${on.groups.size} groups`;
+  }
+
+  private onCanvas(): OnCanvas {
+    const of = (type: string, key: string) => new Set((this.cy?.nodes(`[type="${type}"]`) ?? []).map(node => node.data(key) as string));
+    return { tags: of('tag', 'tag'), notes: of('note', 'path'), groups: of('group', 'tag') };
+  }
+
+  private taken(): Box[] {
+    return (this.cy?.nodes() ?? []).map(node => { const p = node.position(), w = node.data('w') as number, h = node.data('h') as number; return { x1: p.x - w / 2, y1: p.y - h / 2, x2: p.x + w / 2, y2: p.y + h / 2 }; });
+  }
+
+  private tagOf(event: EventObject) { return (event.target as NodeSingular).data('tag') as string; }
+
+  // A card on its own, from the start screen or the sidebar: beside everything else, then in view and selected.
+  private addTag(tag: string) {
+    const cy = this.cy;
+    if (!cy || !this.owner.model?.entries.has(tag)) return;
+    let node = cy.getElementById('tag:' + tag);
+    if (node.empty()) {
+      const card = this.tagCard(tag), first = cy.nodes().empty();
+      node = this.addNode('tag:' + tag, card, { type: 'tag', tag }, placeAside(this.taken(), this.size(card)));
+      this.changed();
+      if (first) { cy.zoom(1); cy.center(node); }
+    }
+    cy.elements().unselect(); node.select();
+    cy.animate({ center: { eles: node } }, { duration: 250 });
+  }
+
+  private expand(node: NodeSingular, kind: Expand) {
+    const model = this.owner.model;
+    if (!model || !this.cy) return;
+    const tags = searchAround(model, node.data('tag') as string, this.onCanvas())[kind];
+    const cards = tags.map(tag => this.tagCard(tag));
+    const spots = placeColumn(node.position(), kind === 'parents' ? -1 : 1, cards.map(card => this.size(card)), this.taken());
+    this.reveal(tags.reduce((added, tag, i) => added.union(this.addNode('tag:' + tag, cards[i], { type: 'tag', tag }, spots[i])), this.cy.collection()));
+  }
+
+  // New cards join their lines, and the view moves to them if any landed outside it; the zoom stays.
+  private reveal(added: CollectionReturnValue) {
+    const cy = this.cy;
+    this.changed();
+    if (!cy || added.empty()) return;
+    const view = cy.extent(), box = added.boundingBox();
+    if (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2) cy.animate({ center: { eles: added } }, { duration: 250 });
+  }
+
+  private tagMenu(event: EventObject) {
+    const model = this.owner.model, node = event.target as NodeSingular;
+    if (!model) return;
+    const around = searchAround(model, node.data('tag') as string, this.onCanvas()), menu = new Menu();
+    const items: [Expand, string, string][] = [['children', 'Expand children', 'git-branch'], ['parents', 'Expand parents', 'arrow-up-circle'], ['related', 'Expand related', 'link']];
+    for (const [kind, title, icon] of items) {
+      const n = around[kind].length;
+      if (n) menu.addItem(item => item.setTitle(`${title} (${n})`).setIcon(icon).onClick(() => this.expand(node, kind)));
+    }
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => { node.remove(); this.changed(); }));
+    menu.showAtMouseEvent(event.originalEvent);
+  }
+
+  private addNode(id: string, card: Card, data: Record<string, unknown>, position: Point): CollectionReturnValue {
+    const image = cardImage(card, this.theme, (text, px, bold) => this.measure(text, px, bold));
+    return this.cy!.add({ group: 'nodes', data: { id, ...data, img: image.uri, w: image.width, h: image.height }, position });
+  }
+
+  private size(card: Card): Size { return { w: card.width, h: cardImage(card, this.theme, () => 0).height }; }
+
+  private measure(text: string, px: number, bold: boolean) {
+    const ctx = this.measurer;
+    if (!ctx) return text.length * px * 0.6;
+    ctx.font = `${bold ? '600 ' : ''}${px}px ${this.theme.font}, -apple-system, "Segoe UI", sans-serif`;
+    return ctx.measureText(text).width;
+  }
+
+  private tagCard(tag: string): Card {
+    const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
+    const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
+    const color = entry?.facet ? facets.get(entry.facet)! : this.owner.settings.customColors ? this.owner.tagColor() : this.colors.tag;
+    return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
+      rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
+  }
+
+  private cardOf(node: NodeSingular): Card | undefined {
+    const type = node.data('type') as string;
+    if (type === 'tag' && this.owner.model?.entries.has(node.data('tag') as string)) return this.tagCard(node.data('tag') as string);
+    return undefined;
+  }
+
+  // Lines follow the dictionary: whatever brought two cards out, the relations between them are drawn.
+  private syncEdges() {
+    const cy = this.cy, model = this.owner.model;
+    if (!cy || !model) return;
+    const wanted = new Map(canvasEdges(model, this.onCanvas()).map(edge => [edge.id, edge]));
+    cy.edges().filter(edge => !wanted.has(edge.id())).remove();
+    for (const edge of wanted.values()) {
+      if (cy.getElementById(edge.id).nonempty()) continue;
+      cy.add({ group: 'edges', data: { ...edge, label: edge.kind === 'broader' ? 'narrower' : edge.kind === 'related' ? 'related' : '' } });
+    }
+  }
+
+  private readTheme() {
+    const style = getComputedStyle(this.contentEl), read = (name: string, fallback: string) => cssColorToHex(style.getPropertyValue(name)) ?? fallback;
+    this.colors = {
+      tag: read('--graph-node-tag', FALLBACK.tag), muted: read('--text-muted', FALLBACK.muted), line: read('--graph-line', FALLBACK.line),
+      background: read('--background-primary', FALLBACK.background), card: read('--background-secondary', FALLBACK.card),
+      border: read('--background-modifier-border', FALLBACK.border), text: read('--text-normal', FALLBACK.text), accent: read('--interactive-accent', FALLBACK.accent),
+    };
+    const { card, border, text, muted } = this.colors;
+    this.theme = { card, border, title: text, sub: muted, row: text, divider: border, font: style.getPropertyValue('--font-interface').trim() || 'sans-serif' };
+  }
+
+  // A theme, accent or tag color change redraws every card and line style.
+  private recolor() {
+    const cy = this.cy;
+    if (!cy) return;
+    this.readTheme();
+    cy.style(this.style());
+    cy.nodes().forEach(node => {
+      const card = this.cardOf(node);
+      if (!card) return;
+      const image = cardImage(card, this.theme, (text, px, bold) => this.measure(text, px, bold));
+      node.data({ img: image.uri, w: image.width, h: image.height });
+    });
+    this.changed();
+  }
+
+  private style(): StylesheetJson {
+    const { line, accent, muted, background } = this.colors;
+    const label = { 'font-size': 10, color: muted, 'text-rotation': 'none' as const, 'text-background-color': background, 'text-background-opacity': 1, 'text-background-padding': '2px', label: 'data(label)' };
+    return [
+      { selector: 'node', style: { shape: 'round-rectangle', width: 'data(w)', height: 'data(h)', 'background-image': 'data(img)', 'background-fit': 'none', 'background-clip': 'none', 'background-opacity': 0, 'border-width': 0 } },
+      { selector: 'node:selected', style: { 'overlay-color': accent, 'overlay-opacity': 0.18, 'overlay-padding': 4, 'overlay-shape': 'round-rectangle' } },
+      { selector: 'node:active', style: { 'overlay-opacity': 0 } },
+      { selector: 'edge', style: { width: 1, 'line-color': line, 'curve-style': 'bezier', opacity: 0.8 } },
+      { selector: 'edge[kind="broader"]', style: { ...label, width: 2, 'line-color': line, 'target-arrow-shape': 'triangle', 'target-arrow-color': line, opacity: 1 } },
+      { selector: 'edge[kind="related"]', style: { ...label, width: 1.6, 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-color': accent, opacity: 1 } },
+    ];
+  }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
