@@ -99,9 +99,11 @@ export function facetColors(facets: Iterable<string>): Map<string, string> {
   return new Map([...new Set(facets)].sort().map((facet, i) => [facet, PALETTE[i % PALETTE.length]]));
 }
 
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export function relativeTime(mtime: number, now: number): string {
   const days = Math.floor((now - mtime) / 864e5);
-  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  const ago = (n: number, unit: string) => `${plural(n, unit)} ago`;
   if (days < 1) return 'today';
   if (days < 30) return ago(days, 'day');
   if (days < 365) return ago(Math.floor(days / 30), 'month');

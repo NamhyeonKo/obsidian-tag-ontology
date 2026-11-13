@@ -5,7 +5,7 @@ import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { TAKE_OUT, canvasEdges, facetColors, grouped, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { TAKE_OUT, canvasEdges, facetColors, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -182,8 +182,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     this.syncEdges();
     this.updateStart();
     const on = this.onCanvas(), status = this.status;
-    const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
-    if (status) status.textContent = `${count(on.tags.size, 'tag')} · ${count(on.notes.size, 'note')} · ${count(on.groups.size, 'group')}`;
+    if (status) status.textContent = `${plural(on.tags.size, 'tag')} · ${plural(on.notes.size, 'note')} · ${plural(on.groups.size, 'group')}`;
   }
 
   private onCanvas(): OnCanvas {
@@ -337,7 +336,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   private groupCard(tag: string, notes: Dated[]): Card {
-    return { icon: 'group', color: this.colors.accent, title: `${notes.length} notes`, sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
+    return { icon: 'group', color: this.colors.accent, title: plural(notes.length, 'note'), sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
       rows: [['Latest', relativeTime(notes[0]?.mtime ?? 0, Date.now())]] };
   }
 

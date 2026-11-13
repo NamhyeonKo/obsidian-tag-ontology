@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Ontology } from 'tag-ontology';
-import { canvasEdges, facetColors, grouped, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
+import { canvasEdges, facetColors, grouped, plural, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
 
 const raw = {
   cs: { description: '', broader: [] },
@@ -128,4 +128,10 @@ test('related lines between tags with "--" in their names keep apart', () => {
   }, []);
   const related = canvasEdges(dashed, on(['a', 'b--c', 'a--b', 'c'])).filter(edge => edge.kind === 'related');
   assert.equal(new Set(related.map(edge => edge.id)).size, 2);
+});
+
+test('counts read "1 note" and "2 notes"', () => {
+  assert.equal(plural(1, 'note'), '1 note');
+  assert.equal(plural(0, 'note'), '0 notes');
+  assert.equal(plural(2, 'group'), '2 groups');
 });
