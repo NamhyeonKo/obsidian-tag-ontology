@@ -10,7 +10,7 @@ import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, pl
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
 // Used when a theme leaves a color unset or in a format cssColorToHex can't read.
-const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', background: '#1e1e1e', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
+const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
 const WIDTH = { tag: 230, note: 210, group: 220 };
 type Expand = 'children' | 'parents' | 'related';
 type Dated = { path: string; mtime: number };
@@ -390,7 +390,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     cy.edges().filter(edge => !wanted.has(edge.id())).remove();
     for (const edge of wanted.values()) {
       if (cy.getElementById(edge.id).nonempty()) continue;
-      cy.add({ group: 'edges', data: { ...edge, label: edge.kind === 'broader' ? 'narrower' : edge.kind === 'related' ? 'related' : '' } });
+      cy.add({ group: 'edges', data: { ...edge } });
     }
   }
 
@@ -398,7 +398,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     const style = getComputedStyle(this.contentEl), read = (name: string, fallback: string) => cssColorToHex(style.getPropertyValue(name)) ?? fallback;
     this.colors = {
       tag: read('--graph-node-tag', FALLBACK.tag), muted: read('--text-muted', FALLBACK.muted), line: read('--graph-line', FALLBACK.line),
-      background: read('--background-primary', FALLBACK.background), card: read('--background-secondary', FALLBACK.card),
+      card: read('--background-secondary', FALLBACK.card),
       border: read('--background-modifier-border', FALLBACK.border), text: read('--text-normal', FALLBACK.text), accent: read('--interactive-accent', FALLBACK.accent),
     };
     const { card, border, text, muted } = this.colors;
@@ -416,15 +416,15 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   private style(): StylesheetJson {
-    const { line, accent, muted, background } = this.colors;
-    const label = { 'font-size': 10, color: muted, 'text-rotation': 'none' as const, 'text-background-color': background, 'text-background-opacity': 1, 'text-background-padding': '2px', label: 'data(label)' };
+    // Lines carry no labels: the arrow and the dashes say which relation it is, as in the 2D and 3D graphs.
+    const { line, accent } = this.colors;
     return [
       { selector: 'node', style: { shape: 'round-rectangle', width: 'data(w)', height: 'data(h)', 'background-image': 'data(img)', 'background-fit': 'none', 'background-clip': 'none', 'background-opacity': 0, 'border-width': 0 } },
       { selector: 'node:selected', style: { 'overlay-color': accent, 'overlay-opacity': 0.18, 'overlay-padding': 4, 'overlay-shape': 'round-rectangle' } },
       { selector: 'node:active', style: { 'overlay-opacity': 0 } },
       { selector: 'edge', style: { width: 1, 'line-color': line, 'curve-style': 'bezier', opacity: 0.8 } },
-      { selector: 'edge[kind="broader"]', style: { ...label, width: 2, 'line-color': line, 'target-arrow-shape': 'triangle', 'target-arrow-color': line, opacity: 1 } },
-      { selector: 'edge[kind="related"]', style: { ...label, width: 1.6, 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-color': accent, opacity: 1 } },
+      { selector: 'edge[kind="broader"]', style: { width: 2, 'line-color': line, 'target-arrow-shape': 'triangle', 'target-arrow-color': line, opacity: 1 } },
+      { selector: 'edge[kind="related"]', style: { width: 1.6, 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-color': accent, opacity: 1 } },
     ];
   }
 
