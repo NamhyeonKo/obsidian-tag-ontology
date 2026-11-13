@@ -65,13 +65,13 @@ test('searchAround lists only what is not on the canvas, related both ways, and 
 test('canvasEdges links tags on the canvas by hierarchy and related, notes to every tag on the canvas they carry, and a group to its tag', () => {
   const edges = canvasEdges(model, on(['cs', 'ml', 'dl', 'ov'], ['C.md'], ['ml']));
   const byId = new Map(edges.map(edge => [edge.id, edge]));
-  assert.deepEqual([...byId.keys()].sort(), ['g:ml', 'h:cs->ml', 'h:ml->dl', 'h:ml->ov', 'n:dl->C.md', 'n:ov->C.md', 'r:dl--ov']);
+  assert.deepEqual([...byId.keys()].sort(), ['g:ml', 'h:cs->ml', 'h:ml->dl', 'h:ml->ov', 'n:dl->C.md', 'n:ov->C.md', 'r:["dl","ov"]']);
   assert.deepEqual(byId.get('h:cs->ml'), { id: 'h:cs->ml', kind: 'broader', source: 'tag:cs', target: 'tag:ml' });
-  assert.deepEqual(byId.get('r:dl--ov'), { id: 'r:dl--ov', kind: 'related', source: 'tag:dl', target: 'tag:ov' });
+  assert.deepEqual(byId.get('r:["dl","ov"]'), { id: 'r:["dl","ov"]', kind: 'related', source: 'tag:dl', target: 'tag:ov' });
   assert.deepEqual(byId.get('n:dl->C.md'), { id: 'n:dl->C.md', kind: 'note', source: 'tag:dl', target: 'note:C.md' });
   assert.deepEqual(byId.get('g:ml'), { id: 'g:ml', kind: 'note', source: 'tag:ml', target: 'group:ml' });
   const without = canvasEdges(model, on(['cs', 'dl', 'ov'], ['C.md'], ['ml'])).map(edge => edge.id).sort();
-  assert.deepEqual(without, ['n:dl->C.md', 'n:ov->C.md', 'r:dl--ov']);
+  assert.deepEqual(without, ['n:dl->C.md', 'n:ov->C.md', 'r:["dl","ov"]']);
 });
 
 test('tagsOfNote lists the dictionary tags a note carries directly', () => {
@@ -119,4 +119,13 @@ test('pruneCanvas keeps a note card whose tag was removed from it, and only the 
 test('more than 15 notes make a group, 15 stay note cards', () => {
   assert.equal(grouped(15), false);
   assert.equal(grouped(16), true);
+});
+
+test('related lines between tags with "--" in their names keep apart', () => {
+  const dashed = new Ontology({
+    a: { description: '', broader: [], related: ['b--c'] }, 'b--c': { description: '', broader: [] },
+    'a--b': { description: '', broader: [], related: ['c'] }, c: { description: '', broader: [] },
+  }, []);
+  const related = canvasEdges(dashed, on(['a', 'b--c', 'a--b', 'c'])).filter(edge => edge.kind === 'related');
+  assert.equal(new Set(related.map(edge => edge.id)).size, 2);
 });

@@ -79,7 +79,8 @@ export function canvasEdges(model: Ontology, on: OnCanvas): EdgeDef[] {
       if (on.tags.has(parent)) edges.push({ id: `h:${parent}->${tag}`, kind: 'broader', source: `tag:${parent}`, target: `tag:${tag}` });
     }
     for (const other of model.related(tag)) {
-      if (tag < other && on.tags.has(other)) edges.push({ id: `r:${tag}--${other}`, kind: 'related', source: `tag:${tag}`, target: `tag:${other}` });
+      // Tag names may contain "--", so the pair is written as JSON to keep every pair's id apart.
+      if (tag < other && on.tags.has(other)) edges.push({ id: `r:${JSON.stringify([tag, other])}`, kind: 'related', source: `tag:${tag}`, target: `tag:${other}` });
     }
     for (const path of model.direct.get(tag) ?? []) {
       if (on.notes.has(path)) edges.push({ id: `n:${tag}->${path}`, kind: 'note', source: `tag:${tag}`, target: `note:${path}` });
