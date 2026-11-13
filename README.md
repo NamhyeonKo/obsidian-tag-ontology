@@ -180,7 +180,7 @@ The button at the bottom of the graph toolbar, or **Open ontology explorer**, op
 - An empty canvas asks where to start: search for a tag, pick a root tag, or continue from the tag selected in the sidebar. Choosing a tag in the sidebar search or a tag link adds it to the canvas too.
 - Every tag is an object card with its facet (or `concept`), its direct notes, its notes including descendants and its number of children. Facets get their own colors; tags without one take the tag color.
 - Right-click a tag for **Expand children**, **Expand parents**, **Expand related** and **Show notes**. Each shows how many are not on the canvas yet. New cards stand in columns beside it, children and notes to the right and parents to the left, and nothing already on the canvas moves. Double-click a tag to expand its children.
-- Lines follow the dictionary: `narrower` arrows from parent to child and dashed `related` lines join any two tags on the canvas, whoever brought them out.
+- Lines follow the dictionary, as in the 2D graph: arrows from parent to child and dashed lines between related tags join any two tags on the canvas, whoever brought them out.
 - A tag with more than 15 notes shows one group card instead. Click it to list its notes in the sidebar tab, newest first, filter them and take out the ones you tick or the latest 10. Double-click it to take out the latest 10. The group holds every note of the tag that isn't a card on the canvas: notes tagged later join it, and a note card you remove goes back into it.
 - Click a card to show it in the sidebar tab; double-click a note to open it. Drag cards anywhere; they stay where you put them. Right-click a card to remove it; the cards brought out of it stay.
 - The toolbar has Fit, Clear canvas and Open in 2D. The canvas is not saved: closing the tab clears it.
@@ -258,7 +258,7 @@ Rules:
 - A tag cannot reference itself, and `broader` links cannot form a cycle.
 - If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
 
-See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
+See [`examples/sample-vault/tow/tag-dictionary.json`](examples/sample-vault/tow/tag-dictionary.json) for a complete example.
 
 ## Privacy
 
