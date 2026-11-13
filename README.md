@@ -258,7 +258,7 @@ Rules:
 - A tag cannot reference itself, and `broader` links cannot form a cycle.
 - If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
 
-See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
+See [`examples/sample-vault/tow/tag-dictionary.json`](examples/sample-vault/tow/tag-dictionary.json) for a complete example.
 
 ## Privacy
 
