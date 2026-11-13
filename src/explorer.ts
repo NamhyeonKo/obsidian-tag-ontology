@@ -73,8 +73,9 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     const accentWatch = new MutationObserver(() => this.recolor());
     accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
-    // A renamed note keeps its card and its place in a group; deleted ones go on the refresh that follows.
+    // A renamed note keeps its card, its place in a group and its sidebar view; deleted ones go on the refresh that follows.
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      this.owner.native.noteRenamed(oldPath, file.path);
       if (!this.cy) return;
       this.replace(this.cy.getElementById('note:' + oldPath), 'note:' + file.path, { path: file.path });
       this.cy.nodes('[type="group"]').forEach(group => {

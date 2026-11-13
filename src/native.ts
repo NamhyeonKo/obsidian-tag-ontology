@@ -487,6 +487,11 @@ export class NativeGraphs {
   // The explorer's note and group cards show here, like a tag.
   showNote(path: string) { this.leave(() => { this.go({ kind: 'note', path }); this.showSelection(); this.showPanel(true); }); }
   showGroup(tag: string) { this.leave(() => { this.go({ kind: 'group', tag }); this.showSelection(); this.showPanel(true); }); }
+  // A renamed note keeps the sidebar views of it, back and forward included.
+  noteRenamed(from: string, to: string) {
+    this.history = this.history.map(view => view.kind === 'note' && view.path === from ? { kind: 'note', path: to } : view);
+    this.renderPanel();
+  }
   checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
 
   // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.

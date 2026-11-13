@@ -41,7 +41,7 @@ class Element {
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
-  showNote(path: string): void; showGroup(tag: string): void; explorer?: ExplorerPanel };
+  showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
@@ -1563,4 +1563,17 @@ test('the note and group views take part in back and forward', async () => {
   assert.ok(t.sidebar.all().some(el => el.text === 'A.md'));
   t.click('Forward');
   assert.ok(t.sidebar.all().some(el => el.text === '1 note · #ml'));
+});
+
+test('a renamed note keeps its sidebar view, back and forward included', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'Old.md', tags: ['ml'] }]);
+  const files = new Set(['Old.md']), vault = (t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown } }).vault;
+  vault.getAbstractFileByPath = path => files.has(path) ? new File() : null;
+  t.controller.showNote('Old.md');
+  t.click('#ml');
+  files.delete('Old.md'); files.add('Folder/New.md');
+  t.controller.noteRenamed('Old.md', 'Folder/New.md');
+  t.click('Back');
+  assert.ok(t.sidebar.all().some(el => el.text === 'Folder/New.md'));
 });
