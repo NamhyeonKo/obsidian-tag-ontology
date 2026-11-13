@@ -34,9 +34,10 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     // With the explorer off, a tab the workspace brings back closes before it loads Cytoscape.
     if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
     // One explorer: the sidebar's group view and reveal talk to it, so a second one from Split or a restored workspace closes.
-    if (this.app.workspace.getLeavesOfType(VIEW_EXPLORER).some(leaf => leaf !== this.leaf && leaf.view instanceof ExplorerView && leaf.view.cy)) {
-      this.leaf.detach(); return;
-    }
+    // The first claims the place before it awaits Cytoscape, so two opening at once can't both stay.
+    const native = this.owner.native;
+    if (native.explorer && native.explorer !== this) { this.leaf.detach(); return; }
+    native.explorer = this;
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-explorer');
     this.stage = root.createDiv('tag-ontology-explorer-stage');
@@ -84,7 +85,6 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
       this.changed();
     }));
     this.owner.native.link(this);
-    this.owner.native.explorer = this;
     this.changed();
   }
 
