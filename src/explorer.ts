@@ -24,6 +24,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   private stage?: HTMLElement; private status?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
+  // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
+  private pending?: string;
 
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return VIEW_EXPLORER; }
@@ -57,7 +59,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (this.closed) return;
     const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, style: this.style() });
     // The tab can still be laying out when Cytoscape measures its container, and a resized tab needs a new measure too.
-    const resize = new ResizeObserver(() => cy.resize());
+    const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
     cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
@@ -86,7 +88,15 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   // Obsidian calls this when the tab changes size; the observer in onOpen covers the first layout too.
-  onResize(): void { this.cy?.resize(); }
+  onResize(): void {
+    const cy = this.cy;
+    if (!cy) return;
+    cy.resize();
+    const node = this.pending ? cy.getElementById(this.pending) : undefined;
+    if (!node || !cy.width()) return;
+    this.pending = undefined;
+    if (node.nonempty()) cy.center(node);
+  }
 
   onClose(): Promise<void> {
     this.closed = true;
@@ -281,7 +291,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
       if (first) { cy.zoom(1); cy.center(node); }
     }
     cy.elements().unselect(); node.select();
-    cy.animate({ center: { eles: node } }, { duration: 250 });
+    if (cy.width()) cy.animate({ center: { eles: node } }, { duration: 250 }); else this.pending = node.id();
   }
 
   private expand(node: NodeSingular, kind: Expand) {
