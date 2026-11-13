@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Ontology } from 'tag-ontology';
-import { canvasEdges, facetColors, grouped, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
+import { canvasEdges, facetColors, grouped, groupPaths, plural, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
 
 const raw = {
   cs: { description: '', broader: [] },
@@ -99,20 +99,30 @@ test('relativeTime counts days, then months, then years', () => {
   assert.equal(relativeTime(now - 730 * day, now), '2 years ago');
 });
 
-test('pruneCanvas removes tags gone from the dictionary and their groups, notes whose file is gone, and drops untagged or deleted paths from groups', () => {
+test('pruneCanvas removes tags gone from the dictionary and their groups, notes whose file is gone, and groups left with nothing', () => {
   const { ov: _gone, ...rest } = raw;
-  const after = new Ontology(rest, [{ path: 'A.md', tags: ['ml'] }, { path: 'B.md', tags: [] }, { path: 'C.md', tags: ['dl'] }]);
-  const groups = new Map([['ml', ['A.md', 'B.md', 'C.md']], ['ov', ['C.md']], ['dl', ['C.md']]]);
-  const pruned = pruneCanvas(after, path => path !== 'C.md', on(['ml', 'ov', 'dl'], ['A.md', 'B.md', 'C.md'], ['ml', 'ov', 'dl']), groups);
+  const after = new Ontology(rest, [{ path: 'A.md', tags: ['ml'] }, { path: 'B.md', tags: ['ml'] }, { path: 'C.md', tags: ['dl'] }]);
+  const pruned = pruneCanvas(after, path => path !== 'C.md', on(['ml', 'ov', 'dl'], ['A.md', 'C.md'], ['ml', 'ov', 'dl']));
   assert.deepEqual(pruned.tags, ['ov']);
   assert.deepEqual(pruned.notes, ['C.md']);
   assert.deepEqual(pruned.groups.sort(), ['dl', 'ov']);
-  assert.deepEqual([...pruned.groupPaths], [['ml', ['A.md']]]);
+});
+
+test('a group holds every direct note of its tag that is not a card on the canvas, newly tagged ones included', () => {
+  const notes = [{ path: 'A.md', tags: ['ml'] }, { path: 'B.md', tags: ['ml'] }, { path: 'C.md', tags: ['ml', 'dl'] }];
+  const before = groupPaths(new Ontology(raw, notes), 'ml', on(['ml'], ['A.md'], ['ml']), () => true);
+  assert.deepEqual(before, ['B.md', 'C.md']);
+  const tagged = new Ontology(raw, [...notes, { path: 'D.md', tags: ['ml'] }]);
+  assert.deepEqual(groupPaths(tagged, 'ml', on(['ml'], ['A.md'], ['ml']), () => true), ['B.md', 'C.md', 'D.md']);
+  // A note card taken off the canvas goes back to the group.
+  assert.deepEqual(groupPaths(tagged, 'ml', on(['ml'], [], ['ml']), () => true), ['A.md', 'B.md', 'C.md', 'D.md']);
+  assert.deepEqual(groupPaths(tagged, 'ml', on(['ml'], [], ['ml']), path => path !== 'B.md'), ['A.md', 'C.md', 'D.md']);
+  assert.deepEqual(groupPaths(tagged, 'gone', on([], [], ['gone']), () => true), []);
 });
 
 test('pruneCanvas keeps a note card whose tag was removed from it, and only the line goes', () => {
   const after = new Ontology(raw, [{ path: 'A.md', tags: [] }]), canvas = on(['ml'], ['A.md']);
-  assert.deepEqual(pruneCanvas(after, () => true, canvas, new Map()).notes, []);
+  assert.deepEqual(pruneCanvas(after, () => true, canvas).notes, []);
   assert.deepEqual(canvasEdges(after, canvas), []);
 });
 
@@ -128,4 +138,10 @@ test('related lines between tags with "--" in their names keep apart', () => {
   }, []);
   const related = canvasEdges(dashed, on(['a', 'b--c', 'a--b', 'c'])).filter(edge => edge.kind === 'related');
   assert.equal(new Set(related.map(edge => edge.id)).size, 2);
+});
+
+test('counts read "1 note" and "2 notes"', () => {
+  assert.equal(plural(1, 'note'), '1 note');
+  assert.equal(plural(0, 'note'), '0 notes');
+  assert.equal(plural(2, 'group'), '2 groups');
 });

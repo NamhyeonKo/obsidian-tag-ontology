@@ -5,7 +5,7 @@ import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { TAKE_OUT, canvasEdges, facetColors, grouped, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -24,6 +24,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   private stage?: HTMLElement; private status?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
+  // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
+  private pending?: string;
 
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return VIEW_EXPLORER; }
@@ -57,7 +59,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (this.closed) return;
     const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, style: this.style() });
     // The tab can still be laying out when Cytoscape measures its container, and a resized tab needs a new measure too.
-    const resize = new ResizeObserver(() => cy.resize());
+    const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
     cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
@@ -79,17 +81,22 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
       this.owner.native.noteRenamed(oldPath, file.path);
       if (!this.cy) return;
       this.replace(this.cy.getElementById('note:' + oldPath), 'note:' + file.path, { path: file.path });
-      this.cy.nodes('[type="group"]').forEach(group => {
-        group.data('notes', (group.data('notes') as Dated[]).map(note => note.path === oldPath ? { ...note, path: file.path } : note));
-      });
-      this.changed();
+      this.changed(false);
     }));
     this.owner.native.link(this);
     this.changed();
   }
 
   // Obsidian calls this when the tab changes size; the observer in onOpen covers the first layout too.
-  onResize(): void { this.cy?.resize(); }
+  onResize(): void {
+    const cy = this.cy;
+    if (!cy) return;
+    cy.resize();
+    const node = this.pending ? cy.getElementById(this.pending) : undefined;
+    if (!node || !cy.width()) return;
+    this.pending = undefined;
+    if (node.nonempty()) cy.center(node);
+  }
 
   onClose(): Promise<void> {
     this.closed = true;
@@ -105,13 +112,9 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   draw(operation: string): void {
     const cy = this.cy, model = this.owner.model;
     if (operation !== 'refresh' || !cy || !model) return;
-    const groups = new Map(cy.nodes('[type="group"]').map(node => [node.data('tag') as string, (node.data('notes') as Dated[]).map(note => note.path)]));
-    const exists = (path: string) => this.app.vault.getAbstractFileByPath(path) instanceof TFile;
-    const pruned = pruneCanvas(model, exists, this.onCanvas(), groups);
+    const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
-    for (const [tag, paths] of pruned.groupPaths) {
-      cy.getElementById('group:' + tag).data('notes', paths.map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime));
-    }
+    // Redrawing every card ends in changed(), which refills the groups.
     this.recolor();
   }
 
@@ -134,7 +137,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (!cy) return;
     this.replace(cy.getElementById('tag:' + from), 'tag:' + to, { tag: to });
     this.replace(cy.getElementById('group:' + from), 'group:' + to, { tag: to });
-    this.changed();
+    this.changed(false);
   }
 
   // Cytoscape ids can't change, so a renamed card is a new node with the old one's place, data and selection.
@@ -178,13 +181,38 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   // Everything that changes what is on the canvas ends here.
-  private changed() {
+  // Rename callbacks pass false: the model is reloaded only after them, and regrouping against the old one would drop a group
+  // whose tag or last note was just renamed. The refresh that follows regroups.
+  private changed(regroup = true) {
+    if (regroup) this.regroup();
     this.syncEdges();
     this.updateStart();
     const on = this.onCanvas(), status = this.status;
-    const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
-    if (status) status.textContent = `${count(on.tags.size, 'tag')} · ${count(on.notes.size, 'note')} · ${count(on.groups.size, 'group')}`;
+    if (status) status.textContent = `${plural(on.tags.size, 'tag')} · ${plural(on.notes.size, 'note')} · ${plural(on.groups.size, 'group')}`;
   }
+
+  // Every group holds its tag's notes that aren't cards on the canvas (groupPaths). A group left empty goes; the sidebar draws
+  // again when a group changed, as it may be showing it.
+  private regroup() {
+    const cy = this.cy, model = this.owner.model;
+    if (!cy || !model) return;
+    const on = this.onCanvas();
+    let moved = false;
+    cy.nodes('[type="group"]').forEach(group => {
+      // Edits change modified times too, so the order and the times are compared, not only who is in the group.
+      const notes = groupPaths(model, group.data('tag') as string, on, path => this.exists(path))
+        .map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime);
+      const held = group.data('notes') as Dated[];
+      if (notes.length === held.length && notes.every((note, i) => note.path === held[i].path && note.mtime === held[i].mtime)) return;
+      moved = true;
+      if (!notes.length) { group.remove(); return; }
+      group.data('notes', notes);
+      this.redraw(group);
+    });
+    if (moved) this.owner.native.renderPanel();
+  }
+
+  private exists(path: string) { return this.app.vault.getAbstractFileByPath(path) instanceof TFile; }
 
   private onCanvas(): OnCanvas {
     const of = (type: string, key: string) => new Set((this.cy?.nodes(`[type="${type}"]`) ?? []).map(node => node.data(key) as string));
@@ -204,17 +232,15 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   // Notes leave the group for cards in a column beside it; a group left empty goes.
+  // The notes become cards in a column beside the group, which shrinks by them (see regroup); a group left empty goes.
   takeOut(tag: string, paths: string[]) {
     const cy = this.cy, group = cy?.getElementById('group:' + tag);
     if (!cy || !group?.nonempty()) return;
-    const picked = new Set(paths), notes = group.data('notes') as Dated[], rest = notes.filter(note => !picked.has(note.path));
-    const fresh = notes.filter(note => picked.has(note.path) && cy.getElementById('note:' + note.path).empty()).map(note => note.path);
+    const held = new Set((group.data('notes') as Dated[]).map(note => note.path));
+    const fresh = paths.filter(path => held.has(path) && cy.getElementById('note:' + path).empty());
     const cards = fresh.map(path => this.noteCard(path));
     const spots = placeColumn(group.position(), 1, cards.map(card => this.size(card)), this.taken());
-    const added = fresh.reduce((all, path, i) => all.union(this.addNode('note:' + path, cards[i], { type: 'note', path }, spots[i])), cy.collection());
-    if (rest.length) { group.data('notes', rest); this.redraw(group); } else group.remove();
-    this.reveal(added);
-    this.owner.native.renderPanel();
+    this.reveal(fresh.reduce((all, path, i) => all.union(this.addNode('note:' + path, cards[i], { type: 'note', path }, spots[i])), cy.collection()));
   }
 
   private takeLatest(tag: string) { this.takeOut(tag, (this.groupNotes(tag) ?? []).slice(0, TAKE_OUT).map(note => note.path)); }
@@ -269,7 +295,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
       if (first) { cy.zoom(1); cy.center(node); }
     }
     cy.elements().unselect(); node.select();
-    cy.animate({ center: { eles: node } }, { duration: 250 });
+    if (cy.width()) cy.animate({ center: { eles: node } }, { duration: 250 }); else this.pending = node.id();
   }
 
   private expand(node: NodeSingular, kind: Expand) {
@@ -337,7 +363,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   private groupCard(tag: string, notes: Dated[]): Card {
-    return { icon: 'group', color: this.colors.accent, title: `${notes.length} notes`, sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
+    return { icon: 'group', color: this.colors.accent, title: plural(notes.length, 'note'), sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
       rows: [['Latest', relativeTime(notes[0]?.mtime ?? 0, Date.now())]] };
   }
 

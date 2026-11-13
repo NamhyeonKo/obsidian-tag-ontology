@@ -99,24 +99,26 @@ export function facetColors(facets: Iterable<string>): Map<string, string> {
   return new Map([...new Set(facets)].sort().map((facet, i) => [facet, PALETTE[i % PALETTE.length]]));
 }
 
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export function relativeTime(mtime: number, now: number): string {
   const days = Math.floor((now - mtime) / 864e5);
-  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  const ago = (n: number, unit: string) => `${plural(n, unit)} ago`;
   if (days < 1) return 'today';
   if (days < 30) return ago(days, 'day');
   if (days < 365) return ago(Math.floor(days / 30), 'month');
   return ago(Math.floor(days / 365), 'year');
 }
 
+// A group holds every note tagged directly with its tag that isn't a card on the canvas: notes tagged later join it, and a note
+// card taken off the canvas goes back into it.
+export function groupPaths(model: Ontology, tag: string, on: OnCanvas, exists: (path: string) => boolean): string[] {
+  return model.entries.has(tag) ? model.notesFor(tag, false).filter(path => exists(path) && !on.notes.has(path)) : [];
+}
+
 // What a dictionary or note change leaves without a place on the canvas: tags gone from the dictionary, notes whose file is
-// gone, and groups whose tag is gone or that hold nothing any more. Each surviving group keeps the notes that still exist and
-// still carry its tag. A note that only lost a tag stays; canvasEdges drops its line.
-export function pruneCanvas(model: Ontology, exists: (path: string) => boolean, on: OnCanvas, groups: ReadonlyMap<string, string[]>) {
-  const groupPaths = new Map<string, string[]>(), gone: string[] = [];
-  for (const tag of on.groups) {
-    const tagged = new Set(model.notesFor(tag, false));
-    const kept = model.entries.has(tag) ? (groups.get(tag) ?? []).filter(path => exists(path) && tagged.has(path)) : [];
-    if (kept.length) groupPaths.set(tag, kept); else gone.push(tag);
-  }
-  return { tags: [...on.tags].filter(tag => !model.entries.has(tag)), notes: [...on.notes].filter(path => !exists(path)), groups: gone, groupPaths };
+// gone, and groups that would hold nothing (their tag gone too). A note that only lost a tag stays; canvasEdges drops its line.
+export function pruneCanvas(model: Ontology, exists: (path: string) => boolean, on: OnCanvas) {
+  const notes = [...on.notes].filter(path => !exists(path)), left = { ...on, notes: new Set([...on.notes].filter(exists)) };
+  return { tags: [...on.tags].filter(tag => !model.entries.has(tag)), notes, groups: [...on.groups].filter(tag => !groupPaths(model, tag, left, exists).length) };
 }
