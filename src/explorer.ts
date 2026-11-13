@@ -199,12 +199,14 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     const on = this.onCanvas();
     let moved = false;
     cy.nodes('[type="group"]').forEach(group => {
-      const paths = groupPaths(model, group.data('tag') as string, on, path => this.exists(path));
-      const held = (group.data('notes') as Dated[]).map(note => note.path);
-      if (paths.length === held.length && paths.every(path => held.includes(path))) return;
+      // Edits change modified times too, so the order and the times are compared, not only who is in the group.
+      const notes = groupPaths(model, group.data('tag') as string, on, path => this.exists(path))
+        .map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime);
+      const held = group.data('notes') as Dated[];
+      if (notes.length === held.length && notes.every((note, i) => note.path === held[i].path && note.mtime === held[i].mtime)) return;
       moved = true;
-      if (!paths.length) { group.remove(); return; }
-      group.data('notes', paths.map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime));
+      if (!notes.length) { group.remove(); return; }
+      group.data('notes', notes);
       this.redraw(group);
     });
     if (moved) this.owner.native.renderPanel();
