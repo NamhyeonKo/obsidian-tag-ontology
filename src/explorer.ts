@@ -81,7 +81,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
       this.owner.native.noteRenamed(oldPath, file.path);
       if (!this.cy) return;
       this.replace(this.cy.getElementById('note:' + oldPath), 'note:' + file.path, { path: file.path });
-      this.changed();
+      this.changed(false);
     }));
     this.owner.native.link(this);
     this.changed();
@@ -137,7 +137,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (!cy) return;
     this.replace(cy.getElementById('tag:' + from), 'tag:' + to, { tag: to });
     this.replace(cy.getElementById('group:' + from), 'group:' + to, { tag: to });
-    this.changed();
+    this.changed(false);
   }
 
   // Cytoscape ids can't change, so a renamed card is a new node with the old one's place, data and selection.
@@ -181,8 +181,10 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   // Everything that changes what is on the canvas ends here.
-  private changed() {
-    this.regroup();
+  // Rename callbacks pass false: the model is reloaded only after them, and regrouping against the old one would drop a group
+  // whose tag or last note was just renamed. The refresh that follows regroups.
+  private changed(regroup = true) {
+    if (regroup) this.regroup();
     this.syncEdges();
     this.updateStart();
     const on = this.onCanvas(), status = this.status;
