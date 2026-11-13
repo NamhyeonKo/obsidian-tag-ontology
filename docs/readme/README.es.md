@@ -31,6 +31,7 @@ Nunca modifica tus notas. Solo escribe en el diccionario de etiquetas (un archiv
 - **Múltiples padres y etiquetas relacionadas**: Flechas sólidas indican relaciones padre-hijo; líneas discontinuas conectan etiquetas relacionadas sin relación jerárquica.
 - **Tres disposiciones de gráfico**: Fuerza (Force), árbol vertical (Vertical tree) y árbol horizontal (Horizontal tree).
 - **Vista 3D (Beta)**: Explora la misma jerarquía en tres dimensiones: orbita libremente y haz clic en una etiqueta para volar hacia ella.
+- **Explorador de ontología (Beta)**: Empieza desde una etiqueta en un lienzo vacío y saca sus hijas, padres, etiquetas relacionadas y notas con un clic derecho, como tarjetas de objeto, al estilo de los grafos de ontología de Palantir.
 - **Panel dedicado en la barra lateral**: Busca por nombre o alias, consulta los detalles de una etiqueta y ejecuta comprobaciones de integridad del diccionario en un clic.
 - **Comprobación del diccionario (Dictionary Check)**: Enumera las etiquetas utilizadas en tu bóveda pero ausentes del diccionario, junto con nombres similares del diccionario; las etiquetas del diccionario que aún no usa ninguna nota; las notas que usan una etiqueta como alias o con mayúsculas y minúsculas distintas; y las notas que incluyen una etiqueta más amplia junto a otra más específica. Solo informa y nunca modifica nada.
 - **Colores personalizados (opcional)**: Asigna un color unificado a todas las etiquetas en el gráfico y la barra lateral (por defecto, el color de acento).
