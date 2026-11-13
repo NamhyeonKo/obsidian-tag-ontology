@@ -4,6 +4,7 @@ import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Change, type Note, type RawDictionary, type Usage } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
 import { Graph3DView, VIEW_3D } from './graph3d.ts';
+import { ExplorerView, VIEW_EXPLORER } from './explorer.ts';
 import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
@@ -54,11 +55,17 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.disposed) return;
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
     this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
+    this.registerView(VIEW_EXPLORER, leaf => new ExplorerView(leaf, this));
     this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
     this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
     this.addCommand({ id: 'open-3d-graph', name: OPEN_3D, checkCallback: (checking) => {
       if (!this.settings.enable3d) return false;
       if (!checking) void this.openView('3d');
+      return true;
+    } });
+    this.addCommand({ id: 'open-explorer', name: OPEN_EXPLORER, checkCallback: (checking) => {
+      if (!this.settings.enableExplorer) return false;
+      if (!checking) void this.openView('explorer');
       return true;
     } });
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
@@ -318,7 +325,7 @@ export default class TagOntologyPlugin extends Plugin {
     await this.refreshViews({ notify: true });
   }
 
-  async openView(graph: '2d' | '3d' = '2d'): Promise<void> {
+  async openView(graph: '2d' | '3d' | 'explorer' = '2d'): Promise<void> {
     if (this.disposed) return;
     try {
       await this.checkOutsideChange();
@@ -326,7 +333,7 @@ export default class TagOntologyPlugin extends Plugin {
       await this.loadModel();
       if (this.disposed) return;
       // An open tab of the graph is reused.
-      const type = graph === '3d' ? VIEW_3D : 'graph';
+      const type = graph === '3d' ? VIEW_3D : graph === 'explorer' ? VIEW_EXPLORER : 'graph';
       const existing = this.app.workspace.getLeavesOfType(type)[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
       if (!existing) await leaf.setViewState({ type, active: true });
@@ -372,6 +379,7 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.disposed) return;
     // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
     if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
+    if (!this.settings.enableExplorer) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_EXPLORER)) leaf.detach();
     try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
     catch (error) {
       if (this.disposed) return;
@@ -406,6 +414,8 @@ const TOW_VAULT_NOTICE ='TOW manages this file: run the tow-setup skill or tow m
 const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dictionary.`;
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
+const OPEN_EXPLORER = 'Open ontology explorer';
+const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open ontology explorer command, that open the explorer. Turning it off closes the explorer tabs.' };
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
 const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
@@ -427,6 +437,7 @@ class OntologySettingsTab extends PluginSettingTab {
       { name: 'Dictionary path', desc: pathDescription(this.owner), render: (setting) => { this.dictionaryPathSetting(setting); } },
       { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
       { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
+      { ...ENABLE_EXPLORER, control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
       { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
       // What else stays bright only shows while focus is on.
       { type: 'group', visible: () => this.owner.settings.focus, items:
@@ -533,6 +544,9 @@ class OntologySettingsTab extends PluginSettingTab {
     });
     new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
+    });
+    new Setting(containerEl).setName(ENABLE_EXPLORER.name).setDesc(ENABLE_EXPLORER.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.enableExplorer).onChange(value => this.setControlValue('enableExplorer', value));
     });
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {

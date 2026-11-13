@@ -6,6 +6,7 @@ import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as checkModule from '../src/check.ts';
+import * as explorerLayout from '../src/explorer-layout.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
@@ -14,7 +15,7 @@ import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  css: Record<string, string> = {}; disabled = false;
+  css: Record<string, string> = {}; disabled = false; checked = false;
   // The window the element is in, like Obsidian's Node.win.
   win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
@@ -39,8 +40,10 @@ class Element {
 }
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
-  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void };
-interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
+  showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
+interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
+interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
 const linkedGraph = (has: (tag: string) => boolean = () => false) => {
   const calls: string[] = [];
@@ -105,6 +108,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
+      : specifier === './explorer-layout.ts' ? { ...explorerLayout }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -471,14 +475,14 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'box', 'waypoints']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
 });
 
-test('the 3D button at the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
+test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
   const t = await setup();
   t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-4, -2);
   assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
   assert.deepEqual(last.map(el => el.hidden), [false, false]);
   t.click('Open in 3D (beta)');
@@ -514,6 +518,22 @@ test('the layout buttons fold into the current one, open in their own order, and
   assert.deepEqual(active(), ['Layout: Vertical tree'], 'with the current one marked where it sits');
   t.click('Layout: Horizontal tree');
   assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.deepEqual(shown(), ['Layout: Horizontal tree']);
+});
+
+test('the explorer button follows the 3D button, opens the explorer, and hides with its separator while the explorer is off', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
+  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open ontology explorer (beta)');
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  t.click('Open ontology explorer (beta)');
+  assert.deepEqual(t.owner.opened, ['explorer']);
+  t.owner.settings.enableExplorer = false; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  // The 3D button keeps its own setting.
+  assert.equal(tools.children.at(-3)!.hidden, false);
+  t.owner.settings.enableExplorer = true; t.controller.refresh();
+  assert.deepEqual(last.map(el => el.hidden), [false, false]);
 });
 
 test('a click elsewhere in the graph or Escape folds the open layout buttons', async () => {
@@ -1083,6 +1103,17 @@ test('renaming updates the expanded list and the history', async () => {
   t.click('Forward'); assert.equal(heading(t), 'machine-learning');
 });
 
+test('renaming a tag in the editor tells linked graphs before the reload', async () => {
+  const t = await setup(), calls: string[] = [];
+  t.controller.link({ draw: operation => { calls.push('draw:' + operation); }, paint() {}, has: () => true, focusOn() {}, renamed: (from: string, to: string) => { calls.push(`renamed:${from}->${to}`); } } as LinkedGraph);
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  calls.length = 0;
+  t.click('Save'); await settle();
+  assert.equal(calls[0], 'renamed:ml->machine-learning');
+  assert.ok(calls.indexOf('draw:refresh') > 0, 'the reload redraws after the rename');
+});
+
 test('the parent picker leaves out the tag, its parents and its descendants', async () => {
   const t = await setup();
   t.search('ml'); t.click('Edit tag');
@@ -1474,4 +1505,75 @@ test('changing only a facet counts as one unsaved change', async () => {
   t.click('#cs'); t.click('Edit tag');
   type(field(t, 'Facet'), ' language ');
   assert.match(t.sidebar.all().find(el => el.classes.has('tag-ontology-count'))?.text ?? '', /1 change not saved/);
+});
+
+test('the note view shows the name, path, dictionary tags as links and an Open note button', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'Papers/A.md', tags: ['ml', 'dl', 'unknown'] }]);
+  const file = new File(), opened: unknown[] = [], app = t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown }; workspace: { getLeaf(): unknown } };
+  app.vault.getAbstractFileByPath = path => path === 'Papers/A.md' ? file : null;
+  app.workspace.getLeaf = () => ({ openFile: async (f: unknown) => { opened.push(f); } });
+  t.controller.showNote('Papers/A.md');
+  const texts = t.sidebar.all().map(el => el.text);
+  for (const text of ['A', 'Papers/A.md', '#dl', '#ml', 'Open note']) assert.ok(texts.includes(text), text);
+  assert.ok(!texts.includes('#unknown'), 'only dictionary tags');
+  t.click('Open note');
+  assert.deepEqual(opened, [file]);
+});
+
+test('a note view whose note is gone falls back to the root tags', async () => {
+  const t = await setup();
+  t.controller.showNote('Gone.md');
+  assert.ok(t.sidebar.all().some(el => el.text === `Root tags (${model.roots.length})`));
+});
+
+test("the group view lists the explorer's notes newest first with relative times, filters by keyword, and takes out the checked ones or the latest 10", async () => {
+  const t = await setup(), now = Date.now(), taken: [string, string[]][] = [];
+  const notes = Array.from({ length: 12 }, (_, i) => ({ path: `Notes/N${i + 1}.md`, mtime: now - i * 864e5 }));
+  t.controller.explorer = { groupNotes: tag => tag === 'ml' ? notes : undefined, takeOut: (tag, paths) => { taken.push([tag, paths]); } };
+  t.controller.showGroup('ml');
+  const rows = () => t.sidebar.all().filter(el => el.tag === 'li');
+  assert.ok(t.sidebar.all().some(el => el.text === '12 notes · #ml'));
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), notes.map((_, i) => `N${i + 1}`));
+  assert.deepEqual(rows().slice(0, 3).map(li => li.all().find(el => el.tag === 'small')!.text), ['today', '1 day ago', '2 days ago']);
+  const filter = t.sidebar.all().find(el => el.attrs['aria-label'] === 'Filter notes')!;
+  filter.value = 'n1'; filter.events.get('input')!();
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['N1', 'N10', 'N11', 'N12']);
+  rows()[1]!.all().find(el => el.tag === 'input')!.checked = true;
+  t.click('Take out selected');
+  t.click('Take out latest 10');
+  assert.deepEqual(taken, [['ml', ['Notes/N10.md']], ['ml', notes.slice(0, 10).map(note => note.path)]]);
+});
+
+test('a group view whose group is gone falls back to the root tags', async () => {
+  const t = await setup();
+  t.controller.explorer = { groupNotes: () => undefined, takeOut() {} };
+  t.controller.showGroup('ml');
+  assert.ok(t.sidebar.all().some(el => el.text === `Root tags (${model.roots.length})`));
+});
+
+test('the note and group views take part in back and forward', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  (t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown } }).vault.getAbstractFileByPath = () => new File();
+  t.controller.explorer = { groupNotes: () => [{ path: 'A.md', mtime: Date.now() }], takeOut() {} };
+  t.controller.showNote('A.md');
+  t.controller.showGroup('ml');
+  t.click('Back');
+  assert.ok(t.sidebar.all().some(el => el.text === 'A.md'));
+  t.click('Forward');
+  assert.ok(t.sidebar.all().some(el => el.text === '1 note · #ml'));
+});
+
+test('a renamed note keeps its sidebar view, back and forward included', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'Old.md', tags: ['ml'] }]);
+  const files = new Set(['Old.md']), vault = (t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown } }).vault;
+  vault.getAbstractFileByPath = path => files.has(path) ? new File() : null;
+  t.controller.showNote('Old.md');
+  t.click('#ml');
+  files.delete('Old.md'); files.add('Folder/New.md');
+  t.controller.noteRenamed('Old.md', 'Folder/New.md');
+  t.click('Back');
+  assert.ok(t.sidebar.all().some(el => el.text === 'Folder/New.md'));
 });

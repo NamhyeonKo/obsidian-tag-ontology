@@ -38,7 +38,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -180,6 +180,7 @@ async function setup(saved?: Promise<unknown>) {
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './vault-data.ts' ? { vaultData }
       : specifier === './graph3d.ts' ? { VIEW_3D: 'tag-ontology-3d', Graph3DView: class {} }
+      : specifier === './explorer.ts' ? { VIEW_EXPLORER: 'tag-ontology-explorer', ExplorerView: class {} }
       : { NativeGraphs, PANEL_VIEW: 'tag-ontology-panel' };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -263,6 +264,19 @@ test('Open 3D graph is offered only while the 3D view is on, and turning it off 
   await t.plugin.saveSettings();
   assert.equal(t.offered.get('open-3d-graph')!(), false);
   assert.equal(tab.closed, true, 'so the tab does not load three.js again on the next start');
+});
+
+test('Open ontology explorer is offered only while the explorer is on, and turning it off closes the explorer tabs', async () => {
+  const t = await setup();
+  assert.equal(t.offered.get('open-explorer')!(), true);
+  t.commands.get('open-explorer')!(); await settle();
+  assert.deepEqual(t.types, ['tag-ontology-explorer']);
+  const tab = { closed: false, detach() { tab.closed = true; } };
+  t.open.set('tag-ontology-explorer', [tab]);
+  t.plugin.settings.enableExplorer = false;
+  await t.plugin.saveSettings();
+  assert.equal(t.offered.get('open-explorer')!(), false);
+  assert.equal(tab.closed, true);
 });
 
 test('graphData links notes to included notes only', async () => {

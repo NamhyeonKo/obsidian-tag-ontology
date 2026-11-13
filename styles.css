@@ -45,6 +45,16 @@
 .tag-ontology-3d { position: relative; padding: 0; overflow: hidden; }
 .tag-ontology-3d-stage { position: absolute; inset: 0; }
 .tag-ontology-3d.is-pointing { cursor: pointer; }
+.tag-ontology-explorer { position: relative; padding: 0; overflow: hidden; }
+.tag-ontology-explorer-stage { position: absolute; inset: 0; }
+.tag-ontology-explorer-start { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); z-index: 3; width: min(360px, calc(100% - 32px)); text-align: center; }
+.tag-ontology-explorer-start[hidden] { display: none; }
+.tag-ontology-explorer-start input { width: 100%; margin: 8px 0; }
+.tag-ontology-explorer-start .tag-ontology-tags { justify-content: center; }
+.tag-ontology-group { list-style: none; padding: 0; margin: 8px 0; max-height: 50vh; overflow-y: auto; }
+.tag-ontology-group label { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; }
+.tag-ontology-group small { margin-left: auto; white-space: nowrap; }
+.tag-ontology-group-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 /* The label panel's open and close buttons are real buttons; they keep the core panel's icon look. */
 .tag-ontology-3d-controls button.graph-controls-button { background: none; box-shadow: none; border: none; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }

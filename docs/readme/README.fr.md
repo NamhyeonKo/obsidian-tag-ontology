@@ -31,6 +31,7 @@ Le plugin ne modifie jamais vos notes Markdown. Il écrit uniquement dans le dic
 - **Parents multiples et étiquettes associées** : Des flèches pleines indiquent les liens hiérarchiques parent-enfant ; des traits pointillés relient les étiquettes associées.
 - **Trois dispositions** : Force (physique), arbre vertical et arbre horizontal.
 - **Vue 3D (Bêta)** : Explorez la même hiérarchie en trois dimensions : pivotez librement dans l'espace et cliquez sur une étiquette pour zoomer vers elle.
+- **Explorateur d'ontologie (Bêta)** : Partez d'une étiquette sur un canevas vide et faites apparaître ses enfants, parents, étiquettes liées et notes d'un clic droit, sous forme de cartes d'objet, dans le style des graphes d'ontologie de Palantir.
 - **Onglet dédié dans la barre latérale** : Recherchez par nom ou par alias, consultez les détails d'une étiquette et lancez une vérification du dictionnaire en un clic.
 - **Vérification du dictionnaire (Dictionary Check)** : Répertorie les étiquettes utilisées dans votre coffre mais absentes du dictionnaire, avec les noms similaires du dictionnaire ; les étiquettes du dictionnaire qu'aucune note n'utilise encore ; les notes qui utilisent une étiquette comme alias ou avec une casse différente ; et les notes qui associent une étiquette plus générale à une autre plus spécifique. Le contrôle signale uniquement ces cas et ne modifie jamais rien.
 - **Couleur personnalisée (optionnel)** : Attribuez une couleur uniforme à toutes les étiquettes dans le graphique et le panneau latéral (la couleur d'accentuation par défaut).
