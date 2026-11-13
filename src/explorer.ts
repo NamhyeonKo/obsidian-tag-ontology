@@ -1,11 +1,11 @@
-import { ItemView, Menu, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
-import type { LinkedGraph } from './native.ts';
+import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { canvasEdges, facetColors, placeAside, placeColumn, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { GROUP_THRESHOLD, TAKE_OUT, canvasEdges, facetColors, placeAside, placeColumn, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -13,10 +13,12 @@ export const VIEW_EXPLORER = 'tag-ontology-explorer';
 const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', background: '#1e1e1e', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
 const WIDTH = { tag: 230, note: 210, group: 220 };
 type Expand = 'children' | 'parents' | 'related';
+type Dated = { path: string; mtime: number };
+const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 
 // Palantir-style exploration: start from an empty canvas and bring tags, notes and note groups out one relation at a time.
 // It shares the sidebar with the other graphs through NativeGraphs, but not their expansion or focus.
-export class ExplorerView extends ItemView implements LinkedGraph {
+export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
   private stage?: HTMLElement; private status?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
@@ -59,12 +61,19 @@ export class ExplorerView extends ItemView implements LinkedGraph {
     cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
+    cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
+    cy.on('dbltap', 'node[type="note"]', event => this.owner.native.openNote(this.pathOf(event)));
+    cy.on('cxttap', 'node[type="note"]', event => this.menu(event, [['Open note', 'file-text', () => this.owner.native.openNote(this.pathOf(event))]]));
+    cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event)));
+    cy.on('dbltap', 'node[type="group"]', event => this.takeLatest(this.tagOf(event)));
+    cy.on('cxttap', 'node[type="group"]', event => this.menu(event, [[`Take out latest ${TAKE_OUT}`, 'arrow-down-to-line', () => this.takeLatest(this.tagOf(event))]]));
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
     // Obsidian's accent color setting only rewrites the accent variables on <body>, with no css-change, so <body> is watched too.
     const accentWatch = new MutationObserver(() => this.recolor());
     accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
     this.owner.native.link(this);
+    this.owner.native.explorer = this;
     this.changed();
   }
 
@@ -74,6 +83,7 @@ export class ExplorerView extends ItemView implements LinkedGraph {
   onClose(): Promise<void> {
     this.closed = true;
     this.owner.native.unlink(this);
+    if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
     this.cy?.destroy(); this.cy = undefined;
     this.contentEl.empty();
     return Promise.resolve();
@@ -124,7 +134,8 @@ export class ExplorerView extends ItemView implements LinkedGraph {
     this.syncEdges();
     this.updateStart();
     const on = this.onCanvas(), status = this.status;
-    if (status) status.textContent = `${on.tags.size} tags · ${on.notes.size} notes · ${on.groups.size} groups`;
+    const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+    if (status) status.textContent = `${count(on.tags.size, 'tag')} · ${count(on.notes.size, 'note')} · ${count(on.groups.size, 'group')}`;
   }
 
   private onCanvas(): OnCanvas {
@@ -137,6 +148,66 @@ export class ExplorerView extends ItemView implements LinkedGraph {
   }
 
   private tagOf(event: EventObject) { return (event.target as NodeSingular).data('tag') as string; }
+  private pathOf(event: EventObject) { return (event.target as NodeSingular).data('path') as string; }
+
+  groupNotes(tag: string): Dated[] | undefined {
+    const node = this.cy?.getElementById('group:' + tag);
+    return node?.nonempty() ? node.data('notes') as Dated[] : undefined;
+  }
+
+  // Notes leave the group for cards in a column beside it; a group left empty goes.
+  takeOut(tag: string, paths: string[]) {
+    const cy = this.cy, group = cy?.getElementById('group:' + tag);
+    if (!cy || !group?.nonempty()) return;
+    const picked = new Set(paths), notes = group.data('notes') as Dated[], rest = notes.filter(note => !picked.has(note.path));
+    const fresh = notes.filter(note => picked.has(note.path) && cy.getElementById('note:' + note.path).empty()).map(note => note.path);
+    const cards = fresh.map(path => this.noteCard(path));
+    const spots = placeColumn(group.position(), 1, cards.map(card => this.size(card)), this.taken());
+    const added = fresh.reduce((all, path, i) => all.union(this.addNode('note:' + path, cards[i], { type: 'note', path }, spots[i])), cy.collection());
+    if (rest.length) { group.data('notes', rest); this.redraw(group); } else group.remove();
+    this.reveal(added);
+    this.owner.native.renderPanel();
+  }
+
+  private takeLatest(tag: string) { this.takeOut(tag, (this.groupNotes(tag) ?? []).slice(0, TAKE_OUT).map(note => note.path)); }
+
+  // A tag's own notes: cards beside it, or one group card when there are more than GROUP_THRESHOLD.
+  private showNotes(node: NodeSingular) {
+    const model = this.owner.model, cy = this.cy;
+    if (!model || !cy) return;
+    const tag = node.data('tag') as string, paths = searchAround(model, tag, this.onCanvas()).notes;
+    if (paths.length > GROUP_THRESHOLD) {
+      const notes = paths.map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime);
+      const card = this.groupCard(tag, notes), [spot] = placeColumn(node.position(), 1, [this.size(card)], this.taken());
+      this.reveal(this.addNode('group:' + tag, card, { type: 'group', tag, notes }, spot));
+      return;
+    }
+    const cards = paths.map(path => this.noteCard(path));
+    const spots = placeColumn(node.position(), 1, cards.map(card => this.size(card)), this.taken());
+    this.reveal(paths.reduce((all, path, i) => all.union(this.addNode('note:' + path, cards[i], { type: 'note', path }, spots[i])), cy.collection()));
+  }
+
+  private mtime(path: string) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    return file instanceof TFile ? file.stat.mtime : 0;
+  }
+
+  // The menu of a note or group card: its own items, then removing it.
+  private menu(event: EventObject, items: [title: string, icon: string, action: () => void][]) {
+    const node = event.target as NodeSingular, menu = new Menu();
+    for (const [title, icon, action] of items) menu.addItem(item => item.setTitle(title).setIcon(icon).onClick(action));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => this.remove(node)));
+    menu.showAtMouseEvent(event.originalEvent);
+  }
+
+  // A removed card takes its lines along; the cards brought out of it stay.
+  private remove(node: NodeSingular) {
+    const group = node.data('type') === 'group';
+    node.remove();
+    this.changed();
+    if (group) this.owner.native.renderPanel();
+  }
 
   // A card on its own, from the start screen or the sidebar: beside everything else, then in view and selected.
   private addTag(tag: string) {
@@ -180,8 +251,13 @@ export class ExplorerView extends ItemView implements LinkedGraph {
       const n = around[kind].length;
       if (n) menu.addItem(item => item.setTitle(`${title} (${n})`).setIcon(icon).onClick(() => this.expand(node, kind)));
     }
+    const notes = around.notes.length;
+    if (notes) {
+      menu.addSeparator();
+      menu.addItem(item => item.setTitle(`Show notes (${notes})`).setIcon('file-text').onClick(() => this.showNotes(node)));
+    }
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => { node.remove(); this.changed(); }));
+    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => this.remove(node)));
     menu.showAtMouseEvent(event.originalEvent);
   }
 
@@ -207,10 +283,29 @@ export class ExplorerView extends ItemView implements LinkedGraph {
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }
 
+  private noteCard(path: string): Card {
+    const folder = path.split('/').slice(0, -1).join('/') || '/';
+    return { icon: 'note', color: this.colors.muted, title: basename(path), sub: `${folder} · Note`, width: WIDTH.note, rows: [['Modified', relativeTime(this.mtime(path), Date.now())]] };
+  }
+
+  private groupCard(tag: string, notes: Dated[]): Card {
+    return { icon: 'group', color: this.colors.accent, title: `${notes.length} notes`, sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
+      rows: [['Latest', relativeTime(notes[0]?.mtime ?? 0, Date.now())]] };
+  }
+
   private cardOf(node: NodeSingular): Card | undefined {
     const type = node.data('type') as string;
     if (type === 'tag' && this.owner.model?.entries.has(node.data('tag') as string)) return this.tagCard(node.data('tag') as string);
+    if (type === 'note') return this.noteCard(node.data('path') as string);
+    if (type === 'group') return this.groupCard(node.data('tag') as string, node.data('notes') as Dated[]);
     return undefined;
+  }
+
+  private redraw(node: NodeSingular) {
+    const card = this.cardOf(node);
+    if (!card) return;
+    const image = cardImage(card, this.theme, (text, px, bold) => this.measure(text, px, bold));
+    node.data({ img: image.uri, w: image.width, h: image.height });
   }
 
   // Lines follow the dictionary: whatever brought two cards out, the relations between them are drawn.
@@ -242,12 +337,7 @@ export class ExplorerView extends ItemView implements LinkedGraph {
     if (!cy) return;
     this.readTheme();
     cy.style(this.style());
-    cy.nodes().forEach(node => {
-      const card = this.cardOf(node);
-      if (!card) return;
-      const image = cardImage(card, this.theme, (text, px, bold) => this.measure(text, px, bold));
-      node.data({ img: image.uri, w: image.width, h: image.height });
-    });
+    cy.nodes().forEach(node => this.redraw(node));
     this.changed();
   }
 

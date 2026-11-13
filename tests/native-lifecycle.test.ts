@@ -6,6 +6,7 @@ import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as checkModule from '../src/check.ts';
+import * as explorerLayout from '../src/explorer-layout.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
@@ -14,7 +15,7 @@ import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  css: Record<string, string> = {}; disabled = false;
+  css: Record<string, string> = {}; disabled = false; checked = false;
   // The window the element is in, like Obsidian's Node.win.
   win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
@@ -39,7 +40,9 @@ class Element {
 }
 class File {}
 type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
-  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void };
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
+  showNote(path: string): void; showGroup(tag: string): void; explorer?: ExplorerPanel };
+interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
 const linkedGraph = (has: (tag: string) => boolean = () => false) => {
@@ -105,6 +108,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
+      : specifier === './explorer-layout.ts' ? { ...explorerLayout }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -1490,4 +1494,62 @@ test('changing only a facet counts as one unsaved change', async () => {
   t.click('#cs'); t.click('Edit tag');
   type(field(t, 'Facet'), ' language ');
   assert.match(t.sidebar.all().find(el => el.classes.has('tag-ontology-count'))?.text ?? '', /1 change not saved/);
+});
+
+test('the note view shows the name, path, dictionary tags as links and an Open note button', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'Papers/A.md', tags: ['ml', 'dl', 'unknown'] }]);
+  const file = new File(), opened: unknown[] = [], app = t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown }; workspace: { getLeaf(): unknown } };
+  app.vault.getAbstractFileByPath = path => path === 'Papers/A.md' ? file : null;
+  app.workspace.getLeaf = () => ({ openFile: async (f: unknown) => { opened.push(f); } });
+  t.controller.showNote('Papers/A.md');
+  const texts = t.sidebar.all().map(el => el.text);
+  for (const text of ['A', 'Papers/A.md', '#dl', '#ml', 'Open note']) assert.ok(texts.includes(text), text);
+  assert.ok(!texts.includes('#unknown'), 'only dictionary tags');
+  t.click('Open note');
+  assert.deepEqual(opened, [file]);
+});
+
+test('a note view whose note is gone falls back to the root tags', async () => {
+  const t = await setup();
+  t.controller.showNote('Gone.md');
+  assert.ok(t.sidebar.all().some(el => el.text === `Root tags (${model.roots.length})`));
+});
+
+test("the group view lists the explorer's notes newest first with relative times, filters by keyword, and takes out the checked ones or the latest 10", async () => {
+  const t = await setup(), now = Date.now(), taken: [string, string[]][] = [];
+  const notes = Array.from({ length: 12 }, (_, i) => ({ path: `Notes/N${i + 1}.md`, mtime: now - i * 864e5 }));
+  t.controller.explorer = { groupNotes: tag => tag === 'ml' ? notes : undefined, takeOut: (tag, paths) => { taken.push([tag, paths]); } };
+  t.controller.showGroup('ml');
+  const rows = () => t.sidebar.all().filter(el => el.tag === 'li');
+  assert.ok(t.sidebar.all().some(el => el.text === '12 notes · #ml'));
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), notes.map((_, i) => `N${i + 1}`));
+  assert.deepEqual(rows().slice(0, 3).map(li => li.all().find(el => el.tag === 'small')!.text), ['today', '1 day ago', '2 days ago']);
+  const filter = t.sidebar.all().find(el => el.attrs['aria-label'] === 'Filter notes')!;
+  filter.value = 'n1'; filter.events.get('input')!();
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['N1', 'N10', 'N11', 'N12']);
+  rows()[1]!.all().find(el => el.tag === 'input')!.checked = true;
+  t.click('Take out selected');
+  t.click('Take out latest 10');
+  assert.deepEqual(taken, [['ml', ['Notes/N10.md']], ['ml', notes.slice(0, 10).map(note => note.path)]]);
+});
+
+test('a group view whose group is gone falls back to the root tags', async () => {
+  const t = await setup();
+  t.controller.explorer = { groupNotes: () => undefined, takeOut() {} };
+  t.controller.showGroup('ml');
+  assert.ok(t.sidebar.all().some(el => el.text === `Root tags (${model.roots.length})`));
+});
+
+test('the note and group views take part in back and forward', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  (t.owner.app as unknown as { vault: { getAbstractFileByPath(path: string): unknown } }).vault.getAbstractFileByPath = () => new File();
+  t.controller.explorer = { groupNotes: () => [{ path: 'A.md', mtime: Date.now() }], takeOut() {} };
+  t.controller.showNote('A.md');
+  t.controller.showGroup('ml');
+  t.click('Back');
+  assert.ok(t.sidebar.all().some(el => el.text === 'A.md'));
+  t.click('Forward');
+  assert.ok(t.sidebar.all().some(el => el.text === '1 note · #ml'));
 });

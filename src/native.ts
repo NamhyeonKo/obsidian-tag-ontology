@@ -5,6 +5,7 @@ import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type Nod
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
 import { groupNonCanonical, groupRedundant } from './check.ts';
+import { TAKE_OUT, relativeTime, tagsOfNote } from './explorer-layout.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -58,7 +59,7 @@ interface Session {
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 // What the sidebar shows; the back and forward buttons move through these.
-type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
+type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' } | { kind: 'note'; path: string } | { kind: 'group'; tag: string };
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
 // query: text typed in an open parent, child or related input, so a redraw keeps it.
@@ -67,6 +68,8 @@ type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
+// The explorer, for the sidebar's view of one of its note groups: the notes it holds, newest first, and taking some out.
+export interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 // A graph NativeGraphs drives besides the core graph tabs (the 3D view): it layers the shared state itself.
 export interface LinkedGraph {
   // Layer again; 'refresh' also rebuilds the graph's own data, as nothing else tells it about note edits.
@@ -121,6 +124,7 @@ export class NativeGraphs {
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
+  explorer?: ExplorerPanel;
   constructor(private owner: TagOntologyPlugin) {}
 
   private get selected() { const view = this.history[this.at]; return view.kind === 'tag' ? view.tag : undefined; }
@@ -478,6 +482,9 @@ export class NativeGraphs {
   collapseAll() { if (this.owner.model) this.update({ expanded: [] }, 'roots'); }
   expandAll() { if (this.owner.model) this.update({ expanded: [...this.owner.model.entries.keys()] }, 'expand-all'); }
   toggleFilter(key: ToggleKey) { this.update({ [key]: !this.owner.settings[key] }, 'filter'); }
+  // The explorer's note and group cards show here, like a tag.
+  showNote(path: string) { this.leave(() => { this.go({ kind: 'note', path }); this.showSelection(); this.showPanel(true); }); }
+  showGroup(tag: string) { this.leave(() => { this.go({ kind: 'group', tag }); this.showSelection(); this.showPanel(true); }); }
   checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
 
   // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
@@ -551,8 +558,11 @@ export class NativeGraphs {
     panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor() });
     // The sidebar's tags match the graph's whenever custom colors are on; the title has its own setting.
     panel.toggleClass('tag-ontology-tinted', this.owner.settings.customColors);
+    const view = this.history[this.at];
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
+    else if (view.kind === 'note' && this.owner.app.vault.getAbstractFileByPath(view.path) instanceof TFile) this.noteView(panel, model, view.path);
+    else if (view.kind === 'group' && this.explorer?.groupNotes(view.tag)) this.groupView(panel, view.tag, this.explorer.groupNotes(view.tag)!);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
   }
 
@@ -597,6 +607,41 @@ export class NativeGraphs {
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
       this.noteLinks(details, paths);
     }
+  }
+
+  private noteView(panel: HTMLElement, model: Ontology, path: string) {
+    panel.createEl('h3', { text: path.split('/').at(-1)!.replace(/\.md$/, '') });
+    panel.createEl('p', { text: path, cls: 'tag-ontology-muted' });
+    const tags = tagsOfNote(model, path);
+    if (tags.length) this.tagLinks(panel, tags);
+    panel.createEl('button', { text: 'Open note', cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
+  }
+
+  // A group's notes, newest first: filter them by name, tick some to take out, or take the latest out.
+  private groupView(panel: HTMLElement, tag: string, notes: { path: string; mtime: number }[]) {
+    panel.createEl('h3', { text: `${count(notes.length, 'note', 'notes')} · #${tag}` });
+    const filter = panel.createEl('input', { type: 'search', placeholder: 'Filter notes', attr: { 'aria-label': 'Filter notes' } });
+    const list = panel.createEl('ul', { cls: 'tag-ontology-group' }), now = Date.now();
+    let rows: { input: HTMLInputElement; path: string }[] = [];
+    const draw = () => {
+      list.empty();
+      const query = filter.value.trim().toLowerCase(), name = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
+      rows = notes.filter(note => name(note.path).toLowerCase().includes(query)).map(note => {
+        const label = list.createEl('li').createEl('label');
+        const input = label.createEl('input', { type: 'checkbox' });
+        label.createSpan({ text: name(note.path) });
+        label.createEl('small', { text: relativeTime(note.mtime, now), cls: 'tag-ontology-muted' });
+        return { input, path: note.path };
+      });
+    };
+    filter.addEventListener('input', draw);
+    draw();
+    const buttons = panel.createDiv('tag-ontology-group-buttons');
+    buttons.createEl('button', { text: 'Take out selected', cls: 'mod-cta' }).addEventListener('click', () => {
+      const picked = rows.filter(row => row.input.checked).map(row => row.path);
+      if (picked.length) this.explorer?.takeOut(tag, picked);
+    });
+    buttons.createEl('button', { text: `Take out latest ${TAKE_OUT}` }).addEventListener('click', () => this.explorer?.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
   }
 
   private inventory(panel: HTMLElement, model: Ontology) {
