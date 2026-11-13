@@ -5,7 +5,7 @@ import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { GROUP_THRESHOLD, TAKE_OUT, canvasEdges, facetColors, placeAside, placeColumn, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { GROUP_THRESHOLD, TAKE_OUT, canvasEdges, facetColors, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -72,6 +72,15 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     const accentWatch = new MutationObserver(() => this.recolor());
     accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
+    // A renamed note keeps its card and its place in a group; deleted ones go on the refresh that follows.
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      if (!this.cy) return;
+      this.replace(this.cy.getElementById('note:' + oldPath), 'note:' + file.path, { path: file.path });
+      this.cy.nodes('[type="group"]').forEach(group => {
+        group.data('notes', (group.data('notes') as Dated[]).map(note => note.path === oldPath ? { ...note, path: file.path } : note));
+      });
+      this.changed();
+    }));
     this.owner.native.link(this);
     this.owner.native.explorer = this;
     this.changed();
@@ -89,14 +98,51 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     return Promise.resolve();
   }
 
+  // A dictionary or note edit, or a settings change such as the tag color: cards that lost their place go, groups keep the notes
+  // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
-    // A settings change (tag color) or a dictionary or note edit can change what the cards say.
-    if (operation === 'refresh') this.recolor();
+    const cy = this.cy, model = this.owner.model;
+    if (operation !== 'refresh' || !cy || !model) return;
+    const groups = new Map(cy.nodes('[type="group"]').map(node => [node.data('tag') as string, (node.data('notes') as Dated[]).map(note => note.path)]));
+    const exists = (path: string) => this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    const pruned = pruneCanvas(model, exists, this.onCanvas(), groups);
+    for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
+    for (const [tag, paths] of pruned.groupPaths) {
+      cy.getElementById('group:' + tag).data('notes', paths.map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime));
+    }
+    this.recolor();
   }
-  paint(): void { this.updateStart(); }
+
+  // The sidebar's tag is selected on the canvas when its card is there; the start screen offers to continue from it.
+  paint(): void {
+    this.updateStart();
+    const tag = this.owner.native.selectedTag, node = tag ? this.cy?.getElementById('tag:' + tag) : undefined;
+    if (!node?.nonempty() || node.selected()) return;
+    this.cy!.elements().unselect(); node.select();
+  }
+
   // Any dictionary tag can be brought onto the canvas.
   has(tag: string): boolean { return !!this.owner.model?.entries.has(tag); }
-  focusOn(): void {}
+  // A tag picked in the sidebar search or its links joins the canvas, or comes into view if it is there.
+  focusOn(tag: string): void { this.addTag(tag); }
+
+  // The editor renamed a tag: its card and group take the new name where they stand. The reload that follows redraws them.
+  renamed(from: string, to: string): void {
+    const cy = this.cy;
+    if (!cy) return;
+    this.replace(cy.getElementById('tag:' + from), 'tag:' + to, { tag: to });
+    this.replace(cy.getElementById('group:' + from), 'group:' + to, { tag: to });
+    this.changed();
+  }
+
+  // Cytoscape ids can't change, so a renamed card is a new node with the old one's place, data and selection.
+  private replace(old: CollectionReturnValue, id: string, data: Record<string, unknown>) {
+    if (old.empty()) return;
+    const node = old[0] as NodeSingular, selected = node.selected(), position = { ...node.position() }, kept = { ...node.data() as Record<string, unknown> };
+    node.remove();
+    const added = this.cy!.add({ group: 'nodes', data: { ...kept, ...data, id }, position });
+    if (selected) added.select();
+  }
 
   // The start screen fills an empty canvas: a search, the sidebar's tag to continue from, and the root tags.
   private buildStart(root: HTMLElement) {

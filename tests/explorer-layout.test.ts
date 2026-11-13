@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Ontology } from 'tag-ontology';
-import { canvasEdges, facetColors, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
+import { canvasEdges, facetColors, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
 
 const raw = {
   cs: { description: '', broader: [] },
@@ -97,4 +97,21 @@ test('relativeTime counts days, then months, then years', () => {
   assert.equal(relativeTime(now - 364 * day, now), '12 months ago');
   assert.equal(relativeTime(now - 365 * day, now), '1 year ago');
   assert.equal(relativeTime(now - 730 * day, now), '2 years ago');
+});
+
+test('pruneCanvas removes tags gone from the dictionary and their groups, notes whose file is gone, and drops untagged or deleted paths from groups', () => {
+  const { ov: _gone, ...rest } = raw;
+  const after = new Ontology(rest, [{ path: 'A.md', tags: ['ml'] }, { path: 'B.md', tags: [] }, { path: 'C.md', tags: ['dl'] }]);
+  const groups = new Map([['ml', ['A.md', 'B.md', 'C.md']], ['ov', ['C.md']], ['dl', ['C.md']]]);
+  const pruned = pruneCanvas(after, path => path !== 'C.md', on(['ml', 'ov', 'dl'], ['A.md', 'B.md', 'C.md'], ['ml', 'ov', 'dl']), groups);
+  assert.deepEqual(pruned.tags, ['ov']);
+  assert.deepEqual(pruned.notes, ['C.md']);
+  assert.deepEqual(pruned.groups.sort(), ['dl', 'ov']);
+  assert.deepEqual([...pruned.groupPaths], [['ml', ['A.md']]]);
+});
+
+test('pruneCanvas keeps a note card whose tag was removed from it, and only the line goes', () => {
+  const after = new Ontology(raw, [{ path: 'A.md', tags: [] }]), canvas = on(['ml'], ['A.md']);
+  assert.deepEqual(pruneCanvas(after, () => true, canvas, new Map()).notes, []);
+  assert.deepEqual(canvasEdges(after, canvas), []);
 });

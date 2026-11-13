@@ -105,3 +105,16 @@ export function relativeTime(mtime: number, now: number): string {
   if (days < 365) return ago(Math.floor(days / 30), 'month');
   return ago(Math.floor(days / 365), 'year');
 }
+
+// What a dictionary or note change leaves without a place on the canvas: tags gone from the dictionary, notes whose file is
+// gone, and groups whose tag is gone or that hold nothing any more. Each surviving group keeps the notes that still exist and
+// still carry its tag. A note that only lost a tag stays; canvasEdges drops its line.
+export function pruneCanvas(model: Ontology, exists: (path: string) => boolean, on: OnCanvas, groups: ReadonlyMap<string, string[]>) {
+  const groupPaths = new Map<string, string[]>(), gone: string[] = [];
+  for (const tag of on.groups) {
+    const tagged = new Set(model.notesFor(tag, false));
+    const kept = model.entries.has(tag) ? (groups.get(tag) ?? []).filter(path => exists(path) && tagged.has(path)) : [];
+    if (kept.length) groupPaths.set(tag, kept); else gone.push(tag);
+  }
+  return { tags: [...on.tags].filter(tag => !model.entries.has(tag)), notes: [...on.notes].filter(path => !exists(path)), groups: gone, groupPaths };
+}

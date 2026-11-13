@@ -80,6 +80,8 @@ export interface LinkedGraph {
   has(tag: string): boolean;
   // Bring a tag the sidebar revealed into view.
   focusOn(tag: string): void;
+  // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
+  renamed?(from: string, to: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
 export const DOUBLE_CLICK_MS = 350;
@@ -905,7 +907,9 @@ export class NativeGraphs {
       if (!await this.owner.saveChange(change, base)) return false;
       if (name !== tag) {
         this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
-        this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name } : view);
+        this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name }
+          : view.kind === 'group' && view.tag === tag ? { kind: 'group', tag: name } : view);
+        for (const view of this.linked) view.renamed?.(tag, name);
       }
       this.mode = undefined;
       this.go({ kind: 'tag', tag: name });

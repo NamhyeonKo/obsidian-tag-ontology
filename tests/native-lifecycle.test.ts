@@ -43,7 +43,7 @@ type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
-interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void }
+interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
 const linkedGraph = (has: (tag: string) => boolean = () => false) => {
   const calls: string[] = [];
@@ -1101,6 +1101,17 @@ test('renaming updates the expanded list and the history', async () => {
   assert.equal(heading(t), 'machine-learning');
   t.click('Back'); assert.equal(heading(t), 'cs');
   t.click('Forward'); assert.equal(heading(t), 'machine-learning');
+});
+
+test('renaming a tag in the editor tells linked graphs before the reload', async () => {
+  const t = await setup(), calls: string[] = [];
+  t.controller.link({ draw: operation => { calls.push('draw:' + operation); }, paint() {}, has: () => true, focusOn() {}, renamed: (from: string, to: string) => { calls.push(`renamed:${from}->${to}`); } } as LinkedGraph);
+  t.search('ml'); t.click('Edit tag');
+  type(field(t, 'Name'), 'machine-learning');
+  calls.length = 0;
+  t.click('Save'); await settle();
+  assert.equal(calls[0], 'renamed:ml->machine-learning');
+  assert.ok(calls.indexOf('draw:refresh') > 0, 'the reload redraws after the rename');
 });
 
 test('the parent picker leaves out the tag, its parents and its descendants', async () => {
