@@ -5,7 +5,7 @@ import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { GROUP_THRESHOLD, TAKE_OUT, canvasEdges, facetColors, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { TAKE_OUT, canvasEdges, facetColors, grouped, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -45,7 +45,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
-    this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); });
+    // A group the sidebar shows goes with the canvas, so the sidebar draws again.
+    this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); });
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
     this.buildStart(root);
@@ -92,7 +93,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   onClose(): Promise<void> {
     this.closed = true;
     this.owner.native.unlink(this);
-    if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
+    if (this.owner.native.explorer === this) { this.owner.native.explorer = undefined; this.owner.native.renderPanel(); }
     this.cy?.destroy(); this.cy = undefined;
     this.contentEl.empty();
     return Promise.resolve();
@@ -217,12 +218,12 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
 
   private takeLatest(tag: string) { this.takeOut(tag, (this.groupNotes(tag) ?? []).slice(0, TAKE_OUT).map(note => note.path)); }
 
-  // A tag's own notes: cards beside it, or one group card when there are more than GROUP_THRESHOLD.
+  // A tag's own notes: cards beside it, or one group card when there are too many (see grouped).
   private showNotes(node: NodeSingular) {
     const model = this.owner.model, cy = this.cy;
     if (!model || !cy) return;
     const tag = node.data('tag') as string, paths = searchAround(model, tag, this.onCanvas()).notes;
-    if (paths.length > GROUP_THRESHOLD) {
+    if (grouped(paths.length)) {
       const notes = paths.map(path => ({ path, mtime: this.mtime(path) })).sort((a, b) => b.mtime - a.mtime);
       const card = this.groupCard(tag, notes), [spot] = placeColumn(node.position(), 1, [this.size(card)], this.taken());
       this.reveal(this.addNode('group:' + tag, card, { type: 'group', tag, notes }, spot));

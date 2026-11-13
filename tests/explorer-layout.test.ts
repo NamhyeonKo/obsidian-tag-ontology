@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Ontology } from 'tag-ontology';
-import { canvasEdges, facetColors, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
+import { canvasEdges, facetColors, grouped, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
 
 const raw = {
   cs: { description: '', broader: [] },
@@ -114,4 +114,9 @@ test('pruneCanvas keeps a note card whose tag was removed from it, and only the 
   const after = new Ontology(raw, [{ path: 'A.md', tags: [] }]), canvas = on(['ml'], ['A.md']);
   assert.deepEqual(pruneCanvas(after, () => true, canvas, new Map()).notes, []);
   assert.deepEqual(canvasEdges(after, canvas), []);
+});
+
+test('more than 15 notes make a group, 15 stay note cards', () => {
+  assert.equal(grouped(15), false);
+  assert.equal(grouped(16), true);
 });

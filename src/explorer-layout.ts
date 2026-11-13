@@ -7,6 +7,7 @@ export interface Box { x1: number; y1: number; x2: number; y2: number }
 
 // More notes than this become one group card. Taking out the latest takes this many.
 export const GROUP_THRESHOLD = 15, TAKE_OUT = 10;
+export const grouped = (notes: number) => notes > GROUP_THRESHOLD;
 // Cards expanded from one card stand in columns this far apart, at most this many to a column, this far apart in it.
 export const COLUMN_STEP = 320, COLUMN_MAX = 12, STACK_GAP = 20;
 // Room kept clear around a card.
