@@ -15,6 +15,12 @@ Tag Ontology vous permet de définir des étiquettes parentes, enfants et associ
 
 Le plugin ne modifie jamais vos notes Markdown. Il écrit uniquement dans le dictionnaire d'étiquettes (un simple fichier JSON situé dans votre coffre), et seulement lorsque vous ajoutez, modifiez ou supprimez une étiquette depuis l'onglet latéral.
 
+## Pourquoi avoir créé Tag Ontology ?
+
+Un concept peut être lié à plusieurs domaines à la fois. Par exemple, le RAG est lié aux LLM, à la recherche d'information et aux graphes de connaissances. Mais avec des dossiers ou des étiquettes imbriquées, je devais choisir dans quelle branche le placer, et cette branche seule rendait difficile la représentation de ses liens avec d'autres concepts.
+
+Je souhaitais gérer et explorer séparément les relations entre concepts, tout en conservant l'emplacement et le texte original des documents. J'ai donc créé Tag Ontology pour attribuer plusieurs parents et des étiquettes associées à chaque étiquette, et explorer ces relations dans le graphe d'Obsidian. Je l'ai ensuite étendu pour que la CLI et TOW puissent aussi utiliser, selon les mêmes règles, les relations gérées par les personnes.
+
 > **Pour démarrer :** La hiérarchie étant construite à partir des nœuds d'étiquettes, l'option **Filtres → Étiquettes (Filters → Tags)** doit être activée dans les paramètres du graphique. Une nouvelle installation l'active automatiquement.
 
 ![Démonstration de Tag Ontology](../../assets/0.9.0/demo.gif)

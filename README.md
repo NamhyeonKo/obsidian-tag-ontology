@@ -15,6 +15,12 @@ Tag Ontology lets you give each tag parents, children and related tags from a si
 
 It never edits your notes. It writes only to the tag dictionary, a plain JSON file in your vault, and only when you add, edit or delete a tag in the sidebar tab.
 
+## Why Tag Ontology?
+
+A concept can connect to several fields at once. For example, RAG is related to LLMs, information retrieval, and knowledge graphs. When organizing it with folders or nested tags, I had to choose which path to place it under, and that path alone made its other relationships hard to see.
+
+I wanted to manage and explore relationships between concepts separately, while keeping document locations and source text intact. I built Tag Ontology so tags could have multiple parents and related tags, with those relationships navigable in Obsidian's graph. I later extended it so the CLI and TOW could use the same relationships and rules.
+
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
 ![Tag Ontology demo](assets/0.9.0/demo.gif)
