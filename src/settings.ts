@@ -14,6 +14,8 @@ export interface Settings {
   // With the 3D view on, the 2D graph toolbar and the Open 3D graph command open it; the ribbon icon and Open graph always
   // open the 2D graph.
   enable3d: boolean;
+  // With the explorer on, the 2D graph toolbar and the Open ontology explorer command open it.
+  enableExplorer: boolean;
   // With kebabNames on, the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens,
   // the rule TOW checks with --names kebab. Existing names are kept.
   kebabNames: boolean;
@@ -32,7 +34,7 @@ export function isHiddenPath(path: string): boolean {
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: TOW_FOLDER_DICTIONARY, dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
-  perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false,
+  perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -45,7 +47,7 @@ export function isValidDictionaryPath(path: string, configDir: string): boolean 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
-  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'perspectiveLabels' | 'kebabNames') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
+  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'perspectiveLabels' | 'kebabNames') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
   const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
@@ -63,6 +65,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     customColors: flag('customColors'), tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
     enable3d: flag('enable3d'),
+    enableExplorer: flag('enableExplorer'),
     kebabNames: flag('kebabNames'),
     perspectiveLabels: flag('perspectiveLabels'),
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,

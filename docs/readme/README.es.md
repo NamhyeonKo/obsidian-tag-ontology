@@ -15,6 +15,12 @@ Tag Ontology te permite asignar padres, hijos y etiquetas relacionadas a cada et
 
 Nunca modifica tus notas. Solo escribe en el diccionario de etiquetas (un archivo JSON plano en tu bóveda) cuando agregas, editas o eliminas una etiqueta desde la barra lateral.
 
+## ¿Por qué creé Tag Ontology?
+
+Un concepto puede estar conectado con varios campos a la vez. Por ejemplo, RAG está relacionado con los LLM, la recuperación de información y los grafos de conocimiento. Sin embargo, al organizarlo mediante carpetas o etiquetas anidadas, tenía que decidir en qué ruta colocarlo, y esa ruta por sí sola dificultaba mostrar sus relaciones con otros conceptos.
+
+Quería gestionar y explorar las relaciones entre conceptos por separado, conservando la ubicación y el contenido original de los documentos. Por eso creé Tag Ontology: para que las etiquetas pudieran tener varios padres y etiquetas relacionadas, y explorar esas relaciones en el gráfico de Obsidian. Después lo amplié para que la CLI y TOW también pudieran utilizar, con las mismas reglas, las relaciones gestionadas por las personas.
+
 > **Para comenzar:** La jerarquía se construye a partir de los nodos de etiquetas, por lo que requiere activar **Filtros → Etiquetas (Filters → Tags)** en los ajustes del gráfico. Una instalación limpia lo activa automáticamente.
 
 ![Demostración de Tag Ontology](../../assets/0.9.0/demo.gif)
@@ -31,6 +37,7 @@ Nunca modifica tus notas. Solo escribe en el diccionario de etiquetas (un archiv
 - **Múltiples padres y etiquetas relacionadas**: Flechas sólidas indican relaciones padre-hijo; líneas discontinuas conectan etiquetas relacionadas sin relación jerárquica.
 - **Tres disposiciones de gráfico**: Fuerza (Force), árbol vertical (Vertical tree) y árbol horizontal (Horizontal tree).
 - **Vista 3D (Beta)**: Explora la misma jerarquía en tres dimensiones: orbita libremente y haz clic en una etiqueta para volar hacia ella.
+- **Explorador de ontología (Beta)**: Empieza desde una etiqueta en un lienzo vacío y saca sus hijas, padres, etiquetas relacionadas y notas con un clic derecho, como tarjetas de objeto, al estilo de los grafos de ontología de Palantir.
 - **Panel dedicado en la barra lateral**: Busca por nombre o alias, consulta los detalles de una etiqueta y ejecuta comprobaciones de integridad del diccionario en un clic.
 - **Comprobación del diccionario (Dictionary Check)**: Enumera las etiquetas utilizadas en tu bóveda pero ausentes del diccionario, junto con nombres similares del diccionario; las etiquetas del diccionario que aún no usa ninguna nota; las notas que usan una etiqueta como alias o con mayúsculas y minúsculas distintas; y las notas que incluyen una etiqueta más amplia junto a otra más específica. Solo informa y nunca modifica nada.
 - **Colores personalizados (opcional)**: Asigna un color unificado a todas las etiquetas en el gráfico y la barra lateral (por defecto, el color de acento).

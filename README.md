@@ -15,6 +15,12 @@ Tag Ontology lets you give each tag parents, children and related tags from a si
 
 It never edits your notes. It writes only to the tag dictionary, a plain JSON file in your vault, and only when you add, edit or delete a tag in the sidebar tab.
 
+## Why Tag Ontology?
+
+A concept can connect to several fields at once. For example, RAG is related to LLMs, information retrieval, and knowledge graphs. When organizing it with folders or nested tags, I had to choose which path to place it under, and that path alone made its other relationships hard to see.
+
+I wanted to manage and explore relationships between concepts separately, while keeping document locations and source text intact. I built Tag Ontology so tags could have multiple parents and related tags, with those relationships navigable in Obsidian's graph. I later extended it so the CLI and TOW could use the same relationships and rules.
+
 > **To start:** the hierarchy is built from tag nodes, so it needs **Filters → Tags** on in the graph settings. A fresh install turns it on for you.
 
 ![Tag Ontology demo](assets/0.9.0/demo.gif)
@@ -31,6 +37,7 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Three layouts.** Force, a vertical tree and a horizontal tree.
 - **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
+- **Ontology explorer (beta).** Start from one tag on an empty canvas and bring out its children, parents, related tags and notes with a right-click, as object cards, in the style of Palantir's ontology graphs.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, with similar dictionary names; dictionary tags no note uses yet; notes that write a tag as an alias or in another case; and notes that carry a broader tag next to a narrower one. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
@@ -56,6 +63,8 @@ It never edits your notes. It writes only to the tag dictionary, a plain JSON fi
 Tag Ontology works inside the core Graph view. It takes the graph Obsidian has already built with your filters and color groups, collapses the dictionary tags and adds the hierarchy and related links between them. Tags that are not in the dictionary stay ordinary tag nodes. The local graph is not affected, and disabling the plugin returns the Graph view to normal.
 
 The 3D view (beta) is a separate tab. It builds the same notes and tags from the vault, layers the dictionary onto them with the same code, and draws them with three.js.
+
+The ontology explorer (beta) is a separate tab too. It doesn't show the whole dictionary: you put tags on its canvas one by one and draw it with Cytoscape.js.
 
 The hierarchy you build in the sidebar tab is saved in the dictionary file. See [Advanced: the dictionary file](#advanced-the-dictionary-file) if you want to read or edit it directly.
 
@@ -150,6 +159,7 @@ The round buttons on the left of the graph show their name when you hover them:
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
 | Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
 | Open in 3D (beta) | Open the 3D view, or bring an open 3D tab forward. Hidden while **Enable 3D view** is off |
+| Open ontology explorer (beta) | Open the ontology explorer, or bring an open explorer tab forward. Hidden while **Enable ontology explorer** is off |
 
 - In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
@@ -169,12 +179,27 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 - The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
 - If the 3D view is slow or you don't use it, turn off **Enable 3D view (beta)** in the settings. Its button, its command and its open tabs go away, and the 2D graph is unchanged.
 
+### Ontology explorer (beta)
+
+The button at the bottom of the graph toolbar, or **Open ontology explorer**, opens the explorer in its own tab. It shares the sidebar tab with the graphs, but not their expanded tags, Notes and Related toggles or Focus.
+
+- An empty canvas asks where to start: search for a tag, pick a root tag, or continue from the tag selected in the sidebar. Choosing a tag in the sidebar search or a tag link adds it to the canvas too.
+- Every tag is an object card with its facet (or `concept`), its direct notes, its notes including descendants and its number of children. Facets get their own colors; tags without one take the tag color.
+- Right-click a tag for **Expand children**, **Expand parents**, **Expand related** and **Show notes**. Each shows how many are not on the canvas yet. New cards stand in columns beside it, children and notes to the right and parents to the left, and nothing already on the canvas moves. Double-click a tag to expand its children.
+- Lines follow the dictionary, as in the 2D graph: arrows from parent to child and dashed lines between related tags join any two tags on the canvas, whoever brought them out.
+- A tag with more than 15 notes shows one group card instead. Click it to list its notes in the sidebar tab, newest first, filter them and take out the ones you tick or the latest 10. Double-click it to take out the latest 10. The group holds every note of the tag that isn't a card on the canvas: notes tagged later join it, and a note card you remove goes back into it.
+- Click a card to show it in the sidebar tab; double-click a note to open it. Drag cards anywhere; they stay where you put them. Right-click a card to remove it; the cards brought out of it stay.
+- The toolbar has Fit, Clear canvas and Open in 2D. The canvas is not saved: closing the tab clears it.
+- Editing the dictionary or notes updates the cards: renamed tags and notes keep their place, and deleted ones leave the canvas.
+- If you don't use it, turn off **Enable ontology explorer (beta)** in the settings. Its button, its command and its open tab go away.
+
 ### Commands
 
 | Command | Description |
 | --- | --- |
 | Tag Ontology: Open graph | Open the ontology in the core Graph view. Reuses an open tab. |
 | Tag Ontology: Open 3D graph | Open the 3D view. Reuses an open tab. Only offered while **Enable 3D view (beta)** is on. |
+| Tag Ontology: Open ontology explorer | Open the ontology explorer. Reuses an open tab. Only offered while **Enable ontology explorer (beta)** is on. |
 | Tag Ontology: Reload dictionary | Reload the dictionary and the note index. |
 
 ### Settings
@@ -184,6 +209,7 @@ The button at the bottom of the graph toolbar, or **Open 3D graph**, opens the 3
 | Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
 | Kebab-case tag names | Off by default. On: the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens, the names TOW checks. Existing names are kept. |
 | Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
+| Enable ontology explorer (beta) | Show the explorer button on the graph toolbar and the Open ontology explorer command. Turning it off closes the explorer tab. On by default. |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
@@ -238,7 +264,7 @@ Rules:
 - A tag cannot reference itself, and `broader` links cannot form a cycle.
 - If the dictionary is invalid, a notice shows the reason when Obsidian starts or when you open the view, and the sidebar keeps showing it until you fix the file. The graph keeps the last version that loaded, and **New tag** and **Edit tag** are off until then.
 
-See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dictionary.json) for a complete example.
+See [`examples/sample-vault/tow/tag-dictionary.json`](examples/sample-vault/tow/tag-dictionary.json) for a complete example.
 
 ## Privacy
 
@@ -253,7 +279,7 @@ See [`examples/sample-vault/Tag-Dictionary.json`](examples/sample-vault/Tag-Dict
 - On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
 - Labels get dense when every tag is expanded, especially in Force.
 - Untested together with other plugins that patch the Graph view.
-- The 3D view uses WebGL and bundles three.js, so the plugin file is about 0.9 MB. three.js loads only when a 3D view opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
+- The 3D view uses WebGL and bundles three.js, and the explorer bundles Cytoscape.js, so the plugin file is about 1.35 MB. Each loads only when its tab opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
 
 ## Roadmap
 
@@ -310,6 +336,9 @@ src/
 ├── graph3d.ts      # The 3D view: draws the same layered data with 3d-force-graph
 ├── three.ts        # three.js and 3d-force-graph, imported only when a 3D view opens
 ├── vault-data.ts   # Builds the core graph's data shape from the vault for the 3D view
+├── explorer.ts     # The ontology explorer: a Cytoscape.js canvas of object cards
+├── explorer-layout.ts # Pure functions for the explorer: card placement, Search Around counts, lines
+├── explorer-card.ts   # The explorer's object cards as SVG images
 ├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
 ├── layout.ts       # Vertical and horizontal tree positions
 └── settings.ts     # Settings shape and path validation
@@ -344,7 +373,7 @@ Tag Ontology is free and open source. If it saves you time, you can [buy me a co
 ## Acknowledgements
 
 - The approach of feeding custom data to the core graph renderer was inspired by [Nested tags graph](https://github.com/drpilman/obsidian-graph-nested-tags). That plugin is not required.
-- The 3D view is built on [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext) and [three.js](https://threejs.org), all MIT. The licence notices of every bundled package are at the top of `main.js`.
+- The 3D view is built on [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext) and [three.js](https://threejs.org), all MIT. The ontology explorer is built on [Cytoscape.js](https://js.cytoscape.org) (MIT). The licence notices of every bundled package are at the top of `main.js`.
 
 ## License
 

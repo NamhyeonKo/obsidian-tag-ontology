@@ -1,6 +1,6 @@
 {
   "name": "obsidian-tag-ontology",
-  "version": "0.11.3",
+  "version": "0.12.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "3d-force-graph": "1.80.1",
+    "cytoscape": "3.34.4",
     "tag-ontology": "0.3.2",
     "three": "0.186.1",
     "three-spritetext": "1.10.0"

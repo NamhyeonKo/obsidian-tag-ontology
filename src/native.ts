@@ -5,6 +5,7 @@ import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type Nod
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
 import { groupNonCanonical, groupRedundant } from './check.ts';
+import { TAKE_OUT, relativeTime, tagsOfNote } from './explorer-layout.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -47,6 +48,8 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
   // The separator and button that open the 3D view, shown while it is on in the settings.
   open3d: HTMLElement[];
+  // The same for the explorer.
+  openExplorer: HTMLElement[];
   // The layout buttons fold into the current one; open, all three show.
   layoutsOpen: boolean; fold: (event: Event) => void;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
@@ -56,7 +59,7 @@ interface Session {
 type LayerSettings = Pick<Settings, 'expanded' | 'showNotes' | 'showRelated' | 'layout'>;
 type ToggleKey = 'showNotes' | 'showRelated';
 // What the sidebar shows; the back and forward buttons move through these.
-type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' };
+type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'check' } | { kind: 'note'; path: string } | { kind: 'group'; tag: string };
 // An open form over the panel. Edits go to the draft; base is the dictionary as it was when the form opened.
 // alias: text still in the alias input, not yet added with Enter. open: the field whose input its + opened.
 // query: text typed in an open parent, child or related input, so a redraw keeps it.
@@ -65,6 +68,8 @@ type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
 const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
+// The explorer, for the sidebar's view of one of its note groups: the notes it holds, newest first, and taking some out.
+export interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 // A graph NativeGraphs drives besides the core graph tabs (the 3D view): it layers the shared state itself.
 export interface LinkedGraph {
   // Layer again; 'refresh' also rebuilds the graph's own data, as nothing else tells it about note edits.
@@ -75,6 +80,8 @@ export interface LinkedGraph {
   has(tag: string): boolean;
   // Bring a tag the sidebar revealed into view.
   focusOn(tag: string): void;
+  // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
+  renamed?(from: string, to: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
 export const DOUBLE_CLICK_MS = 350;
@@ -119,6 +126,7 @@ export class NativeGraphs {
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
+  explorer?: ExplorerPanel;
   constructor(private owner: TagOntologyPlugin) {}
 
   private get selected() { const view = this.history[this.at]; return view.kind === 'tag' ? view.tag : undefined; }
@@ -166,7 +174,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -241,6 +249,7 @@ export class NativeGraphs {
       };
       for (const event of ['pointerdown', 'keydown']) view.contentEl.addEventListener(event, session.fold, { capture: true });
       session.open3d = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'box', 'Open in 3D (beta)', () => { void this.owner.openView('3d'); })];
+      session.openExplorer = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'waypoints', 'Open ontology explorer (beta)', () => { void this.owner.openView('explorer'); })];
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
@@ -475,6 +484,14 @@ export class NativeGraphs {
   collapseAll() { if (this.owner.model) this.update({ expanded: [] }, 'roots'); }
   expandAll() { if (this.owner.model) this.update({ expanded: [...this.owner.model.entries.keys()] }, 'expand-all'); }
   toggleFilter(key: ToggleKey) { this.update({ [key]: !this.owner.settings[key] }, 'filter'); }
+  // The explorer's note and group cards show here, like a tag.
+  showNote(path: string) { this.leave(() => { this.go({ kind: 'note', path }); this.showSelection(); this.showPanel(true); }); }
+  showGroup(tag: string) { this.leave(() => { this.go({ kind: 'group', tag }); this.showSelection(); this.showPanel(true); }); }
+  // A renamed note keeps the sidebar views of it, back and forward included.
+  noteRenamed(from: string, to: string) {
+    this.history = this.history.map(view => view.kind === 'note' && view.path === from ? { kind: 'note', path: to } : view);
+    this.renderPanel();
+  }
   checkDictionary() { this.leave(() => { this.go({ kind: 'check' }); this.renderPanel(); this.showPanel(true); }); }
 
   // A double click and the panel button do the same thing. Collapsing leaves the tags below it expanded, so they come back as they were.
@@ -548,8 +565,11 @@ export class NativeGraphs {
     panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor() });
     // The sidebar's tags match the graph's whenever custom colors are on; the title has its own setting.
     panel.toggleClass('tag-ontology-tinted', this.owner.settings.customColors);
+    const view = this.history[this.at];
     if (this.checking) this.inventory(panel, model);
     else if (this.selected && model.entries.has(this.selected)) this.inspect(panel, model, this.selected);
+    else if (view.kind === 'note' && this.owner.app.vault.getAbstractFileByPath(view.path) instanceof TFile) this.noteView(panel, model, view.path);
+    else if (view.kind === 'group' && this.explorer?.groupNotes(view.tag)) this.groupView(panel, view.tag, this.explorer.groupNotes(view.tag)!);
     else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
   }
 
@@ -594,6 +614,41 @@ export class NativeGraphs {
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
       this.noteLinks(details, paths);
     }
+  }
+
+  private noteView(panel: HTMLElement, model: Ontology, path: string) {
+    panel.createEl('h3', { text: path.split('/').at(-1)!.replace(/\.md$/, '') });
+    panel.createEl('p', { text: path, cls: 'tag-ontology-muted' });
+    const tags = tagsOfNote(model, path);
+    if (tags.length) this.tagLinks(panel, tags);
+    panel.createEl('button', { text: 'Open note', cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
+  }
+
+  // A group's notes, newest first: filter them by name, tick some to take out, or take the latest out.
+  private groupView(panel: HTMLElement, tag: string, notes: { path: string; mtime: number }[]) {
+    panel.createEl('h3', { text: `${count(notes.length, 'note', 'notes')} · #${tag}` });
+    const filter = panel.createEl('input', { type: 'search', placeholder: 'Filter notes', attr: { 'aria-label': 'Filter notes' } });
+    const list = panel.createEl('ul', { cls: 'tag-ontology-group' }), now = Date.now();
+    let rows: { input: HTMLInputElement; path: string }[] = [];
+    const draw = () => {
+      list.empty();
+      const query = filter.value.trim().toLowerCase(), name = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
+      rows = notes.filter(note => name(note.path).toLowerCase().includes(query)).map(note => {
+        const label = list.createEl('li').createEl('label');
+        const input = label.createEl('input', { type: 'checkbox' });
+        label.createSpan({ text: name(note.path) });
+        label.createEl('small', { text: relativeTime(note.mtime, now), cls: 'tag-ontology-muted' });
+        return { input, path: note.path };
+      });
+    };
+    filter.addEventListener('input', draw);
+    draw();
+    const buttons = panel.createDiv('tag-ontology-group-buttons');
+    buttons.createEl('button', { text: 'Take out selected', cls: 'mod-cta' }).addEventListener('click', () => {
+      const picked = rows.filter(row => row.input.checked).map(row => row.path);
+      if (picked.length) this.explorer?.takeOut(tag, picked);
+    });
+    buttons.createEl('button', { text: `Take out latest ${TAKE_OUT}` }).addEventListener('click', () => this.explorer?.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
   }
 
   private inventory(panel: HTMLElement, model: Ontology) {
@@ -857,7 +912,9 @@ export class NativeGraphs {
       if (!await this.owner.saveChange(change, base)) return false;
       if (name !== tag) {
         this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
-        this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name } : view);
+        this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name }
+          : view.kind === 'group' && view.tag === tag ? { kind: 'group', tag: name } : view);
+        for (const view of this.linked) view.renamed?.(tag, name);
       }
       this.mode = undefined;
       this.go({ kind: 'tag', tag: name });
@@ -915,6 +972,7 @@ export class NativeGraphs {
       this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
     for (const el of session.open3d) el.hidden = !settings.enable3d;
+    for (const el of session.openExplorer) el.hidden = !settings.enableExplorer;
     // Open, the three keep their own order and the current one is marked where it sits.
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout], current = layout === settings.layout;
