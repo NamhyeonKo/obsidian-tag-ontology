@@ -22,7 +22,7 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+    customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
@@ -108,4 +108,36 @@ test('label settings default to perspective on and size 0.8, and keep only valid
   assert.equal(kept.labelSize, 1.5); assert.equal(kept.perspectiveLabels, false);
   for (const labelSize of [3, 0.2, 'big', Number.NaN]) assert.equal(sanitizeSettings({ labelSize }, '.obsidian').labelSize, 0.8);
   assert.equal(sanitizeSettings({ perspectiveLabels: 'no' }, '.obsidian').perspectiveLabels, true);
+});
+
+test('depth coloring is opt-in and validates saved flags', () => {
+  assert.equal(DEFAULT_SETTINGS.hierarchyColors, false);
+  assert.equal(sanitizeSettings({ hierarchyColors: true }, '.obsidian').hierarchyColors, true);
+  assert.equal(sanitizeSettings({ hierarchyColors: 'true' }, '.obsidian').hierarchyColors, false);
+});
+
+test('palette settings preserve nonempty variable-length palettes and reject invalid colors as a whole', () => {
+  const palette = ['#123456', '#ABCDEF', '#112233', '#445566', '#778899', '#aabbcc', '#123abc', '#abcdef'];
+  assert.deepEqual(sanitizeSettings({ hierarchyPalette: palette }, '.obsidian').hierarchyPalette, palette);
+  for (const valid of [['#123456'], [...palette, '#000000']]) {
+    assert.deepEqual(sanitizeSettings({ hierarchyPalette: valid }, '.obsidian').hierarchyPalette, valid);
+  }
+  for (const invalid of [[], palette.map((c, i) => i ? c : 'red'), 'bad']) {
+    assert.deepEqual(sanitizeSettings({ hierarchyPalette: invalid }, '.obsidian').hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette);
+  }
+  const saved = sanitizeSettings({}, '.obsidian');
+  assert.notEqual(saved.hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette, 'no shared mutable defaults');
+});
+
+test('the fourth mind map layout is restored from saved settings', () => {
+  assert.equal(sanitizeSettings({ layout: 'mindmap' }, '.obsidian').layout, 'mindmap');
+});
+
+test('saved custom palettes and their explicit selection are validated independently of the active preset', () => {
+  const settings = sanitizeSettings({ hierarchyPalettePreset: 'rainbow', customHierarchyPalette: ['#123456'] }, '.obsidian');
+  assert.equal(settings.hierarchyPalettePreset, 'rainbow');
+  assert.deepEqual(settings.customHierarchyPalette, ['#123456']);
+  assert.equal(sanitizeSettings({ hierarchyPalettePreset: 'missing' }, '.obsidian').hierarchyPalettePreset, '');
+  assert.deepEqual(sanitizeSettings({ customHierarchyPalette: ['bad'] }, '.obsidian').customHierarchyPalette, []);
+  assert.deepEqual(sanitizeSettings({ hierarchyPalette: Array(2) }, '.obsidian').hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette);
 });
