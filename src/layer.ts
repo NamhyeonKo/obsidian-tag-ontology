@@ -1,4 +1,8 @@
 import type { Ontology } from 'tag-ontology';
+import { hierarchyColor } from './colors.ts';
+
+// Native graph colors must keep object identity across redraws.
+const paletteColors = new Map<string, NodeColor>();
 
 // The core graph engine's data shape. The renderer calls hasOwnProperty directly, so these stay plain objects.
 export interface NativeData {
@@ -70,7 +74,7 @@ export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontol
 
 export type EdgeKind = 'broader' | 'related';
 export interface NodeColor { a: number; rgb: number }
-export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor }
+export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor; hierarchyColors?: boolean; hierarchyPalette?: readonly string[] }
 
 // Adds links to the given nodes in place: buildLayer passes the fresh copy from applyCollapse.
 export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, related: boolean) {
@@ -138,6 +142,13 @@ export function buildLayer(data: NativeData, model: Ontology, state: LayerState)
   const collapsed = applyCollapse(shown, resolved, model);
   const { data: layered, kinds } = addEdges(collapsed, resolved, model, state.showRelated);
   // Every node here is already a copy, so coloring tags leaves the core data alone.
-  if (state.tagColor) for (const node of Object.values(layered.nodes)) if (node.type === 'tag') node.color = state.tagColor;
+  for (const [id, node] of Object.entries(layered.nodes)) {
+    if (node.type !== 'tag') continue;
+    const tag = resolved.tagOf.get(id);
+    const hex = state.hierarchyColors && tag ? hierarchyColor(model, tag, state.hierarchyPalette) : undefined;
+    if (hex && !paletteColors.has(hex)) paletteColors.set(hex, { a: 1, rgb: parseInt(hex.slice(1), 16) });
+    const color = hex ? paletteColors.get(hex) : state.tagColor;
+    if (color) node.color = color;
+  }
   return { data: layered, kinds, resolved };
 }

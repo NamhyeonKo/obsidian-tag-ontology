@@ -5,6 +5,7 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
+import * as legend from '../src/legend.ts';
 import * as checkModule from '../src/check.ts';
 import * as explorerLayout from '../src/explorer-layout.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
@@ -104,6 +105,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
+      : specifier === './legend.ts' ? { ...legend }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
@@ -1576,4 +1578,57 @@ test('a renamed note keeps its sidebar view, back and forward included', async (
   t.controller.noteRenamed('Old.md', 'Folder/New.md');
   t.click('Back');
   assert.ok(t.sidebar.all().some(el => el.text === 'Folder/New.md'));
+});
+
+test('depth colors reach the native renderer and remain stable across expansion changes', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true });
+  t.controller.attach();
+  const rootColor = t.forwarded.at(-1)!.nodes['#cs'].color as { rgb: number };
+  assert.equal(rootColor.rgb, 0x4ea1ff);
+  t.owner.settings.expanded = ['cs', 'ml'];
+  t.controller.refresh();
+  const expanded = t.forwarded.at(-1)!.nodes;
+  assert.equal(expanded['#cs'].color, rootColor);
+  assert.equal((expanded['#ml'].color as { rgb: number }).rgb, 0xf0a33c);
+  assert.equal((expanded['#DL'].color as { rgb: number }).rgb, 0xe5484d);
+  t.owner.settings.hierarchyColors = false;
+  t.controller.refresh();
+  assert.equal((t.forwarded.at(-1)!.nodes['#DL'].color as { rgb: number }).rgb, parseInt(t.owner.tagColor().slice(1), 16));
+});
+
+test('the depth legend follows the saved palette, survives collapse and disappears when depth colors are off', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true });
+  t.controller.attach();
+  const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+  assert.equal(legend().hidden, false);
+  assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
+  const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
+  assert.equal(swatches().length, 8);
+  assert.equal(swatches()[0].css['--legend-color'], '#4ea1ff');
+  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
+  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
+  t.owner.settings.expanded = [];
+  t.controller.refresh();
+  assert.equal(swatches().length, 8);
+  t.owner.settings.hierarchyPalette = t.owner.settings.hierarchyPalette.map(() => '#123456');
+  t.controller.refresh();
+  assert.ok(swatches().every(el => el.css['--legend-color'] === '#123456'));
+  t.owner.settings.hierarchyColors = false;
+  t.controller.refresh();
+  assert.equal(legend().hidden, true);
+  t.owner.settings.hierarchyColors = true; t.owner.settings.customColors = false;
+  t.controller.refresh();
+  assert.equal(legend().hidden, true);
+  const overlay = t.contentEl.all().find(el => el.classes.has('tag-ontology-overlay'))!;
+  t.controller.destroy();
+  assert.equal(overlay.removed, true, 'legend is removed with the plugin overlay');
+});
+
+test('the depth legend expands to match a longer palette', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true, hierarchyPalette: Array.from({ length: 12 }, () => '#123456') });
+  t.controller.attach();
+  const legend = t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+  assert.equal(legend.all().filter(el => el.classes.has('tag-ontology-legend-swatch')).length, 12);
+  assert.ok(legend.all().some(el => el.attrs['aria-label'] === 'Level 11 and deeper'));
+  assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });

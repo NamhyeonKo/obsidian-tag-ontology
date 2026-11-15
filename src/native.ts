@@ -1,3 +1,4 @@
+import { renderDepthLegend } from './legend.ts';
 import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
@@ -36,7 +37,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
   focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
-  overlay: HTMLElement; status: HTMLElement;
+  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -171,10 +172,11 @@ export class NativeGraphs {
       }
       // The toolbar and the status line share one column, so a status line that wraps pushes the buttons up instead of covering them.
       const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
+      const legend = overlay.createDiv('tag-ontology-legend');
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -349,9 +351,11 @@ export class NativeGraphs {
     const model = this.owner.model, settings = this.owner.settings;
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
+    renderDepthLegend(session.legend, settings);
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
+      hierarchyColors: settings.customColors && settings.hierarchyColors, hierarchyPalette: settings.hierarchyPalette,
       tagColor: settings.customColors ? hexColor(this.owner.tagColor()) : undefined });
     // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
     const restyled = layer.kinds.size !== session.kinds.size || [...layer.kinds].some(([key, kind]) => session.kinds.get(key) !== kind);
@@ -562,7 +566,7 @@ export class NativeGraphs {
     panel.empty();
     if (error) this.loadError(panel, error);
     if (!model) return;
-    panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor() });
+    panel.setCssProps({ '--tag-ontology-color': this.owner.tagColor(this.selected) });
     // The sidebar's tags match the graph's whenever custom colors are on; the title has its own setting.
     panel.toggleClass('tag-ontology-tinted', this.owner.settings.customColors);
     const view = this.history[this.at];
@@ -692,7 +696,9 @@ export class NativeGraphs {
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
     const list = parent.createDiv('tag-ontology-tags');
     for (const tag of tags) {
-      list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' }).addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
+      const link = list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' });
+      if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
+      link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }
   }
 
@@ -860,6 +866,7 @@ export class NativeGraphs {
     const list = parent.createDiv('tag-ontology-tags');
     for (const item of items) {
       const chip = asTag ? list.createEl('a', { text: text(item), cls: 'tag tag-ontology-chip' }) : list.createSpan({ text: text(item), cls: 'tag-ontology-chip' });
+      if (asTag && this.owner.settings.customColors) chip.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(item) });
       const button = chip.createEl('button', { cls: 'clickable-icon tag-ontology-remove', attr: { 'aria-label': `Remove ${text(item)}` } });
       setIcon(button, 'x');
       button.addEventListener('click', () => { remove(item); this.drawForm(); });

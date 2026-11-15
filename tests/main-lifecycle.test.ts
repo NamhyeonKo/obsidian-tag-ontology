@@ -5,6 +5,7 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology, isIncludedNote } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
+import * as colors from '../src/colors.ts';
 import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
@@ -34,7 +35,7 @@ class NativeGraphs {
 }
 
 interface Main {
-  native: NativeGraphs; tagColor(): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
+  native: NativeGraphs; tagColor(tag?: string): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
@@ -42,7 +43,7 @@ interface Main {
 }
 
 async function setup(saved?: Promise<unknown>) {
-  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: { name: string; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; buttons: (() => void)[]; buttonNames: string[]; buttonEls: { hidden: boolean; removed: boolean }[]; toggleChanged?: (value: boolean) => void }[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
+  const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: TestSetting[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -54,8 +55,10 @@ async function setup(saved?: Promise<unknown>) {
   class File { path: string; constructor(path = '') { this.path = path; } }
   class Folder { path: string; constructor(path = '') { this.path = path; } }
   class TestSetting {
-    settingEl = { toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
+    controlEl = { empty() {}, createDiv() { return { createDiv() { return { setAttribute() {} }; } }; } };
+    settingEl = { addClass() {}, toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
     name = ''; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; toggleChanged?: (value: boolean) => void;
+    colorValue = ''; colorChanged?: (value: string) => Promise<void>; dropdownValue = ''; dropdownChanged?: (value: string) => void;
     buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean; removed: boolean }[] = [];
     constructor() { settingRows.push(this); }
     setName(name: string) { this.name = name; return this; }
@@ -74,8 +77,15 @@ async function setup(saved?: Promise<unknown>) {
       const onChange = (cb: (value: boolean) => void) => { this.toggleChanged = cb; };
       callback({ setValue: () => ({ onChange }), onChange }); return this;
     }
-    addColorPicker(callback: (picker: { setValue(value: string): { onChange(callback: (value: string) => void): void }; onChange(callback: (value: string) => void): void }) => void) {
-      callback({ setValue: () => ({ onChange() {} }), onChange() {} }); return this;
+    addColorPicker(callback: (picker: { setValue(value: string): unknown; onChange(cb: (value: string) => Promise<void>): unknown }) => void) {
+      const picker = { setValue: (value: string) => { this.colorValue = value; return picker; }, onChange: (cb: (value: string) => Promise<void>) => { this.colorChanged = cb; return picker; } };
+      callback(picker); return this;
+    }
+    addDropdown(callback: (dropdown: { addOption(key: string, name: string): unknown; setValue(value: string): unknown; onChange(cb: (value: string) => void): unknown }) => void) {
+      const dropdown = { addOption: (_key: string, _name: string) => dropdown,
+        setValue: (value: string) => { this.dropdownValue = value; return dropdown; },
+        onChange: (cb: (value: string) => void) => { this.dropdownChanged = cb; return dropdown; } };
+      callback(dropdown); return this;
     }
     addExtraButton(callback: (button: { setIcon(icon: string): { setTooltip(text: string): { onClick(callback: () => void): void } }; setTooltip(text: string): { onClick(callback: () => void): void }; onClick(callback: () => void): void }) => void) {
       const click = (cb: () => void) => { this.buttons.push(cb); };
@@ -176,6 +186,7 @@ async function setup(saved?: Promise<unknown>) {
     const exports: Record<string, unknown> = specifier === 'obsidian'
       ? { Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
+      : specifier === './colors.ts' ? { ...colors }
       : specifier === './settings.ts' ? { ...settings }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './vault-data.ts' ? { vaultData }
@@ -1071,4 +1082,81 @@ test('the accent the graph was last drawn with is the one compared, even after a
   t.plugin.native.calls.length = 0;
   t.restyle('hsl(258, 88%, 66%)');
   assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'the accent going back is a change from what is drawn');
+});
+
+
+test('depth coloring resolves each tag and falls back to the saved color when disabled or outside the hierarchy', async () => {
+  const t = await setup(); t.ready(); await settle();
+  t.plugin.model = new Ontology({
+    root: { description: '', broader: [] }, child: { description: '', broader: ['root'] }, loose: { description: '' },
+  }, []);
+  Object.assign(t.plugin.settings, { customColors: true, hierarchyColors: true, tagColor: '#12ab3c' });
+  assert.equal(t.plugin.tagColor('root'), colors.PALETTE[0]);
+  assert.equal(t.plugin.tagColor('child'), colors.PALETTE[1]);
+  assert.equal(t.plugin.tagColor('loose'), '#12ab3c');
+  assert.equal(t.plugin.tagColor('unknown'), '#12ab3c');
+  assert.equal(t.plugin.tagColor(), '#12ab3c');
+  t.plugin.settings.hierarchyColors = false;
+  assert.equal(t.plugin.tagColor('child'), '#12ab3c');
+});
+
+test('palette presets and individual depth pickers save colors and stay in sync', async () => {
+  const t = await setup(); t.ready(); await settle();
+  (t.settingTabs[0] as { display(): void }).display();
+  const preset = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  const root = () => [...t.settingRows].reverse().find(row => row.name === '0')!;
+  const child = () => [...t.settingRows].reverse().find(row => row.name === '1')!;
+  assert.equal(preset.dropdownValue, 'default');
+  preset.dropdownChanged!('pastel'); await settle();
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.PALETTE_PRESETS.pastel.colors);
+  assert.equal(root().colorValue, colors.PALETTE_PRESETS.pastel.colors[0]);
+  assert.equal(child().colorValue, colors.PALETTE_PRESETS.pastel.colors[1]);
+  await root().colorChanged!('#123456');
+  assert.equal(t.plugin.settings.hierarchyPalette[0], '#123456');
+  assert.equal(t.plugin.settings.hierarchyPalette[1], colors.PALETTE_PRESETS.pastel.colors[1]);
+  assert.equal(preset.dropdownValue, 'custom');
+  preset.dropdownChanged!('default'); await settle();
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.PALETTE);
+  assert.equal(root().colorValue, colors.PALETTE[0]);
+});
+
+test('palette levels can grow and shrink, and presets preserve the chosen count', async () => {
+  const t = await setup(); t.ready(); await settle();
+  (t.settingTabs[0] as { display(): void }).display();
+  const preset = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  preset.buttons[0](); await settle();
+  assert.equal(t.plugin.settings.hierarchyPalette.length, 9);
+  assert.ok(t.settingRows.some(row => row.name === '8'));
+  preset.dropdownChanged!('warm'); await settle();
+  assert.equal(t.plugin.settings.hierarchyPalette.length, 9);
+  assert.equal(t.plugin.settings.hierarchyPalette[8], colors.PALETTE_PRESETS.warm.colors[0]);
+  for (let i = 0; i < 10; i++) { preset.buttons[1](); await settle(); }
+  assert.equal(t.plugin.settings.hierarchyPalette.length, 1);
+  assert.equal(preset.dropdownValue, 'warm');
+  preset.buttons[0](); await settle();
+  assert.equal(t.plugin.settings.hierarchyPalette.length, 2);
+});
+
+test('gradient presets resample on resize, survive settings reopen, and hand edits become custom', async () => {
+  const t = await setup(); t.ready(); await settle();
+  (t.settingTabs[0] as { display(): void }).display();
+  let row = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  row.dropdownChanged!('blue-gradient'); await settle();
+  const preset = colors.PALETTE_PRESETS['blue-gradient'];
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(preset, 8));
+  row.buttons[0](); await settle();
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(preset, 9));
+  assert.equal(row.dropdownValue, 'blue-gradient');
+  row.buttons[1](); await settle();
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(preset, 8));
+  (t.settingTabs[0] as { display(): void }).display();
+  row = [...t.settingRows].reverse().find(row => row.name === 'Hierarchy palette')!;
+  assert.equal(row.dropdownValue, 'blue-gradient');
+  const root = [...t.settingRows].reverse().find(row => row.name === '0')!;
+  await root.colorChanged!('#123456');
+  assert.equal(row.dropdownValue, 'custom');
+  row.buttons[0](); await settle();
+  assert.equal(t.plugin.settings.hierarchyPalette[0], '#123456');
+  row.dropdownChanged!('purple-gradient'); await settle();
+  assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(colors.PALETTE_PRESETS['purple-gradient'], 9));
 });

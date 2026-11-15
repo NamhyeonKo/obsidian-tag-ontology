@@ -1,3 +1,4 @@
+import { renderDepthLegend } from './legend.ts';
 import { ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
@@ -21,7 +22,7 @@ const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
-  private stage?: HTMLElement; private status?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
@@ -46,6 +47,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     // The canvas has its own right-click menu.
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
+    this.legend = overlay.createDiv('tag-ontology-legend');
+    renderDepthLegend(this.legend, this.owner.settings);
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
     // A group the sidebar shows goes with the canvas, so the sidebar draws again.
@@ -111,6 +114,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
     const cy = this.cy, model = this.owner.model;
+    if (this.legend) renderDepthLegend(this.legend, this.owner.settings);
     if (operation !== 'refresh' || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
@@ -352,7 +356,9 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   private tagCard(tag: string): Card {
     const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
     const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
-    const color = entry?.facet ? facets.get(entry.facet)! : this.owner.settings.customColors ? this.owner.tagColor() : this.colors.tag;
+    const { customColors, hierarchyColors } = this.owner.settings;
+    const color = customColors && hierarchyColors ? this.owner.tagColor(tag)
+      : entry?.facet ? facets.get(entry.facet)! : customColors ? this.owner.tagColor(tag) : this.colors.tag;
     return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }
