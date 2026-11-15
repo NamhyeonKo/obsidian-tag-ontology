@@ -1224,7 +1224,7 @@ test('modern and legacy settings keep the same sections, order and conditional v
   const t = await setup(); await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
   const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Custom colors',
-    'Color by hierarchy depth', 'Hierarchy palette', 'Palette colors', 'Tag color', 'Tag title in the tag color',
+    'Color by hierarchy depth', 'Hierarchy palette', 'Palette colors', 'Color for tags outside the hierarchy', 'Tag title in the tag color',
     'Focus', 'Keep the selected tag focused', 'Its descendants', 'Include notes',
     'Additional views', 'Enable 3D view (beta)', 'Enable ontology explorer (beta)'];
   for (const customColors of [true, false]) for (const hierarchyColors of [true, false]) for (const focus of [true, false]) {
@@ -1240,4 +1240,25 @@ test('modern and legacy settings keep the same sections, order and conditional v
     if (customColors && hierarchyColors && focus) assert.deepEqual(modern, expected);
     assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['Dictionary', 'Colors', 'Focus', 'Additional views']);
   }
+});
+
+test('tag color label follows depth coloring in both settings screens without changing saved colors', async () => {
+  const t = await setup(); await t.loaded;
+  Object.assign(t.plugin.settings, { customColors: true, tagColor: '#123456' });
+  const before = [...t.plugin.settings.hierarchyPalette];
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
+  tab.display();
+  const picker = t.settingRows.find(row => row.name === 'Tag color')!;
+  const depth = t.settingRows.find(row => row.name === 'Color by hierarchy depth')!;
+  const name = () => (tab.getSettingDefinitions()[1] as SettingDefinitionGroup).items!.find(item => 'render' in item && item.desc?.toString().startsWith('Tag color when'))!.name;
+  assert.equal(name(), 'Tag color');
+  await depth.toggleChanged!(true);
+  assert.equal(picker.name, 'Color for tags outside the hierarchy');
+  assert.equal(name(), picker.name);
+  assert.equal(t.plugin.settings.tagColor, '#123456');
+  assert.deepEqual([...t.plugin.settings.hierarchyPalette], before);
+  await depth.toggleChanged!(false);
+  assert.equal(picker.name, 'Tag color');
+  assert.equal(name(), picker.name);
+  assert.equal(t.plugin.settings.tagColor, '#123456');
 });
