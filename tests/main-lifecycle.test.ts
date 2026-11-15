@@ -48,6 +48,7 @@ interface Main {
 }
 
 async function setup(saved?: Promise<unknown>) {
+  let modernSettings = true;
   const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: TestSetting[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
@@ -192,7 +193,7 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
+      ? { requireApiVersion: () => modernSettings, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './colors.ts' ? { ...colors }
       : specifier === './settings.ts' ? { ...settings }
@@ -213,7 +214,7 @@ async function setup(saved?: Promise<unknown>) {
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
   return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
-    restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
+    legacySettings: () => { modernSettings = false; }, restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
 test('an existing install sees the new dictionary location notice only once', async () => {
@@ -1263,6 +1264,7 @@ test('tag color label follows depth coloring in both settings screens without ch
   assert.equal(picker.name, 'Tag color');
   assert.equal(name(), picker.name);
   assert.equal(t.plugin.settings.tagColor, '#123456');
+  t.legacySettings();
   Object.defineProperty(tab, 'update', { value: undefined });
   await depth.toggleChanged!(true);
   assert.equal(picker.name, 'Color for tags outside the hierarchy', 'legacy Obsidian has no update API');

@@ -1,4 +1,4 @@
-import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { hierarchyColor, PALETTE, PALETTE_PRESETS, paletteFor } from './colors.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
@@ -535,7 +535,7 @@ class OntologySettingsTab extends PluginSettingTab {
     }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
-    if (key === 'hierarchyColors') this.update?.();
+    if (requireApiVersion('1.13.0') && key === 'hierarchyColors') this.update();
   }
 
   private tagColorName(): string {
