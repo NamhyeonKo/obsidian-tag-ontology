@@ -356,7 +356,8 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     if (settings.layout === 'mindmap' && (session.layout !== 'mindmap' || (session.mindmapRoot && !model.placed.has(session.mindmapRoot)))) session.mindmapRoot = undefined;
-    renderDepthLegend(session.legend, settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    renderDepthLegend(session.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { root: settings.layout === 'mindmap' ? session.mindmapRoot : undefined, expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,

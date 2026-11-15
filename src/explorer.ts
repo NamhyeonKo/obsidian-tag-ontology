@@ -48,7 +48,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
     // A group the sidebar shows goes with the canvas, so the sidebar draws again.
@@ -114,7 +115,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
     const cy = this.cy, model = this.owner.model;
-    if (this.legend) renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     if (operation !== 'refresh' || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();

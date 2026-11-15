@@ -6,6 +6,7 @@ import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as legend from '../src/legend.ts';
+import * as palettes from '../src/palettes.ts';
 import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
@@ -172,6 +173,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
     paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) { owner.paletteEdits.push([depth, color]); },
+    paletteChoices: [] as string[], paletteDialogs: 0,
+    async choosePalette(key: string) { owner.paletteChoices.push(key); Object.assign(owner.settings, palettes.choosePalette(owner.settings, key)); controller.refresh(); },
+    promptSavePalette() { owner.paletteDialogs++; },
     opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
@@ -1766,4 +1770,24 @@ test('mind map lays out the chosen root and open paths without changing full-dic
   assert.equal(node('dl').x, node('ml').x, 'a closed parent contributes no distance even while both tags remain visible');
   assert.ok(!map.data!.edges.some(edge => edge.source === '#ml' && edge.target === '#DL'));
   assert.equal(node('dl').color, color);
+});
+
+test('graph palette picker lists named snapshots and working copy, and save opens the shared dialog', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true,
+    savedHierarchyPalettes: [{ name: 'Study', colors: ['#112233'] }], customHierarchyPalette: ['#654321'], workingPaletteSource: 'Pastel' });
+  t.controller.attach();
+  const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+  const picker = () => legend().all().find(el => el.attrs['aria-label'] === 'Graph palette')!;
+  assert.ok(picker());
+  assert.ok(picker().all().some(el => el.text === 'Study'));
+  assert.ok(picker().all().some(el => el.text === 'Working copy · Pastel'));
+  const before = picker(); t.controller.refresh();
+  assert.equal(picker(), before, 'an unrelated graph redraw keeps the picker and its focus intact');
+  picker().value = 'saved:Study'; picker().events.get('change')!();
+  assert.deepEqual(t.owner.paletteChoices, ['saved:Study']);
+  assert.equal(t.owner.settings.hierarchyPalette[0], '#112233');
+  assert.equal(legend().all().find(el => el.classes.has('tag-ontology-legend-swatch'))!.css['--legend-color'], '#112233');
+  picker().value = 'custom'; picker().events.get('change')!();
+  assert.equal(t.owner.settings.hierarchyPalette[0], '#654321');
+  t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 1);
 });
