@@ -1,4 +1,5 @@
 import type { Ontology } from 'tag-ontology';
+import { PALETTE } from './colors.ts';
 
 // Where the explorer puts new cards, what the Search Around menu offers and which lines join the cards, without the DOM.
 export interface Point { x: number; y: number }
@@ -12,7 +13,6 @@ export const grouped = (notes: number) => notes > GROUP_THRESHOLD;
 export const COLUMN_STEP = 320, COLUMN_MAX = 12, STACK_GAP = 20;
 // Room kept clear around a card.
 const MARGIN = { x: 24, y: 16 };
-const PALETTE = ['#4ea1ff', '#f0a33c', '#e5484d', '#30a46c', '#a67cf0', '#14b8a6', '#e879a6', '#a3a33a'];
 
 const boxAt = (p: Point, s: Size): Box => ({ x1: p.x - s.w / 2, y1: p.y - s.h / 2, x2: p.x + s.w / 2, y2: p.y + s.h / 2 });
 

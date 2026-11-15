@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Ontology } from 'tag-ontology';
 import { addEdges, applyCollapse, buildLayer, edgeKey, focusIds, hideNotes, linkTone, resolveTags, type FocusScope, type NativeData } from '../src/layer.ts';
+import { PALETTE } from '../src/colors.ts';
 
 const model = new Ontology({
   cs: { description: '', broader: [] }, sec: { description: '', broader: [] },
@@ -168,4 +169,59 @@ test('linkTone: under Focus the selected tag looks hovered, links inside what st
   assert.equal(linkTone('a', 'b', focus), 'accent');
   assert.equal(linkTone('b', 'c', focus), 'normal');
   assert.equal(linkTone('c', 'x', focus), 'faded');
+});
+
+test('depth colors survive filters and collapse, retain native color identity, and leave other tags alone', () => {
+  const ontology = new Ontology({
+    root: { description: '', broader: [] },
+    middle: { description: '', broader: ['root'] },
+    leaf: { description: '', broader: ['root', 'middle'] },
+  }, []);
+  const input: NativeData = { numLinks: 0, nodes: {
+    '#LEAF': { type: 'tag', links: {} }, '#unknown': { type: 'tag', links: {}, color: 'original' },
+    'note.md': { type: '', links: { '#LEAF': true }, color: 'note' },
+  } };
+  const before = structuredClone(input);
+  const render = (expanded: string[], data = input, enabled = true) => buildLayer(data, ontology, {
+    expanded: new Set(expanded), showNotes: true, showRelated: true, hierarchyColors: enabled,
+  }).data.nodes;
+  const all = render(['root', 'middle']);
+  assert.equal((all['#LEAF'].color as { rgb: number }).rgb, parseInt(PALETTE[2].slice(1), 16));
+  assert.equal(all['#root'].color, render([])['#root'].color, 'collapse keeps the same root color object');
+  assert.equal(all['#LEAF'].color, render(['root'])['#LEAF'].color, 'a shorter visible route keeps the longest-path color');
+  const filtered = { numLinks: 0, nodes: { '#LEAF': input.nodes['#LEAF'] } };
+  assert.equal(all['#LEAF'].color, render(['root', 'middle'], filtered)['#LEAF'].color, 'filtered data keeps the same color');
+  assert.equal(all['#unknown'].color, 'original');
+  assert.equal(all['note.md'].color, 'note');
+  assert.equal(render(['root', 'middle'], input, false)['#LEAF'].color, undefined, 'disabling restores native colors');
+  assert.deepEqual(input, before);
+});
+
+test('the native layer uses edited palette colors and preserves object identity on redraw', () => {
+  const palette = PALETTE.map(() => '#123456');
+  const state = { expanded: new Set(['cs']), showNotes: true, showRelated: true, hierarchyColors: true, hierarchyPalette: palette };
+  const first = buildLayer(core(), model, state).data.nodes['#cs'].color as { rgb: number };
+  assert.equal(first.rgb, 0x123456);
+  assert.equal(buildLayer(core(), model, state).data.nodes['#cs'].color, first);
+  const changed = buildLayer(core(), model, { ...state, hierarchyPalette: PALETTE }).data.nodes['#cs'].color as { rgb: number };
+  assert.notEqual(changed.rgb, first.rgb);
+});
+
+test('a selected mind map root scopes the hierarchy without bringing in other roots', () => {
+  const input = core();
+  const state = { expanded: new Set<string>(), showNotes: false, showRelated: true, root: 'ml' };
+  let result = buildLayer(input, model, state);
+  assert.deepEqual([...result.resolved.visible], ['ml']);
+  assert.deepEqual(Object.keys(result.data.nodes), ['#ml']);
+  result = buildLayer(input, model, { ...state, expanded: new Set(['ml']) });
+  assert.ok(result.resolved.visible.has('dl'));
+  assert.ok(!result.resolved.visible.has('cs') && !result.resolved.visible.has('sec') && !result.resolved.visible.has('crypto'));
+  assert.equal(result.resolved.idOf.get('dl'), '#DL', 'keep core graph casing');
+});
+
+test('a valid unused starting tag can still appear as the only mind map node', () => {
+  const input: NativeData = { numLinks: 0, nodes: {} };
+  const out = buildLayer(input, model, { expanded: new Set(), showNotes: false, showRelated: true, root: 'ml' });
+  assert.deepEqual(Object.keys(out.data.nodes), ['#ml']);
+  assert.deepEqual(input.nodes, {});
 });

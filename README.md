@@ -35,12 +35,14 @@ I wanted to manage and explore relationships between concepts separately, while 
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags. Double-click it again to collapse it.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
-- **Three layouts.** Force, a vertical tree and a horizontal tree.
+- **Four layouts.** Force, **Mind map**, a vertical tree and a horizontal tree. The regular trees retain their visible-hierarchy layout and wrap root trees into rows. Mind map and tag colors use the full dictionary depth.
+- **Mind map.** Mind map first asks where to start: search hierarchy tags or choose one of the root suggestions, then explore only that tag’s branch. Use **Change starting tag** to return to the picker. Returning to another layout restores its previous expansion; entering Mind map again shows the picker. Select a label for its sidebar details; use its arrow button to expand or collapse its children. Drag the background to pan, scroll to zoom, and use Fit to see the map. Shares the core graph filters and saved expansion state. Shared tags remain visible while another expanded parent reaches them. Notes stay hidden in this layout.
 - **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **Ontology explorer (beta).** Start from one tag on an empty canvas and bring out its children, parents, related tags and notes with a right-click, as object cards, in the style of Palantir's ontology graphs.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, with similar dictionary names; dictionary tags no note uses yet; notes that write a tag as an alias or in another case; and notes that carry a broader tag next to a narrower one. It only reports and never changes anything.
 - **Custom colors (optional).** Give every tag in the graph and in the sidebar one color, the accent color unless you pick another.
+- **Hierarchy depth colors (optional).** Under Custom colors, enable **Color by hierarchy depth** to color roots and each deeper level with a palette (eight colors by default; deeper levels keep the last color). Choose Default, Pastel, Warm, **Rainbow**, **Blue gradient** or **Purple gradient** examples under **Hierarchy palette**, or edit the horizontal row of numbered color pickers. Use **+** to add a level and **−** to remove the last one (at least one remains); examples keep your level count. The gradients run from light to dark and resample the full range when levels are added or removed. Editing an individual gradient color switches to Custom and preserves manual edits. Custom colors are stored separately: switching to another preset and back to **Custom** restores the saved colors and level count, including after a restart. Changes are saved automatically. A compact one-line legend at the bottom left of each graph shows the depth for every palette color; long palettes scroll horizontally. Click any legend color to edit it in place; edits switch to Custom and are saved automatically. The final label (e.g. **7+**) includes every deeper level. Depth uses the longest root-to-tag path in the full dictionary, so filtering and collapsing never change a tag's color. Applies to the 2D graph, 3D view, explorer cards (overriding facet colors) and sidebar. Tags outside the hierarchy keep the regular tag color; selection highlights still take precedence. Inspired by [Colored Tags](https://github.com/pfrankov/obsidian-colored-tags).
 - **Focus (optional).** Keep the selected tag and the tags next to it (parents, children and related tags) bright while the rest fades. Options add every tag below it and its notes.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
 
@@ -157,11 +159,11 @@ The round buttons on the left of the graph show their name when you hover them:
 | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
 | Related | Show or hide the dashed related links |
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
-| Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
+| Force / Mind map / Vertical tree / Horizontal tree | All four stay visible in this order; click one to switch. The current layout is highlighted |
 | Open in 3D (beta) | Open the 3D view, or bring an open 3D tab forward. Hidden while **Enable 3D view** is off |
 | Open ontology explorer (beta) | Open the ontology explorer, or bring an open explorer tab forward. Hidden while **Enable ontology explorer** is off |
 
-- In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
+- In the tree layouts and Mind map each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
 - Everything else keeps the core behavior: clicking a note opens it, and clicking a tag that is not in the dictionary opens search.
 
@@ -204,18 +206,27 @@ The button at the bottom of the graph toolbar, or **Open ontology explorer**, op
 
 ### Settings
 
+Settings use the same section and item order on Obsidian 1.13+ and earlier versions. Color options appear when Custom colors is enabled; palette controls also require depth coloring. Focus options appear when focus is enabled.
+
 | Setting | Description |
 | --- | --- |
+| **Dictionary** | |
 | Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
 | Kebab-case tag names | Off by default. On: the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens, the names TOW checks. Existing names are kept. |
-| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
-| Enable ontology explorer (beta) | Show the explorer button on the graph toolbar and the Open ontology explorer command. Turning it off closes the explorer tab. On by default. |
+| **Colors** | |
+| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
+| &nbsp;&nbsp;Color by hierarchy depth | Apply colors by the longest ancestor path in the full dictionary. Filters and collapsing keep the colors stable; levels beyond the palette use its last color. |
+| &nbsp;&nbsp;Hierarchy palette | Choose Default, Pastel, Warm, Rainbow, Blue gradient, Purple gradient or saved Custom colors; add or remove levels. |
+| &nbsp;&nbsp;Palette colors | Edit the numbered colors horizontally. Edits here or in the graph legend are saved automatically as Custom. |
+| &nbsp;&nbsp;Tag color | Base color when depth coloring is off, or for tags outside the hierarchy. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
+| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
+| **Focus** | |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
-| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
-| &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
-| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
+| **Additional views** | |
+| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
+| Enable ontology explorer (beta) | Show the explorer button on the graph toolbar and the Open ontology explorer command. Turning it off closes the explorer tab. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 
