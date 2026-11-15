@@ -35,7 +35,7 @@ I wanted to manage and explore relationships between concepts separately, while 
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags. Double-click it again to collapse it.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
-- **Three layouts.** Force, a vertical tree and a horizontal tree.
+- **Three layouts.** Force, a vertical tree and a horizontal tree. Both trees use the same full-dictionary depth as tag colors: equal depths align across all roots, and hidden intermediate parents leave depth gaps. Root trees sit side by side without wrapping onto lower levels.
 - **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **Ontology explorer (beta).** Start from one tag on an empty canvas and bring out its children, parents, related tags and notes with a right-click, as object cards, in the style of Palantir's ontology graphs.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.

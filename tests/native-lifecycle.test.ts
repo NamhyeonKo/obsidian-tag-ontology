@@ -6,6 +6,7 @@ import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as legend from '../src/legend.ts';
+import * as hierarchy from '../src/hierarchy.ts';
 import * as checkModule from '../src/check.ts';
 import * as explorerLayout from '../src/explorer-layout.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
@@ -76,6 +77,7 @@ interface Node { id: string; x: number; y: number; fx: number | null; fy: number
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
 const layoutOutside: string[][] = [];
+const layoutDepths: Map<string, number>[] = [];
 // The layout throws this many more times, standing in for anything that fails inside a render.
 let layoutFails = 0;
 
@@ -105,8 +107,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
+      : specifier === './hierarchy.ts' ? { ...hierarchy }
       : specifier === './legend.ts' ? { ...legend }
-      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, depths: ReadonlyMap<string, number>, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutDepths.push(new Map(depths)); layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
@@ -1631,4 +1634,21 @@ test('the depth legend expands to match a longer palette', async () => {
   assert.equal(legend.all().filter(el => el.classes.has('tag-ontology-legend-swatch')).length, 12);
   assert.ok(legend.all().some(el => el.attrs['aria-label'] === 'Level 11 and deeper'));
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
+});
+
+test('tree receives full dictionary depths and canonical node IDs even when a longer parent path is collapsed', async () => {
+  const t = await setup({ layout: 'tree', expanded: ['cs'] });
+  t.owner.model = new Ontology({
+    ...raw, deep: { description: '', broader: ['dl'] }, crypto: { description: '', broader: ['cs', 'deep'] },
+  }, []);
+  t.controller.attach();
+  let levels = layoutDepths.at(-1)!;
+  assert.equal(levels.get('#cs'), 0);
+  assert.equal(levels.get('#ml'), 1);
+  assert.equal(levels.get('#crypto'), 4);
+  assert.equal(levels.has('#DL'), false, 'collapsed nodes are not laid out');
+  t.owner.settings.expanded = ['cs', 'ml']; t.controller.refresh();
+  levels = layoutDepths.at(-1)!;
+  assert.equal(levels.get('#DL'), 2, 'the core graph case variant gets the canonical depth');
+  assert.equal(levels.get('#crypto'), 4);
 });

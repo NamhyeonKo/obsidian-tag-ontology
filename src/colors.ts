@@ -1,4 +1,5 @@
 import type { Ontology } from 'tag-ontology';
+import { hierarchyDepths } from './hierarchy.ts';
 
 export const PALETTE = ['#4ea1ff', '#f0a33c', '#e5484d', '#30a46c', '#a67cf0', '#14b8a6', '#e879a6', '#a3a33a'];
 export const PALETTE_PRESETS: Record<string, { name: string; colors: string[]; gradient?: boolean }> = {
@@ -18,22 +19,8 @@ export function paletteFor(preset: { colors: readonly string[]; gradient?: boole
   });
 }
 
-const depths = new WeakMap<Ontology, Map<string, number>>();
-
 export function hierarchyColor(model: Ontology, tag: string, palette: readonly string[] = PALETTE): string | undefined {
-  let levels = depths.get(model);
-  if (!levels) {
-    levels = new Map(model.roots.map(root => [root, 0]));
-    // The full dictionary's parents-first order keeps colors independent of filters and collapsed branches.
-    for (const name of model.order) {
-      for (const parent of model.entries.get(name)!.broader ?? []) {
-        const above = levels.get(parent);
-        if (above !== undefined) levels.set(name, Math.max(levels.get(name) ?? 0, above + 1));
-      }
-    }
-    depths.set(model, levels);
-  }
-  const depth = levels.get(tag);
+  const depth = hierarchyDepths(model).get(tag);
   const colors = palette.length ? palette : PALETTE;
   return depth === undefined ? undefined : colors[Math.min(depth, colors.length - 1)];
 }
