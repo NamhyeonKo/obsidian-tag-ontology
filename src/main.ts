@@ -350,8 +350,19 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   async savePaletteAs(name: string): Promise<void> {
-    Object.assign(this.settings, namedPalette(this.settings, name));
-    await this.saveSettings();
+    const previous = { key: this.settings.hierarchyPalettePreset, working: [...this.settings.customHierarchyPalette], source: this.settings.workingPaletteSource };
+    const change = namedPalette(this.settings, name), savedName = change.savedHierarchyPalettes.at(-1)!.name;
+    Object.assign(this.settings, change);
+    try { await this.saveSettings(); }
+    catch (error) {
+      this.settings.savedHierarchyPalettes = this.settings.savedHierarchyPalettes.filter(palette => palette.name !== savedName);
+      if (this.settings.hierarchyPalettePreset === change.hierarchyPalettePreset) this.settings.hierarchyPalettePreset = previous.key;
+      if (!this.settings.customHierarchyPalette.length) {
+        this.settings.customHierarchyPalette = previous.working; this.settings.workingPaletteSource = previous.source;
+      }
+      this.settingsTab?.syncPaletteControls();
+      throw error;
+    }
   }
 
   promptSavePalette(): void { new PaletteNameModal(this.app, this).open(); }
@@ -472,13 +483,17 @@ class PaletteNameModal extends Modal {
     let input: TextComponent;
     const error = this.contentEl.createDiv({ cls: 'tag-ontology-palette-error' });
     error.setAttribute('role', 'alert');
+    let saving = false;
     const save = async () => {
+      if (saving) return;
+      saving = true;
       try { await this.owner.savePaletteAs(input.getValue()); this.close(); }
       catch (failure) { error.setText(reason(failure)); }
+      finally { saving = false; }
     };
     new Setting(this.contentEl).setName('Palette name').addText(text => {
       input = text; text.setPlaceholder('Study'); text.inputEl.maxLength = 80;
-      text.inputEl.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void save(); } });
+      text.inputEl.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); void save(); } });
     });
     new Setting(this.contentEl).addButton(button => button.setButtonText('Save palette').onClick(() => { void save(); }));
   }

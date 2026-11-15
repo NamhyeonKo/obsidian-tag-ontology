@@ -45,7 +45,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
+  saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -65,6 +65,7 @@ async function setup(saved?: Promise<unknown>) {
     controlEl = { empty() {}, createDiv() { return { createDiv() { return { setAttribute() {} }; } }; } };
     settingEl = { hidden: false, addClass() {}, toggle(value: boolean) { this.hidden = !value; }, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
     name = ''; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; toggleChanged?: (value: boolean) => void;
+    keyDown?: (event: { key: string; isComposing?: boolean; preventDefault(): void }) => void;
     colorValue = ''; colorChanged?: (value: string) => Promise<void>; dropdownValue = ''; dropdownChanged?: (value: string) => void;
     buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean; removed: boolean }[] = [];
     constructor() { settingRows.push(this); }
@@ -73,7 +74,7 @@ async function setup(saved?: Promise<unknown>) {
     setDesc(desc: string) { this.desc = desc; return this; }
     addText(callback: (text: { inputEl: { addEventListener(type: string, cb: () => void): void }; getValue(): string; setValue(value: string): unknown; setPlaceholder(value: string): unknown; onChange(callback: (value: string) => void): unknown }) => void) {
       const text = {
-        inputEl: { addEventListener: (type: string, cb: () => void) => { if (type === 'change') this.textCommitted = cb; } },
+        inputEl: { addEventListener: (type: string, cb: () => void) => { if (type === 'change') this.textCommitted = cb; if (type === 'keydown') this.keyDown = cb; } },
         getValue: () => this.textValue ?? '',
         setValue: (value: string) => { this.textValue = value; return text; },
         setPlaceholder: (value: string) => { this.textPlaceholder = value; return text; },
@@ -1295,4 +1296,30 @@ test('named palette dialog validates names and saves an independent snapshot', a
   assert.equal(restored.plugin.settings.hierarchyPalette[0], '#123456');
   await restored.plugin.choosePalette('custom');
   assert.equal(restored.plugin.settings.hierarchyPalette[0], '#654321');
+});
+
+test('a failed named save restores the working copy and can retry the same name', async () => {
+  const t = await setup(); await t.loaded;
+  await t.plugin.setPaletteColor(0, '#123456');
+  const before = [...t.plugin.settings.customHierarchyPalette];
+  const save = t.plugin.saveData.bind(t.plugin); let fail = true;
+  t.plugin.saveData = async data => { if (fail) { fail = false; throw new Error('disk unavailable'); } await save(data); };
+  await assert.rejects(t.plugin.savePaletteAs('Study'), /disk unavailable/);
+  assert.equal(t.plugin.settings.hierarchyPalettePreset, 'custom');
+  assert.deepEqual([...t.plugin.settings.customHierarchyPalette], before);
+  assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 0);
+  await t.plugin.savePaletteAs('Study');
+  assert.equal(t.plugin.settings.savedHierarchyPalettes[0].name, 'Study');
+});
+
+test('IME confirmation Enter does not submit a palette name', async () => {
+  const t = await setup(); await t.loaded;
+  t.plugin.promptSavePalette();
+  const modal = t.modals.at(-1)!;
+  const input = t.settingRows.find(row => row.name === 'Palette name')!;
+  input.textValue = '연구 팔레트';
+  input.keyDown!({ key: 'Enter', isComposing: true, preventDefault() {} }); await settle();
+  assert.equal(modal.closed, false); assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 0);
+  input.keyDown!({ key: 'Enter', isComposing: false, preventDefault() {} }); await settle();
+  assert.equal(modal.closed, true); assert.equal(t.plugin.settings.savedHierarchyPalettes[0].name, '연구 팔레트');
 });
