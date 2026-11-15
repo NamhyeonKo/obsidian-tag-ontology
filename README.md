@@ -35,7 +35,8 @@ I wanted to manage and explore relationships between concepts separately, while 
 - **Collapsible tag hierarchy.** Dictionary tags start collapsed to their roots, and each note links to its nearest visible ancestor. Click a tag to select it and double-click it to expand it one level, and watch its notes move to the more specific child tags. Double-click it again to collapse it.
 - **Note counts with roll-up.** For each tag you see the notes tagged *directly* and the notes tagged with the tag *or any descendant*.
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
-- **Three layouts.** Force, a vertical tree and a horizontal tree. Both trees use the same full-dictionary depth as tag colors: equal depths align across all roots, and hidden intermediate parents leave depth gaps. Root trees sit side by side without wrapping onto lower levels.
+- **Four layouts.** Force, a vertical tree, a horizontal tree and **Mind map**. The trees and mind map use the same full-dictionary depth as tag colors: equal depths align across all roots, and hidden intermediate parents leave depth gaps. Root trees sit side by side without wrapping onto lower levels.
+- **Mind map.** The fourth layout presents tags as compact labels joined by curved branches. Select a label for its sidebar details; use its arrow button to expand or collapse its children. Drag the background to pan, scroll to zoom, and use Fit to see the map. Shares the core graph filters and saved expansion state. Shared tags remain visible while another expanded parent reaches them. Notes stay hidden in this layout.
 - **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Open it from the bottom of the graph toolbar.
 - **Ontology explorer (beta).** Start from one tag on an empty canvas and bring out its children, parents, related tags and notes with a right-click, as object cards, in the style of Palantir's ontology graphs.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there centers it in the open graph.
@@ -158,11 +159,11 @@ The round buttons on the left of the graph show their name when you hover them:
 | Notes | Show or hide every node that is not a tag (notes, attachments, unresolved links) |
 | Related | Show or hide the dashed related links |
 | Dictionary check | List unregistered and unused tags in the sidebar tab |
-| Force / Vertical tree / Horizontal tree | Only the current layout shows, highlighted. Click it to show all three in this order, then click one to switch |
+| Force / Vertical tree / Horizontal tree / Mind map | Only the current layout shows, highlighted. Click it to show all four in this order, then click one to switch |
 | Open in 3D (beta) | Open the 3D view, or bring an open 3D tab forward. Hidden while **Enable 3D view** is off |
 | Open ontology explorer (beta) | Open the ontology explorer, or bring an open explorer tab forward. Hidden while **Enable ontology explorer** is off |
 
-- In the tree layouts each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
+- In the tree layouts and Mind map each tag hangs under its parent and notes are hidden, so the tag relations stay readable.
 - Click a tag in the graph to show it in the sidebar tab. Double-click it to expand it, and double-click it again to collapse it, like the button at the top of the tab. Tags you expanded below it stay expanded for the next time.
 - Everything else keeps the core behavior: clicking a note opens it, and clicking a tag that is not in the dictionary opens search.
 

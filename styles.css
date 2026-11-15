@@ -99,3 +99,21 @@
 .tag-ontology-palette-slot .setting-item { flex-direction: column; gap: 6px; padding: 0; border: 0; }
 .tag-ontology-palette-slot .setting-item-info { margin: 0; text-align: center; }
 .tag-ontology-palette-slot .setting-item-name { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+/* The fourth layout keeps the core graph's data and toolbar, with an accessible mind map over its canvas. */
+.tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
+.tag-ontology-mindmap-stage { position: absolute; inset: 0; }
+.tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; transform: translate(var(--mindmap-pan-x, 0px), var(--mindmap-pan-y, 0px)) scale(var(--mindmap-zoom, 1)); }
+.tag-ontology-mindmap-lines { position: absolute; width: 1px; height: 1px; overflow: visible; }
+.tag-ontology-mindmap-lines path { fill: none; stroke: var(--text-faint); stroke-width: 1.2; opacity: 0.45; }
+.tag-ontology-mindmap-lines path.is-related { stroke-dasharray: 5 5; opacity: 0.3; }
+.tag-ontology-mindmap-node { position: absolute; left: var(--mindmap-x); top: var(--mindmap-y); transform: translate(-50%, -50%); display: flex; width: 208px; height: 32px; align-items: center; border: 1px solid color-mix(in srgb, var(--mindmap-color) 40%, var(--background-modifier-border)); border-radius: 7px; background: color-mix(in srgb, var(--mindmap-color) 15%, var(--background-primary)); pointer-events: auto; }
+.tag-ontology-mindmap-node button { height: 30px; border: 0; box-shadow: none; border-radius: 6px; background: transparent; color: var(--text-normal); }
+.tag-ontology-mindmap-node .tag-ontology-mindmap-name { flex: 1; min-width: 0; display: block; padding: 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; font-size: 12px; }
+.tag-ontology-mindmap-node .tag-ontology-mindmap-name:disabled { opacity: 1; }
+.tag-ontology-mindmap-node .tag-ontology-mindmap-toggle { flex: none; width: 26px; padding: 0; font-size: 22px; color: var(--text-muted); }
+.tag-ontology-mindmap-toggle[hidden] { display: none; }
+.tag-ontology-mindmap-node button:hover { background: var(--background-modifier-hover); }
+.tag-ontology-mindmap-node.is-selected { border-color: var(--interactive-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 18%, transparent); }
+.tag-ontology-mindmap-node.is-faded, .tag-ontology-mindmap-lines path.is-faded { opacity: 0.2; }
+.tag-ontology-mindmap-error { position: absolute; top: 40%; left: 20%; max-width: 60%; color: var(--text-error); }
+.tag-ontology-native.is-mindmap .graph-controls { z-index: 3; }

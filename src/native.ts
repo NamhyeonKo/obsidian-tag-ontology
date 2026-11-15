@@ -1,3 +1,5 @@
+import { MindMap, type MindMapData } from './mindmap.ts';
+import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
 import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
@@ -38,7 +40,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
   focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
-  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement;
+  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -52,7 +54,7 @@ interface Session {
   open3d: HTMLElement[];
   // The same for the explorer.
   openExplorer: HTMLElement[];
-  // The layout buttons fold into the current one; open, all three show.
+  // The layout buttons fold into the current one; open, all four show.
   layoutsOpen: boolean; fold: (event: Event) => void;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
@@ -68,7 +70,7 @@ type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'che
 type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree'], ['mindmap', 'brain-circuit', 'Mind map']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The explorer, for the sidebar's view of one of its note groups: the notes it holds, newest first, and taking some out.
 export interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
@@ -383,6 +385,9 @@ export class NativeGraphs {
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
     }
+    session.view.contentEl.toggleClass('is-mindmap', settings.layout === 'mindmap');
+    if (settings.layout === 'mindmap') this.syncMindMap(session);
+    else { session.mindmap?.destroy(); session.mindmap = undefined; }
     this.syncToolbar(session);
     if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
     if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
@@ -446,13 +451,15 @@ export class NativeGraphs {
 
   private staticLayout(session: Session) {
     const r = session.renderer, model = this.owner.model!, { visible, idOf } = session.resolved!;
-    const ids = [...visible].map(tag => idOf.get(tag)!), inTree = new Set(ids);
-    const edges = [...visible].flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent))
+    const ids = [...visible].map(tag => idOf.get(tag)!), inTree = new Set(ids), expanded = new Set(this.owner.settings.expanded);
+    const edges = [...visible].flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent) && (this.owner.settings.layout !== 'mindmap' || expanded.has(parent)))
       .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
     const fullDepths = hierarchyDepths(model);
     const depths = new Map([...visible].map(tag => [idOf.get(tag)!, fullDepths.get(tag)!]));
-    const positions = treePositions(ids, edges, depths, this.owner.settings.layout === 'tree-horizontal', r.nodes.map(node => node.id).filter(id => !inTree.has(id)));
+    const outside = r.nodes.map(node => node.id).filter(id => !inTree.has(id));
+    const positions = this.owner.settings.layout === 'mindmap' ? mindmapPositions(ids, edges, depths, outside)
+      : treePositions(ids, edges, depths, this.owner.settings.layout === 'tree-horizontal', outside);
     r.workerResults = null; session.home.clear();
     let moved = false;
     for (const node of r.nodes) {
@@ -465,6 +472,33 @@ export class NativeGraphs {
     }
     // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
     if (moved) r.changed();
+  }
+
+  private syncMindMap(session: Session) {
+    const model = this.owner.model!, resolved = session.resolved!, expanded = new Set(this.owner.settings.expanded);
+    session.mindmap ??= new MindMap(session.view.contentEl, tag => this.clickTag(tag, false), tag => {
+      session.mindmapAnchor = session.resolved?.idOf.get(tag);
+      this.toggleExpanded(tag);
+    });
+    const nodes: MindMapData['nodes'] = session.renderer.nodes.map(node => {
+      const tag = resolved.tagOf.get(node.id), raw = node.color;
+      const rgb = raw && typeof raw === 'object' && 'rgb' in raw && typeof raw.rgb === 'number' ? raw.rgb : undefined;
+      return {
+        id: node.id, tag, name: tag ?? node.id, x: node.x, y: node.y,
+        color: rgb === undefined ? undefined : '#' + rgb.toString(16).padStart(6, '0'),
+        expandable: !!tag && (model.children.get(tag) ?? []).some(child => resolved.range.has(child)),
+        expanded: !!tag && expanded.has(tag),
+      };
+    });
+    const ids = new Set(nodes.map(node => node.id)), edges: MindMapData['edges'] = [];
+    for (const [source, node] of Object.entries(session.data!.nodes)) for (const target of Object.keys(node.links)) {
+      const related = session.kinds.get(edgeKey(source, target)) === 'related';
+      const parent = resolved.tagOf.get(source);
+      if (!related && parent && !expanded.has(parent)) continue;
+      if (ids.has(source) && ids.has(target)) edges.push({ source, target, related });
+    }
+    session.mindmap.draw({ nodes, edges, anchor: session.mindmapAnchor, selected: this.selected ? resolved.idOf.get(this.selected) : undefined, bright: session.focusIds });
+    session.mindmapAnchor = undefined;
   }
 
   get selectedTag() { return this.selected; }
@@ -531,6 +565,7 @@ export class NativeGraphs {
     for (const session of this.sessions.values()) {
       const id = session.resolved?.idOf.get(tag), r = session.renderer;
       if (!id) continue;
+      if (session.mindmap) { session.mindmap.focusOn(id); continue; }
       const center = () => {
         const node = r.nodes.find(n => n.id === id);
         if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
@@ -554,6 +589,7 @@ export class NativeGraphs {
     // A selected tag collapsed out of sight has nothing to keep bright, so nothing fades.
     const bright = settings.focus && model && tag && resolved?.visible.has(tag) && data
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
+    session.mindmap?.paint(tag ? resolved?.idOf.get(tag) : undefined, bright);
     const center = bright ? session.renderer.nodes.find(node => node.id === resolved!.idOf.get(tag!)) : undefined;
     if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; session.renderer.changed(); }
   }
@@ -983,7 +1019,7 @@ export class NativeGraphs {
     }
     for (const el of session.open3d) el.hidden = !settings.enable3d;
     for (const el of session.openExplorer) el.hidden = !settings.enableExplorer;
-    // Open, the three keep their own order and the current one is marked where it sits.
+    // Open, the four keep their own order and the current one is marked where it sits.
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout], current = layout === settings.layout;
       if (!button) continue;
@@ -1014,6 +1050,7 @@ export class NativeGraphs {
   }
 
   private fit(session: Session) {
+    if (session.mindmap) { session.mindmap.fit(); return; }
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
     // One pass rather than Math.min(...xs): spreading a graph of about 125,000 nodes into one call overflows the stack.
@@ -1041,8 +1078,9 @@ export class NativeGraphs {
       link.render = original.render;
       if (link.line && original.texture) link.line.texture = original.texture;
     }
+    s.mindmap?.destroy();
     s.texture?.destroy();
-    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native');
+    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native'); s.view.contentEl.removeClass('is-mindmap');
     this.sessions.delete(id);
     if (redraw) {
       for (const node of s.renderer.nodes) { node.fx = null; node.fy = null; }

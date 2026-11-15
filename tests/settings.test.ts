@@ -128,3 +128,7 @@ test('palette settings preserve nonempty variable-length palettes and reject inv
   const saved = sanitizeSettings({}, '.obsidian');
   assert.notEqual(saved.hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette, 'no shared mutable defaults');
 });
+
+test('the fourth mind map layout is restored from saved settings', () => {
+  assert.equal(sanitizeSettings({ layout: 'mindmap' }, '.obsidian').layout, 'mindmap');
+});

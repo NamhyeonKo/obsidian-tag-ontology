@@ -2,7 +2,7 @@ import { DICTIONARY_LOCATIONS } from 'tag-ontology';
 import { PALETTE } from './colors.ts';
 
 export interface Settings {
-  dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal';
+  dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal' | 'mindmap';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
   // Custom colors use the hierarchy palette when enabled, otherwise tagColor (or the theme accent).
   customColors: boolean; hierarchyColors: boolean; hierarchyPalette: string[]; tagColor: string;
@@ -59,7 +59,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
       : !Object.hasOwn(value, 'dictionaryPathExplicit') && typeof value.dictionaryPath === 'string' && value.dictionaryPath !== LEGACY_DICTIONARY
         && isValidDictionaryPath(value.dictionaryPath, configDir),
     // Radial was removed in 0.6.0; it opens as the vertical tree.
-    layout: value.layout === 'tree' || value.layout === 'tree-horizontal' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
+    layout: value.layout === 'tree' || value.layout === 'tree-horizontal' || value.layout === 'mindmap' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), hierarchyColors: flag('hierarchyColors'),
