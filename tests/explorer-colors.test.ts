@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
-import * as legend from '../src/legend.ts';
 import * as settings from '../src/settings.ts';
 import * as card from '../src/explorer-card.ts';
 import * as layout from '../src/explorer-layout.ts';
@@ -16,7 +15,7 @@ test('explorer uses the chosen color mode, with facet colors only in Obsidian de
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Menu: class {}, TFile: class {}, setIcon() {}, setTooltip() {} }
-      : specifier === './legend.ts' ? { ...legend } : specifier === './settings.ts' ? { ...settings }
+      : specifier === './legend.ts' ? { renderDepthLegend() {} } : specifier === './settings.ts' ? { ...settings }
       : specifier === './explorer-card.ts' ? { ...card } : specifier === './explorer-layout.ts' ? { ...layout } : { TagSuggest: class {} };
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });

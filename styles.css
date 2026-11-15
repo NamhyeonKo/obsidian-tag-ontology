@@ -80,16 +80,17 @@
 .tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }
 /* The legend shares the overlay's bottom stack with status text, leaving graph gestures unobstructed. */
 .tag-ontology-legend {
-  flex: none; align-self: flex-start; max-width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  flex: none; align-self: flex-start; max-width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 5px 8px;
   border: 1px solid var(--background-modifier-border); border-radius: 12px;
   background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   backdrop-filter: blur(12px); box-shadow: 0 4px 18px #0000000a;
   color: var(--text-normal); font-size: var(--font-ui-smaller); pointer-events: auto;
 }
 .tag-ontology-legend[hidden] { display: none; }
-.tag-ontology-legend-title { flex: none; font-size: 10px; font-weight: var(--font-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.tag-ontology-legend-palette { flex: 0 1 160px; min-width: 72px; max-width: 160px; font-size: var(--font-ui-smaller); }
-.tag-ontology-legend-save { flex: none; font-size: var(--font-ui-smaller); }
+.tag-ontology-legend-action { flex: none; width: 30px; height: 30px; padding: 0; }
+.tag-ontology-legend-palette { margin-right: 3px; }
+.tag-ontology-legend-save { position: relative; color: var(--interactive-accent); }
+.tag-ontology-legend-save::after { content: ''; position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--interactive-accent); }
 .tag-ontology-legend-levels { flex: 0 1 auto; min-width: 0; overflow-x: auto; display: flex; gap: 12px; list-style: none; padding: 6px; margin: 0; scrollbar-width: thin; }
 .tag-ontology-legend-levels li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tag-ontology-legend-swatch { position: relative; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 15%, transparent); }

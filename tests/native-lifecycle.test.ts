@@ -5,7 +5,6 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
-import * as legend from '../src/legend.ts';
 import * as palettes from '../src/palettes.ts';
 import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
@@ -24,6 +23,7 @@ class Element {
   win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
+  getBoundingClientRect() { return { left: 10, bottom: 20, width: 30 }; }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
   createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
@@ -98,6 +98,23 @@ const mindmaps: TestMindMap[] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false, dictionaryFound: boolean | undefined | null = true) {
   const notices: string[] = [], sideCalls: object[] = [];
+  class MenuItem {
+    title = ''; checked = false; label = false; icon = ''; action = () => {};
+    setTitle(title: string) { this.title = title; return this; }
+    setChecked(checked: boolean) { this.checked = checked; return this; }
+    setIsLabel(label: boolean) { this.label = label; return this; }
+    setIcon(icon: string) { this.icon = icon; return this; }
+    onClick(action: () => void) { this.action = action; return this; }
+  }
+  const menus: Menu[] = [];
+  class Menu {
+    items: MenuItem[] = []; position?: object; onClose = () => {};
+    constructor() { menus.push(this); }
+    addItem(callback: (item: MenuItem) => void) { const item = new MenuItem(); callback(item); this.items.push(item); return this; }
+    addSeparator() { return this; }
+    onHide(callback: () => void) { this.onClose = callback; }
+    showAtPosition(position: object) { this.position = position; return this; }
+  }
   // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
   const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
   class Modal {
@@ -119,12 +136,16 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
-  await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
+  await module.link(async specifier => {
+    if (specifier === './legend.ts') {
+      const legend = await transform(readFileSync(new URL('../src/legend.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
+      return new SourceTextModule(legend.code, { context });
+    }
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
       : specifier === './mindmap-layout.ts' ? { ...mindmapLayout }
-      : specifier === './legend.ts' ? { ...legend }
+      : specifier === './palettes.ts' ? { ...palettes }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
@@ -172,7 +193,11 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
-    paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) { owner.paletteEdits.push([depth, color]); },
+    paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) {
+      owner.paletteEdits.push([depth, color]);
+      const colors = [...owner.settings.hierarchyPalette]; colors[depth] = color;
+      Object.assign(owner.settings, palettes.editPalette(owner.settings, colors)); controller.refresh();
+    },
     paletteChoices: [] as string[], paletteDialogs: 0,
     async choosePalette(key: string) { owner.paletteChoices.push(key); Object.assign(owner.settings, palettes.choosePalette(owner.settings, key)); controller.refresh(); },
     promptSavePalette() { owner.paletteDialogs++; },
@@ -210,7 +235,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -1591,11 +1616,13 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
   assert.equal(swatches()[0].css['--legend-color'], '#ef4444');
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')));
   const picker = swatches()[0].children[0];
   assert.equal(picker.attrs.type, 'color');
   assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
   picker.value = '#112233'; picker.events.get('change')!();
   assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'editing a swatch reveals the save action');
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
   t.owner.settings.expanded = [];
@@ -1788,17 +1815,36 @@ test('graph palette picker lists named snapshots and working copy, and save open
     savedHierarchyPalettes: [{ name: 'Study', colors: ['#112233'] }], customHierarchyPalette: ['#654321'], workingPaletteSource: 'Pastel' });
   t.controller.attach();
   const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
-  const picker = () => legend().all().find(el => el.attrs['aria-label'] === 'Graph palette')!;
+  const picker = () => legend().all().find(el => el.classes.has('tag-ontology-legend-palette'))!;
   assert.ok(picker());
-  assert.ok(picker().all().some(el => el.text === 'Study'));
-  assert.ok(picker().all().some(el => el.text === 'Working copy · Pastel'));
+  assert.equal(picker().attrs.icon, 'palette');
+  assert.equal(picker().text, '');
+  assert.equal(picker().attrs['aria-haspopup'], 'menu');
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'presets hide the save icon');
+  picker().events.get('click')!();
+  assert.equal(picker().attrs['aria-expanded'], 'true');
+  const menu = t.menus.at(-1)!;
+  assert.ok(menu.items.some(item => item.title === 'Study'));
+  assert.ok(menu.items.some(item => item.title === 'Working copy · Pastel'));
+  assert.equal(menu.items.filter(item => item.checked).length, 1);
+  assert.equal(menu.items.find(item => item.checked)!.title, 'Default');
+  assert.ok(menu.position);
+  menu.onClose(); assert.equal(picker().attrs['aria-expanded'], 'false');
+  menu.items.find(item => item.title === 'Save a copy…')!.action();
+  assert.equal(t.owner.paletteDialogs, 1, 'an unmodified preset can still be saved from the menu');
   const before = picker(); t.controller.refresh();
   assert.equal(picker(), before, 'an unrelated graph redraw keeps the picker and its focus intact');
-  picker().value = 'saved:Study'; picker().events.get('change')!();
+  menu.items.find(item => item.title === 'Study')!.action();
   assert.deepEqual(t.owner.paletteChoices, ['saved:Study']);
   assert.equal(t.owner.settings.hierarchyPalette[0], '#112233');
   assert.equal(legend().all().find(el => el.classes.has('tag-ontology-legend-swatch'))!.css['--legend-color'], '#112233');
-  picker().value = 'custom'; picker().events.get('change')!();
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'saved palettes hide the save icon');
+  picker().events.get('click')!();
+  t.menus.at(-1)!.items.find(item => item.title === 'Working copy · Pastel')!.action();
   assert.equal(t.owner.settings.hierarchyPalette[0], '#654321');
-  t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 1);
+  const save = legend().all().find(el => el.classes.has('tag-ontology-legend-save'))!;
+  assert.equal(save.attrs.icon, 'bookmark-plus');
+  assert.equal(save.text, '');
+  assert.match(picker().attrs['aria-label'], /unsaved/);
+  t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
 });

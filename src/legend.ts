@@ -1,5 +1,6 @@
 import type { Settings } from './settings.ts';
-import { fillPaletteSelect } from './palettes.ts';
+import { Menu, setIcon, setTooltip } from 'obsidian';
+import { paletteGroups, paletteSelection } from './palettes.ts';
 
 interface LegendActions { color(depth: number, color: string): void; choose(key: string): void; save(): void }
 const rendered = new WeakMap<HTMLElement, string>();
@@ -16,10 +17,26 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
   el.setAttribute('role', 'region');
   el.setAttribute('aria-label', 'Hierarchy depth colors');
   el.setAttribute('aria-description', `Root is level 0. Level ${settings.hierarchyPalette.length - 1} and deeper use the last color.`);
-  const select = el.createEl('select', { cls: 'dropdown tag-ontology-legend-palette', attr: { 'aria-label': 'Graph palette' } });
-  fillPaletteSelect(select, settings);
-  select.addEventListener('change', () => actions.choose(select.value));
-  el.createDiv({ cls: 'tag-ontology-legend-title', text: 'Depth' });
+  const groups = paletteGroups(settings), selected = paletteSelection(settings);
+  const name = groups.flatMap(group => group.options).find(option => option.value === selected)?.label ?? 'Palette';
+  const palette = el.createEl('button', { cls: 'clickable-icon tag-ontology-legend-action tag-ontology-legend-palette',
+    attr: { type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false' } });
+  setIcon(palette, 'palette');
+  setTooltip(palette, `Palette: ${name}${selected === 'custom' ? ' · unsaved' : ''}`, { placement: 'top' });
+  palette.addEventListener('click', () => {
+    const menu = new Menu();
+    for (const group of groups) {
+      if (!group.options.length) continue;
+      menu.addItem(item => item.setTitle(group.label).setIsLabel(true));
+      for (const option of group.options) menu.addItem(item => item.setTitle(option.label).setChecked(option.value === selected).onClick(() => actions.choose(option.value)));
+    }
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Save a copy…').setIcon('copy').onClick(() => actions.save()));
+    menu.onHide(() => palette.setAttribute('aria-expanded', 'false'));
+    palette.setAttribute('aria-expanded', 'true');
+    const rect = palette.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom, width: rect.width, overlap: true }, palette.doc);
+  });
   const list = el.createEl('ul', { cls: 'tag-ontology-legend-levels' });
   settings.hierarchyPalette.forEach((color, depth) => {
     const last = depth === settings.hierarchyPalette.length - 1;
@@ -32,7 +49,11 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
     picker.addEventListener('change', () => actions.color(depth, picker.value));
     row.createSpan({ text: String(depth) + (last ? '+' : '') });
   });
-  const save = el.createEl('button', { cls: 'tag-ontology-legend-save', text: 'Save as…', attr: { type: 'button', 'aria-label': 'Save palette as…' } });
-  save.addEventListener('click', () => actions.save());
+  if (selected === 'custom') {
+    const save = el.createEl('button', { cls: 'clickable-icon tag-ontology-legend-action tag-ontology-legend-save', attr: { type: 'button' } });
+    setIcon(save, 'bookmark-plus');
+    setTooltip(save, 'Save palette as…', { placement: 'top' });
+    save.addEventListener('click', () => actions.save());
+  }
   rendered.set(el, state);
 }
