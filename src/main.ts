@@ -1,4 +1,4 @@
-import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { hierarchyColor, PALETTE, PALETTE_PRESETS, paletteFor } from './colors.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
@@ -461,7 +461,7 @@ class OntologySettingsTab extends PluginSettingTab {
         { name: 'Hierarchy palette', visible: palette, render: setting => { this.palettePreset(setting); } },
         { name: 'Palette colors', visible: palette, render: setting => { this.paletteColors(setting); } },
         // A plain color control has no way back to following the accent, so this row is drawn by hand.
-        { ...TAG_COLOR, visible: custom, render: setting => { this.tagColor(setting); } },
+        { ...TAG_COLOR, name: this.tagColorName(), visible: custom, render: setting => { this.tagColor(setting); } },
         { ...TITLE, visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
       ] },
       { type: 'group', heading: 'Focus', items: [
@@ -535,13 +535,18 @@ class OntologySettingsTab extends PluginSettingTab {
     }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
+    if (requireApiVersion('1.13.0') && key === 'hierarchyColors') this.update();
+  }
+
+  private tagColorName(): string {
+    return this.owner.settings.hierarchyColors ? 'Color for tags outside the hierarchy' : TAG_COLOR.name;
   }
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
   // Showing the accent again calls onChange too, and that must not pin the accent as a picked color.
   private tagColor(setting: Setting): Setting {
     let shown: ColorComponent | undefined;
-    return setting.setName(TAG_COLOR.name).setDesc(TAG_COLOR.desc)
+    return setting.setName(this.tagColorName()).setDesc(TAG_COLOR.desc)
       .addColorPicker((picker) => {
         shown = picker;
         picker.setValue(this.owner.tagColor()).onChange(async (value) => {
@@ -634,6 +639,7 @@ class OntologySettingsTab extends PluginSettingTab {
     });
     new Setting(containerEl).setName('Colors').setHeading();
     const custom: Setting[] = [], palette: Setting[] = [];
+    let tagColor: Setting | undefined;
     const paletteVisible = () => { for (const row of palette) row.settingEl.toggle(this.owner.settings.customColors && this.owner.settings.hierarchyColors); };
     new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.customColors).onChange((value) => {
@@ -646,6 +652,7 @@ class OntologySettingsTab extends PluginSettingTab {
     custom.push(new Setting(containerEl).setName(HIERARCHY_COLORS.name).setDesc(HIERARCHY_COLORS.desc).addToggle(toggle => {
       toggle.setValue(this.owner.settings.hierarchyColors).onChange(value => {
         const saved = this.setControlValue('hierarchyColors', value);
+        tagColor?.setName(this.tagColorName());
         paletteVisible();
         return saved;
       });
@@ -653,7 +660,8 @@ class OntologySettingsTab extends PluginSettingTab {
     palette.push(this.palettePreset(new Setting(containerEl)));
     palette.push(this.paletteColors(new Setting(containerEl)));
     paletteVisible();
-    custom.push(this.tagColor(new Setting(containerEl)));
+    tagColor = this.tagColor(new Setting(containerEl));
+    custom.push(tagColor);
     custom.push(new Setting(containerEl).setName(TITLE.name).setDesc(TITLE.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));
