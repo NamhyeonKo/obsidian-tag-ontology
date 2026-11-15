@@ -7,6 +7,7 @@ import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Chan
 import { vaultData } from './vault-data.ts';
 import { Graph3DView, VIEW_3D } from './graph3d.ts';
 import { ExplorerView, VIEW_EXPLORER } from './explorer.ts';
+import type { GraphMode } from './graph-modes.ts';
 import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
@@ -374,21 +375,22 @@ export default class TagOntologyPlugin extends Plugin {
     this.settingsTab?.syncPaletteControls();
   }
 
-  async openView(graph: '2d' | '3d' | 'explorer' = '2d'): Promise<void> {
+  async openView(graph: GraphMode | '2d' = '2d', newTab = false, source?: WorkspaceLeaf): Promise<void> {
     if (this.disposed) return;
     try {
       await this.checkOutsideChange();
       if (this.disposed) return;
       await this.loadModel();
       if (this.disposed) return;
-      // An open tab of the graph is reused.
-      const type = graph === '3d' ? VIEW_3D : graph === 'explorer' ? VIEW_EXPLORER : 'graph';
-      const existing = this.app.workspace.getLeavesOfType(type)[0];
+      const active = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
+      const existing = newTab ? undefined : source ?? this.app.workspace.getLeavesOfType('graph').find(leaf => leaf === active) ?? this.app.workspace.getLeavesOfType('graph')[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
-      if (!existing) await leaf.setViewState({ type, active: true });
+      if (!existing || leaf.view.getViewType() !== 'graph') await leaf.setViewState({ type: 'graph', active: true });
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
+      await this.native.switchMode(leaf, graph === '2d' ? this.settings.layout : graph);
+      if (this.disposed) return;
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
@@ -464,8 +466,8 @@ const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dic
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
 const OPEN_EXPLORER = 'Open ontology explorer';
-const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open ontology explorer command, that open the explorer. Turning it off closes the explorer tabs.' };
-const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
+const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Explore the ontology in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the explorer canvases.' };
+const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases.' };
 const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [

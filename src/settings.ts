@@ -14,10 +14,9 @@ export interface Settings {
   // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
   // it and the notes on the selected tag (and on its descendants, with those on).
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
-  // With the 3D view on, the 2D graph toolbar and the Open 3D graph command open it; the ribbon icon and Open graph always
-  // open the 2D graph.
+  // Enables the 3D mode button and command; modes share a graph tab by default.
   enable3d: boolean;
-  // With the explorer on, the 2D graph toolbar and the Open ontology explorer command open it.
+  // Enables the ontology explorer mode button and command.
   enableExplorer: boolean;
   // With kebabNames on, the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens,
   // the rule TOW checks with --names kebab. Existing names are kept.

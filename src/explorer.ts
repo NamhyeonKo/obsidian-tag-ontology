@@ -1,5 +1,6 @@
 import { renderDepthLegend } from './legend.ts';
-import { ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { Component, ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { graphModeBar } from './graph-modes.ts';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
 import type { ExplorerPanel, LinkedGraph } from './native.ts';
@@ -10,6 +11,21 @@ import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, pl
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
+// Keep previously saved workspace tabs readable; new mode switches stay inside the core graph tab.
+export class ExplorerView extends ItemView {
+  private canvas?: ExplorerCanvas;
+  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
+  getViewType() { return VIEW_EXPLORER; }
+  getDisplayText() { return 'Ontology explorer'; }
+  getIcon() { return 'waypoints'; }
+  async onOpen() {
+    if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
+    this.canvas = this.addChild(new ExplorerCanvas(this.contentEl, this.owner, this.leaf));
+    this.canvas.setVisible(true); await this.canvas.open();
+  }
+  onClose() { if (this.canvas) this.removeChild(this.canvas); return Promise.resolve(); }
+}
+
 // Used when a theme leaves a color unset or in a format cssColorToHex can't read.
 const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
 const WIDTH = { tag: 230, note: 210, group: 220 };
@@ -19,7 +35,7 @@ const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 
 // Palantir-style exploration: start from an empty canvas and bring tags, notes and note groups out one relation at a time.
 // It shares the sidebar with the other graphs through NativeGraphs, but not their expansion or focus.
-export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel {
+export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
@@ -28,19 +44,12 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
   private pending?: string;
 
-  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
-  getViewType(): string { return VIEW_EXPLORER; }
-  getDisplayText(): string { return 'Ontology explorer'; }
-  getIcon(): string { return 'waypoints'; }
+  private syncModes = () => {};
+  private visible = false;
+  private get app() { return this.owner.app; }
+  constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
 
-  async onOpen(): Promise<void> {
-    // With the explorer off, a tab the workspace brings back closes before it loads Cytoscape.
-    if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
-    // One explorer: the sidebar's group view and reveal talk to it, so a second one from Split or a restored workspace closes.
-    // The first claims the place before it awaits Cytoscape, so two opening at once can't both stay.
-    const native = this.owner.native;
-    if (native.explorer && native.explorer !== this) { this.leaf.detach(); return; }
-    native.explorer = this;
+  async open(): Promise<void> {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-explorer');
     this.stage = root.createDiv('tag-ontology-explorer-stage');
@@ -55,7 +64,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     // A group the sidebar shows goes with the canvas, so the sidebar draws again.
     this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); });
     tools.createDiv('tag-ontology-separator');
-    this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
+    this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.buildStart(root);
     this.measurer = createEl('canvas').getContext('2d') ?? undefined;
     this.readTheme();
@@ -93,6 +102,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
 
   // Obsidian calls this when the tab changes size; the observer in onOpen covers the first layout too.
   onResize(): void {
+    if (this.isVisible()) this.owner.native.explorer = this;
     const cy = this.cy;
     if (!cy) return;
     cy.resize();
@@ -102,18 +112,27 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (node.nonempty()) cy.center(node);
   }
 
-  onClose(): Promise<void> {
+  setVisible(visible: boolean) {
+    this.visible = visible;
+    if (visible) this.onResize();
+    else if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
+    this.syncModes();
+  }
+
+  isVisible() { return this.visible && this.contentEl.isShown(); }
+
+  onunload(): void {
     this.closed = true;
     this.owner.native.unlink(this);
     if (this.owner.native.explorer === this) { this.owner.native.explorer = undefined; this.owner.native.renderPanel(); }
     this.cy?.destroy(); this.cy = undefined;
     this.contentEl.empty();
-    return Promise.resolve();
   }
 
   // A dictionary or note edit, or a settings change such as the tag color: cards that lost their place go, groups keep the notes
   // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
+    this.syncModes();
     const cy = this.cy, model = this.owner.model;
     if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });

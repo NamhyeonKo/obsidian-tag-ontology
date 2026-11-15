@@ -14,7 +14,8 @@ test('explorer uses the chosen color mode, with facet colors only in Obsidian de
   const context = createContext({});
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Menu: class {}, TFile: class {}, setIcon() {}, setTooltip() {} }
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Menu: class {}, TFile: class {}, setIcon() {}, setTooltip() {} }
+      : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
       : specifier === './legend.ts' ? { renderDepthLegend() {} } : specifier === './settings.ts' ? { ...settings }
       : specifier === './explorer-card.ts' ? { ...card } : specifier === './explorer-layout.ts' ? { ...layout } : { TagSuggest: class {} };
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
@@ -24,8 +25,8 @@ test('explorer uses the chosen color mode, with facet colors only in Obsidian de
   const owner = { model, settings: { ...settings.DEFAULT_SETTINGS }, tagColor(tag: string) {
     return this.settings.hierarchyColors ? hierarchyColor(model, tag, this.settings.hierarchyPalette)! : '#123456';
   } };
-  const View = (module.namespace as unknown as { ExplorerView: new(leaf: object, owner: object) => { tagCard(tag: string): { color: string }; chip(parent: object, text: string, tag: string): void } }).ExplorerView;
-  const view = new View({}, owner);
+  const View = (module.namespace as unknown as { ExplorerCanvas: new(root: object, owner: object, leaf: object) => { tagCard(tag: string): { color: string }; chip(parent: object, text: string, tag: string): void } }).ExplorerCanvas;
+  const view = new View({}, owner, {});
   const chipColor = () => {
     const css: Record<string, string> = {};
     view.chip({ createEl: () => ({ setCssProps: (props: Record<string, string>) => Object.assign(css, props), addEventListener() {} }) }, '#root', 'root');

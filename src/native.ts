@@ -1,6 +1,9 @@
 import { MindMap, type MindMapData } from './mindmap.ts';
 import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
+import { graphModeBar, type GraphMode } from './graph-modes.ts';
+import { Graph3DCanvas } from './graph3d.ts';
+import { ExplorerCanvas } from './explorer.ts';
 import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
 import type TagOntologyPlugin from './main.ts';
@@ -48,11 +51,9 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
-  toggles: Partial<Record<ToggleKey, HTMLElement>>; layoutButtons: Partial<Record<Settings['layout'], HTMLElement>>;
-  // The separator and button that open the 3D view, shown while it is on in the settings.
-  open3d: HTMLElement[];
-  // The same for the explorer.
-  openExplorer: HTMLElement[];
+  toggles: Partial<Record<ToggleKey, HTMLElement>>;
+  mode: '2d' | '3d' | 'explorer'; nativePaused?: boolean; syncModes(): void;
+  canvases: Map<'3d' | 'explorer', { root: HTMLElement; graph: Graph3DCanvas | ExplorerCanvas; ready: Promise<void> }>;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
@@ -67,12 +68,12 @@ type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'che
 type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['mindmap', 'brain-circuit', 'Mind map'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The explorer, for the sidebar's view of one of its note groups: the notes it holds, newest first, and taking some out.
 export interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 // A graph NativeGraphs drives besides the core graph tabs (the 3D view): it layers the shared state itself.
 export interface LinkedGraph {
+  isVisible?(): boolean;
   // Layer again; 'refresh' also rebuilds the graph's own data, as nothing else tells it about note edits.
   draw(operation: string): void;
   // The selection or what Focus keeps bright changed.
@@ -178,7 +179,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -234,14 +235,7 @@ export class NativeGraphs {
       tools.createDiv('tag-ontology-separator');
       this.iconButton(tools, 'book-open-check', 'Dictionary check', () => this.checkDictionary());
       tools.createDiv('tag-ontology-separator');
-      const group = tools.createDiv('tag-ontology-layouts');
-      for (const [layout, icon, name] of LAYOUTS) {
-        session.layoutButtons[layout] = this.iconButton(group, icon, `Layout: ${name}`, () => {
-          if (this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
-        });
-      }
-      session.open3d = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'box', 'Open in 3D (beta)', () => { void this.owner.openView('3d'); })];
-      session.openExplorer = [this.iconButton(tools, 'waypoints', 'Open ontology explorer (beta)', () => { void this.owner.openView('explorer'); })];
+      session.syncModes = graphModeBar(tools, this.owner, leaf);
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
@@ -270,6 +264,13 @@ export class NativeGraphs {
     const model = this.owner.model!, settings = this.owner.settings;
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
     if (kept.length !== settings.expanded.length) { settings.expanded = kept; void this.owner.saveState(); }
+    for (const session of this.sessions.values()) {
+      for (const [mode, entry] of session.canvases) if (mode === '3d' ? !settings.enable3d : !settings.enableExplorer) {
+        entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
+        if (session.mode === mode) session.mode = '2d';
+      }
+      this.showMode(session);
+    }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
     this.drawLinked('refresh');
     this.renderPanel();
@@ -277,6 +278,66 @@ export class NativeGraphs {
 
   link(view: LinkedGraph) { this.linked.add(view); }
   unlink(view: LinkedGraph) { this.linked.delete(view); }
+
+  graphMode(leaf: WorkspaceLeaf): GraphMode {
+    const mode = this.sessions.get(leaf)?.mode;
+    if (!mode && leaf.view.getViewType() === 'tag-ontology-3d') return '3d';
+    if (!mode && leaf.view.getViewType() === 'tag-ontology-explorer') return 'explorer';
+    return mode && mode !== '2d' ? mode : this.owner.settings.layout;
+  }
+
+  async switchMode(leaf: WorkspaceLeaf, mode: GraphMode): Promise<void> {
+    const session = this.sessions.get(leaf);
+    if (!session) {
+      if (leaf.view.getViewType() === 'graph') new Notice('The graph is not ready. Try switching modes again.');
+      else await this.owner.openView(mode, false, leaf);
+      return;
+    }
+    if (mode === '3d' && !this.owner.settings.enable3d || mode === 'explorer' && !this.owner.settings.enableExplorer) return;
+    session.stopFit();
+    if (mode !== '3d' && mode !== 'explorer') {
+      session.mode = '2d'; this.showMode(session);
+      if (this.owner.settings.layout !== mode) this.update({ layout: mode }, 'layout');
+      return;
+    }
+    session.mode = mode;
+    let entry = session.canvases.get(mode);
+    if (!entry) {
+      const root = session.view.contentEl.createDiv('tag-ontology-mode');
+      const graph = mode === '3d' ? new Graph3DCanvas(root, this.owner, leaf) : new ExplorerCanvas(root, this.owner, leaf);
+      entry = { root, graph, ready: Promise.resolve() };
+      session.canvases.set(mode, entry); graph.load();
+      entry.ready = graph.open();
+    }
+    this.showMode(session);
+    try { await entry.ready; }
+    catch (error) {
+      if (!session.active || session.canvases.get(mode) !== entry) return;
+      entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
+      if (session.mode === mode) session.mode = '2d';
+      new Notice(`Could not open the graph: ${String(error)}`);
+    }
+    if (session.active) this.showMode(session);
+  }
+
+  private showMode(session: Session) {
+    const explorer = this.explorer;
+    if (session.mode !== '2d' && !session.nativePaused) {
+      session.stopFit(); session.nativePaused = true;
+      session.renderer.worker.postMessage({ run: false });
+    } else if (session.mode === '2d' && session.nativePaused) {
+      session.nativePaused = false;
+      if (this.owner.settings.layout === 'force') session.renderer.worker.postMessage({ run: true });
+      session.renderer.changed();
+    }
+    session.view.contentEl.toggleClass('has-embedded-graph', session.mode !== '2d');
+    for (const [mode, entry] of session.canvases) {
+      entry.root.hidden = mode !== session.mode;
+      entry.graph.setVisible(mode === session.mode);
+    }
+    session.syncModes();
+    if (this.explorer !== explorer) this.renderPanel();
+  }
   // One graph failing to draw mustn't keep the others or the sidebar from updating.
   drawLinked(operation: string) {
     for (const view of this.linked) {
@@ -369,7 +430,7 @@ export class NativeGraphs {
     const r = session.renderer, worker = r.worker, post = worker.postMessage;
     // A tree pins every node, so the reheat the core graph sends with new nodes or links would only simulate positions
     // nobody sees. The worker still gets the nodes and links, for Force to start from.
-    if (settings.layout !== 'force') worker.postMessage = (message: Record<string, unknown>) => {
+    if (settings.layout !== 'force' || session.mode !== '2d') worker.postMessage = (message: Record<string, unknown>) => {
       const rest = { ...message }; delete rest.alpha; delete rest.run; post.call(worker, rest);
     };
     let result: unknown;
@@ -384,7 +445,7 @@ export class NativeGraphs {
     if (settings.layout !== 'force') this.staticLayout(session);
     // Taking over from a tree releases its pins and restarts the simulation from the tree's positions. Otherwise the core
     // graph reheats by itself when nodes or links change, and reheating on every update would shake a settled graph.
-    else if (layoutChanged) {
+    else if (layoutChanged && session.mode === '2d') {
       for (const node of r.nodes) { node.fx = null; node.fy = null; }
       r.worker.postMessage({ nodes: Object.fromEntries(r.nodes.map(n => [n.id, [n.x, n.y]])), alpha: 0.3, run: true });
     }
@@ -574,6 +635,7 @@ export class NativeGraphs {
     this.update({ expanded: [...expanded] }, 'reveal');
     // Center the chosen tag in every open graph; with no graph open there is nothing to move.
     for (const session of this.sessions.values()) {
+      if (session.mode !== '2d') continue;
       const id = session.resolved?.idOf.get(tag), r = session.renderer;
       if (!id) continue;
       if (session.mindmap) { session.mindmap.focusOn(id); continue; }
@@ -583,7 +645,7 @@ export class NativeGraphs {
       };
       center(); this.follow(session, center);
     }
-    for (const view of this.linked) view.focusOn(tag);
+    for (const view of this.linked) if (view.isVisible?.() !== false) view.focusOn(tag);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -1031,13 +1093,7 @@ export class NativeGraphs {
       button.setAttribute('aria-disabled', String(disabled));
       this.label(button, disabled ? 'Notes are hidden in tree layouts' : `${name}: ${settings[key] ? 'shown' : 'hidden'}`);
     }
-    for (const el of session.open3d) el.hidden = !settings.enable3d;
-    for (const el of session.openExplorer) el.hidden = !settings.enableExplorer;
-    for (const [layout] of LAYOUTS) {
-      const button = session.layoutButtons[layout], current = layout === settings.layout;
-      if (!button) continue;
-      button.toggleClass('is-active', current); button.setAttribute('aria-pressed', String(current));
-    }
+    session.syncModes();
   }
 
   openNote(path: string) {
@@ -1061,6 +1117,7 @@ export class NativeGraphs {
   }
 
   private fit(session: Session) {
+    if (session.mode !== '2d') return;
     if (session.mindmap) { session.mindmap.fit(); return; }
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
@@ -1076,6 +1133,8 @@ export class NativeGraphs {
   private detach(id: WorkspaceLeaf, redraw: boolean) {
     const s = this.sessions.get(id); if (!s) return;
     s.active = false;
+    for (const { graph, root } of s.canvases.values()) { graph.unload(); root.remove(); }
+    s.canvases.clear();
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
@@ -1090,7 +1149,7 @@ export class NativeGraphs {
     }
     s.mindmap?.destroy();
     s.texture?.destroy();
-    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native'); s.view.contentEl.removeClass('is-mindmap');
+    s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native'); s.view.contentEl.removeClass('is-mindmap'); s.view.contentEl.removeClass('has-embedded-graph');
     this.sessions.delete(id);
     if (redraw) {
       for (const node of s.renderer.nodes) { node.fx = null; node.fy = null; }

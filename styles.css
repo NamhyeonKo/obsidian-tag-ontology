@@ -123,6 +123,9 @@
 .tag-ontology-mindmap-node.is-faded, .tag-ontology-mindmap-lines path.is-faded { opacity: 0.2; }
 .tag-ontology-mindmap-error { position: absolute; top: 40%; left: 20%; max-width: 60%; color: var(--text-error); }
 .tag-ontology-native.is-mindmap .graph-controls { z-index: 3; }
+.tag-ontology-mode { position: absolute; inset: 0; }
+.tag-ontology-mode[hidden] { display: none; }
+.tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
 .tag-ontology-mindmap-change-root { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
 
 .tag-ontology-mindmap-change-root[hidden] { display: none; }

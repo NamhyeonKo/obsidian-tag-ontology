@@ -44,6 +44,7 @@ class Element {
 }
 class File {}
 type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+  graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
@@ -114,6 +115,17 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     addSeparator() { return this; }
     onHide(callback: () => void) { this.onClose = callback; }
     showAtPosition(position: object) { this.position = position; return this; }
+    showAtMouseEvent() { return this; }
+  }
+  const canvases: Canvas[] = [];
+  let canvasReady: Promise<void> = Promise.resolve();
+  class Canvas {
+    visible = false; unloaded = false; opened = 0; state = { zoom: 2, x: 123 };
+    root: Element;
+    constructor(root: Element) { this.root = root; canvases.push(this); }
+    load() {} async open() { this.opened++; await canvasReady; }
+    setVisible(visible: boolean) { this.visible = visible; }
+    unload() { this.unloaded = true; }
   }
   // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
   const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
@@ -137,13 +149,15 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(async specifier => {
-    if (specifier === './legend.ts') {
-      const legend = await transform(readFileSync(new URL('../src/legend.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
-      return new SourceTextModule(legend.code, { context });
+    if (specifier === './legend.ts' || specifier === './graph-modes.ts') {
+      const code = await transform(readFileSync(new URL('../src/' + specifier.slice(2), import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
+      return new SourceTextModule(code.code, { context });
     }
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
+      : specifier === './graph3d.ts' ? { Graph3DCanvas: Canvas }
+      : specifier === './explorer.ts' ? { ExplorerCanvas: Canvas }
       : specifier === './mindmap-layout.ts' ? { ...mindmapLayout }
       : specifier === './palettes.ts' ? { ...palettes }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
@@ -189,8 +203,9 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     setOptions(options: typeof graphOptions) { Object.assign(graphOptions, options); optionWrites.push(options); },
     onOptionsChange() {},
   };
-  const view = { renderer, contentEl, dataEngine, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
+  const view = { renderer, contentEl, dataEngine, getViewType: () => 'graph', update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
   const owner = {
+    get native() { return controller; },
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
     paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) {
@@ -232,10 +247,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const addTab = () => {
     const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
     const tabEl = new Element(); tabEl.win = win;
-    leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
+    leaves.push({ view: { renderer: tab, contentEl: tabEl, getViewType: () => 'graph', update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus };
+  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus, canvases, delayCanvas: (ready: Promise<void>) => { canvasReady = ready; } };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -522,28 +537,27 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
   assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer']);
 });
 
-test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
-  const t = await setup();
-  t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-3, -1);
-  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
-  t.click('Open in 3D (beta)');
-  assert.deepEqual(t.owner.opened, ['3d']);
+test('the 3D mode reuses the graph tab and unloads when disabled', async () => {
+  const t = await setup(); t.controller.attach();
+  const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: 3D')!;
+  t.click('Layout: 3D'); await settle();
+  assert.deepEqual(t.owner.opened, []);
+  assert.equal(t.canvases.length, 1); assert.equal(t.canvases[0].visible, true);
   t.owner.settings.enable3d = false; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  assert.equal(button.hidden, true); assert.equal(t.canvases[0].unloaded, true);
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
   t.owner.settings.enable3d = true; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  assert.equal(button.hidden, false);
 });
 
 test('all layout buttons stay visible in order and switch directly with the active layout marked', async () => {
   const t = await setup();
   t.controller.attach();
   const shown = () => t.layoutButtons().filter(el => !el.hidden).map(el => el.attrs['aria-label']);
-  const order = ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree'];
+  const order = ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer'];
   const active = () => t.layoutButtons().filter(el => el.classes.has('is-active')).map(el => el.attrs['aria-label']);
   assert.deepEqual(shown(), order);
   const sent = t.forwarded.length;
@@ -563,12 +577,13 @@ test('the explorer follows 3D without a separator and keeps its own enabled sett
   const t = await setup();
   t.controller.attach();
   const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!;
-  const [three, explorer] = tools.children.slice(-2);
-  assert.equal(three.attrs['aria-label'], 'Open in 3D (beta)');
-  assert.equal(explorer.attrs['aria-label'], 'Open ontology explorer (beta)');
+  const [three, explorer] = tools.all().filter(el => el.attrs['aria-label'] === 'Layout: 3D' || el.attrs['aria-label'] === 'Layout: Ontology explorer');
+  assert.equal(three.attrs['aria-label'], 'Layout: 3D');
+  assert.equal(explorer.attrs['aria-label'], 'Layout: Ontology explorer');
   assert.equal(explorer.hidden, false);
-  t.click('Open ontology explorer (beta)');
-  assert.deepEqual(t.owner.opened, ['explorer']);
+  t.click('Layout: Ontology explorer'); await settle();
+  assert.deepEqual(t.owner.opened, []);
+  assert.equal(t.canvases.length, 1);
   t.owner.settings.enableExplorer = false; t.controller.refresh();
   assert.equal(explorer.hidden, true);
   assert.equal(three.hidden, false);
@@ -583,6 +598,67 @@ test('tree hides notes without changing the saved setting', async () => {
   assert.equal(t.owner.settings.showNotes, true);
   t.owner.settings.layout = 'force'; t.controller.refresh();
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
+});
+
+test('embedded modes reuse their canvases and preserve the underlying map and zoom', async () => {
+  const t = await setup({ layout: 'mindmap' }); t.controller.attach();
+  const leaf = t.leaves[0], map = mindmaps.at(-1)!;
+  map.chooseRoot('cs'); map.toggle('cs');
+  t.renderer.scale = t.renderer.targetScale = 3;
+  await t.controller.switchMode(leaf, 'explorer');
+  const explorer = t.canvases[0]; explorer.state.x = 456;
+  await t.controller.switchMode(leaf, '3d');
+  const three = t.canvases[1]; three.state.zoom = 4;
+  assert.equal(explorer.visible, false); assert.equal(three.visible, true);
+  await t.controller.switchMode(leaf, 'explorer');
+  assert.equal(t.canvases.length, 2); assert.equal(explorer.opened, 1);
+  assert.equal(explorer.state.x, 456); assert.equal(three.visible, false);
+  await t.controller.switchMode(leaf, 'mindmap');
+  assert.equal(t.renderer.scale, 3); assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+  assert.equal(explorer.visible, false); assert.equal(t.contentEl.classes.has('has-embedded-graph'), false);
+  t.controller.destroy();
+  assert.ok(t.canvases.every(canvas => canvas.unloaded && canvas.root.removed));
+});
+
+test('a late mode load cannot replace the latest mode or resurrect a closed tab', async () => {
+  const t = await setup(); t.controller.attach();
+  let finish!: () => void;
+  t.delayCanvas(new Promise<void>(resolve => { finish = resolve; }));
+  const pending = t.controller.switchMode(t.leaves[0], '3d');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  finish(); await pending;
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.canvases[0].visible, false);
+  assert.ok(t.renderer.worker.messages.some(message => (message as { run?: boolean }).run === true));
+  let close!: () => void;
+  t.delayCanvas(new Promise<void>(resolve => { close = resolve; }));
+  const closing = t.controller.switchMode(t.leaves[0], 'explorer');
+  t.controller.destroy(); close(); await closing;
+  assert.ok(t.canvases.every(canvas => canvas.unloaded));
+  assert.equal(t.contentEl.classes.has('has-embedded-graph'), false);
+});
+
+test('a failed canvas load returns to the native graph and can be retried', async () => {
+  const t = await setup(); t.controller.attach();
+  t.delayCanvas(Promise.reject(new Error('load failed')));
+  await t.controller.switchMode(t.leaves[0], '3d');
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.canvases[0].unloaded, true);
+  assert.match(t.notices[0], /load failed/);
+  t.delayCanvas(Promise.resolve());
+  await t.controller.switchMode(t.leaves[0], '3d');
+  assert.equal(t.canvases.length, 2); assert.equal(t.canvases[1].visible, true);
+});
+
+test('mode context menus offer an explicit new tab without changing the current mode', async () => {
+  const t = await setup(); t.controller.attach();
+  const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: Ontology explorer')!;
+  button.events.get('contextmenu')!({ preventDefault() {} });
+  assert.equal(t.menus.at(-1)!.items[0].title, 'Open in new tab');
+  t.menus.at(-1)!.items[0].action();
+  assert.deepEqual(t.owner.opened, ['explorer']);
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
 });
 
 test('tree pins every node and hands the tags outside the hierarchy to the layout for its corner', async () => {

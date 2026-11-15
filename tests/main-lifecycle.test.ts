@@ -37,6 +37,8 @@ class NativeGraphs {
   showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
   renderPanel() { this.calls.push('render-panel'); }
   drawLinked() { this.calls.push('draw-linked'); }
+  modes: string[] = [];
+  async switchMode(_leaf: unknown, mode: string) { this.modes.push(mode); }
   destroy() { this.calls.push('destroy'); }
 }
 
@@ -45,7 +47,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
+  saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer', newTab?: boolean): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -124,7 +126,7 @@ async function setup(saved?: Promise<unknown>) {
     hide() {}
   }
   const types: string[] = [], open = new Map<string, unknown[]>();
-  const leaf = { async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
+  const leaf = { view: { getViewType: () => 'graph' }, async setViewState(state: { type: string }) { ui.push('create'); types.push(state.type); } };
   const vault: {
     configDir: string; getAbstractFileByPath(path: string): File | Folder | null; getMarkdownFiles(): unknown[];
     text: string; writes: string[]; adapterWrites: string[]; existing: Set<string>; created: string[]; targetAppearsOnFolderCreate: boolean;
@@ -166,6 +168,7 @@ async function setup(saved?: Promise<unknown>) {
   const metadataCache = { on(name: string, callback: () => void) { metaEvents.set(name, callback); return { name }; }, offref(ref: { name: string }) { metaEvents.delete(ref.name); },
     getFileCache: () => ({}), resolvedLinks: {} as Record<string, Record<string, number>> };
   const workspace = {
+    getActiveViewOfType: () => undefined,
     getLeavesOfType: (type: string) => open.get(type) ?? [], getLeaf: () => leaf,
     async revealLeaf() { ui.push('reveal'); },
     setActiveLeaf(_leaf: unknown, { focus }: { focus: boolean }) { ui.push(focus ? 'focus' : 'active'); },
@@ -259,17 +262,18 @@ test('opening a graph still loads the dictionary, attaches and reveals it, and b
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
-test('opening the 3D view shows a 3D tab and the sidebar', async () => {
+test('opening the 3D mode uses a graph tab and the sidebar', async () => {
   const t = await setup();
   await t.plugin.openView('3d');
-  assert.deepEqual(t.types, ['tag-ontology-3d']);
+  assert.deepEqual(t.types, ['graph']);
+  assert.deepEqual(t.plugin.native.modes, ['3d']);
   assert.deepEqual(t.plugin.native.calls, ['refresh:false', 'panel:true']);
   assert.deepEqual(t.ui, ['create', 'reveal']);
 });
 
-test('with a 3D tab open, opening the 3D view reuses it and makes it the active tab', async () => {
+test('opening the 3D mode reuses a graph tab and makes it active', async () => {
   const t = await setup();
-  t.open.set('tag-ontology-3d', [t.leaf]);
+  t.open.set('graph', [t.leaf]);
   await t.plugin.openView('3d');
   assert.deepEqual(t.types, []);
   // Revealing only brings the tab to the front; keys like Ctrl+W would still go to the tab that was active.
@@ -283,11 +287,20 @@ test('Open graph opens the 2D graph even with a 3D tab open', async () => {
   assert.deepEqual(t.types, ['graph']);
 });
 
+test('explicit new-tab opening creates a graph even when another graph already exists', async () => {
+  const t = await setup(); t.open.set('graph', [t.leaf]);
+  await t.plugin.openView('explorer', true);
+  assert.deepEqual(t.types, ['graph']);
+  assert.deepEqual(t.plugin.native.modes, ['explorer']);
+  assert.deepEqual(t.ui, ['create', 'reveal']);
+});
+
 test('Open 3D graph is offered only while the 3D view is on, and turning it off closes the 3D tabs', async () => {
   const t = await setup();
   assert.equal(t.offered.get('open-3d-graph')!(), true);
   t.commands.get('open-3d-graph')!(); await settle();
-  assert.deepEqual(t.types, ['tag-ontology-3d']);
+  assert.deepEqual(t.types, ['graph']);
+  assert.deepEqual(t.plugin.native.modes, ['3d']);
   const tab = { closed: false, detach() { tab.closed = true; } };
   t.open.set('tag-ontology-3d', [tab]);
   t.plugin.settings.enable3d = false;
@@ -300,7 +313,8 @@ test('Open ontology explorer is offered only while the explorer is on, and turni
   const t = await setup();
   assert.equal(t.offered.get('open-explorer')!(), true);
   t.commands.get('open-explorer')!(); await settle();
-  assert.deepEqual(t.types, ['tag-ontology-explorer']);
+  assert.deepEqual(t.types, ['graph']);
+  assert.deepEqual(t.plugin.native.modes, ['explorer']);
   const tab = { closed: false, detach() { tab.closed = true; } };
   t.open.set('tag-ontology-explorer', [tab]);
   t.plugin.settings.enableExplorer = false;
