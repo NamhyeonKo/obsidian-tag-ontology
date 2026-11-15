@@ -57,7 +57,7 @@ export class MindMap {
     this.resize.observe(this.el);
     void import('cytoscape').then(({ default: cytoscape }) => {
       if (this.closed) return;
-      this.cy = cytoscape({ container: stage, minZoom: 0.000001, maxZoom: 2.5, style: [
+      this.cy = cytoscape({ container: stage, autoungrabify: true, minZoom: 0.000001, maxZoom: 2.5, style: [
         { selector: 'node', style: { width: 208, height: 32, opacity: 0 } },
       ] });
       stage.appendChild(this.layer);

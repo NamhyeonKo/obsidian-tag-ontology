@@ -24,8 +24,10 @@ function deferred<T>() {
 class NativeGraphs {
   calls: string[] = [];
   // Like the real one, a redraw reads the tag color (the sidebar title and the graph's tags take it).
-  owner?: { tagColor(): string };
-  constructor(owner?: { tagColor(): string }) { this.owner = owner; }
+  owner?: { tagColor(): string; settings?: settings.Settings };
+  savedExpandedOverride?: string[];
+  get savedExpanded() { return this.savedExpandedOverride ?? this.owner?.settings?.expanded ?? []; }
+  constructor(owner?: { tagColor(): string; settings?: settings.Settings }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
   refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
   showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
@@ -39,7 +41,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; saveState(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -665,7 +667,7 @@ test('resetDictionaryPath restores the default and clears the explicit choice', 
   assert.equal(t.plugin.settings.dictionaryPath, settings.DEFAULT_SETTINGS.dictionaryPath);
   assert.equal(t.plugin.settings.dictionaryPathExplicit, false);
   assert.equal(t.plugin.dictionaryPath, 'Tag-Dictionary.json');
-  assert.deepEqual(t.savedWrites.at(-1), { ...settings.DEFAULT_SETTINGS, locationNoticeShown: true });
+  assert.deepEqual(structuredClone(t.savedWrites.at(-1)), { ...settings.DEFAULT_SETTINGS, locationNoticeShown: true });
 });
 
 test('the path field is empty while automatic and shows the path in use as its placeholder', async () => {
@@ -1159,4 +1161,16 @@ test('gradient presets resample on resize, survive settings reopen, and hand edi
   assert.equal(t.plugin.settings.hierarchyPalette[0], '#123456');
   row.dropdownChanged!('purple-gradient'); await settle();
   assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(colors.PALETTE_PRESETS['purple-gradient'], 9));
+});
+
+
+test('saving mindmap graph state or settings persists the other layouts expansion', async () => {
+  const t = await setup(); t.ready(); await settle();
+  t.plugin.settings.layout = 'mindmap'; t.plugin.settings.expanded = ['sec'];
+  t.plugin.native.savedExpandedOverride = ['cs', 'ml'];
+  await t.plugin.saveState();
+  assert.deepEqual([...(t.savedWrites.at(-1) as settings.Settings).expanded], ['cs', 'ml']);
+  await t.plugin.saveSettings();
+  assert.deepEqual([...(t.savedWrites.at(-1) as settings.Settings).expanded], ['cs', 'ml']);
+  assert.deepEqual(t.plugin.settings.expanded, ['sec'], 'live mindmap expansion remains independent of its saved snapshot');
 });

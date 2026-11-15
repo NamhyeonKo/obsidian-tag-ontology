@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
+import cytoscape from 'cytoscape';
 import type { MindMapData } from '../src/mindmap.ts';
 
 class Element {
@@ -31,7 +32,7 @@ class Element {
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
-  let options: { minZoom: number } | undefined;
+  let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
   const node = (id: string) => ({ id: () => id, empty: () => !positions.has(id), nonempty: () => positions.has(id),
     position(at?: { x: number; y: number }) { if (at) positions.set(id, at); return positions.get(id); },
@@ -43,7 +44,7 @@ async function setup(closeBeforeLoad = false) {
   const context = createContext({ console, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
   } });
-  const dependency = new SyntheticModule(['default'], function () { this.setExport('default', (opts: { minZoom: number }) => { options = opts; return graph; }); }, { context });
+  const dependency = new SyntheticModule(['default'], function () { this.setExport('default', (opts: { minZoom: number; autoungrabify?: boolean }) => { options = opts; return graph; }); }, { context });
   await dependency.link(() => { throw new Error('Unexpected import'); }); await dependency.evaluate();
   const code = await transform(readFileSync(new URL('../src/mindmap.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const search = new SyntheticModule(['TagSuggest'], function () { this.setExport('TagSuggest', class { close() {} }); }, { context });
@@ -110,4 +111,12 @@ test('the initial mind map shows a starting-tag picker and a change-start button
   change.events.get('click')!();
   assert.deepEqual(t.chosen, ['a', undefined]);
   t.map.destroy();
+});
+
+
+test('the hidden positioning nodes cannot be dragged away from the HTML labels', async () => {
+  const t = await setup();
+  const cy = cytoscape({ headless: true, autoungrabify: t.options()!.autoungrabify, elements: [{ data: { id: 'root' } }] });
+  assert.equal(cy.getElementById('root').grabbable(), false);
+  cy.destroy(); t.map.destroy();
 });

@@ -43,7 +43,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
@@ -1781,4 +1781,17 @@ test('the mind map picker includes every dictionary root rather than truncating 
   t.owner.model = new Ontology(Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`root-${i}`, { description: '', broader: [] }])), []);
   t.controller.attach();
   assert.equal(mindmaps.at(-1)!.data!.roots!.length, 12);
+});
+
+
+test('saved non-mindmap expansion survives restarting while mind map is active', async () => {
+  const t = await setup({ expanded: ['cs', 'ml'] }); t.controller.attach();
+  t.layout('Mind map');
+  const map = mindmaps.at(-1)!;
+  map.chooseRoot('sec'); map.toggle('sec'); await settle();
+  assert.deepEqual([...t.owner.settings.expanded], ['sec']);
+  const saved = { ...t.owner.settings, expanded: [...t.controller.savedExpanded] };
+  const restored = await setup(saved); restored.controller.attach();
+  restored.layout('Force');
+  assert.deepEqual([...restored.owner.settings.expanded], ['cs', 'ml']);
 });

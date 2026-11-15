@@ -320,12 +320,12 @@ export default class TagOntologyPlugin extends Plugin {
 
   // Persists graph state (expansion, toggles) without reloading the dictionary or redrawing views.
   async saveState(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData({ ...this.settings, expanded: [...this.native.savedExpanded] });
   }
 
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
-    await this.saveData(this.settings);
+    await this.saveState();
     await this.refreshViews({ notify: true });
   }
 

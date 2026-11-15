@@ -336,6 +336,8 @@ export class NativeGraphs {
     void this.owner.app.workspace.ensureSideLeaf(PANEL_VIEW, 'left', { reveal });
   }
 
+  get savedExpanded(): string[] { return this.beforeMindMap ?? this.owner.settings.expanded; }
+
   private syncMindMapExpansion() {
     const settings = this.owner.settings;
     if (settings.layout === 'mindmap' && !this.beforeMindMap) {
