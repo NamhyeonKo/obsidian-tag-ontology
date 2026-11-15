@@ -54,8 +54,6 @@ interface Session {
   open3d: HTMLElement[];
   // The same for the explorer.
   openExplorer: HTMLElement[];
-  // The layout buttons fold into the current one; open, all four show.
-  layoutsOpen: boolean; fold: (event: Event) => void;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
@@ -181,7 +179,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {},
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], layoutsOpen: false, fold: () => {}, stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, layoutButtons: {}, open3d: [], openExplorer: [], stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
@@ -240,21 +238,9 @@ export class NativeGraphs {
       const group = tools.createDiv('tag-ontology-layouts');
       for (const [layout, icon, name] of LAYOUTS) {
         session.layoutButtons[layout] = this.iconButton(group, icon, `Layout: ${name}`, () => {
-          // Folded, the one button showing opens the others; open, a click picks a layout and folds them.
-          session.layoutsOpen = !session.layoutsOpen;
-          if (!session.layoutsOpen && this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
-          else this.syncToolbar(session);
+          if (this.owner.settings.layout !== layout) this.update({ layout }, 'layout');
         });
       }
-      // A press anywhere else in the graph, or Escape, folds them without changing the layout.
-      session.fold = event => {
-        const away = event.type === 'keydown' ? (event as KeyboardEvent).key === 'Escape' : !group.contains(event.target as Node);
-        if (!session.layoutsOpen || !away) return;
-        session.layoutsOpen = false; this.syncToolbar(session);
-        // Escape from a button that just folded away would drop keyboard focus, so it moves to the current layout.
-        if (event.type === 'keydown' && group.contains(event.target as Node)) session.layoutButtons[this.owner.settings.layout]?.focus();
-      };
-      for (const event of ['pointerdown', 'keydown']) view.contentEl.addEventListener(event, session.fold, { capture: true });
       session.open3d = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'box', 'Open in 3D (beta)', () => { void this.owner.openView('3d'); })];
       session.openExplorer = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'waypoints', 'Open ontology explorer (beta)', () => { void this.owner.openView('explorer'); })];
       this.syncToolbar(session);
@@ -371,7 +357,7 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     if (settings.layout === 'mindmap' && (session.layout !== 'mindmap' || (session.mindmapRoot && !model.placed.has(session.mindmapRoot)))) session.mindmapRoot = undefined;
-    renderDepthLegend(session.legend, settings);
+    renderDepthLegend(session.legend, settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
     const layer = buildLayer(session.base, model, { root: settings.layout === 'mindmap' ? session.mindmapRoot : undefined, expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
@@ -1048,13 +1034,10 @@ export class NativeGraphs {
     }
     for (const el of session.open3d) el.hidden = !settings.enable3d;
     for (const el of session.openExplorer) el.hidden = !settings.enableExplorer;
-    // Open, the four keep their own order and the current one is marked where it sits.
     for (const [layout] of LAYOUTS) {
       const button = session.layoutButtons[layout], current = layout === settings.layout;
       if (!button) continue;
       button.toggleClass('is-active', current); button.setAttribute('aria-pressed', String(current));
-      button.hidden = !current && !session.layoutsOpen;
-      if (current) button.setAttribute('aria-expanded', String(session.layoutsOpen)); else button.removeAttribute('aria-expanded');
     }
   }
 
@@ -1097,7 +1080,6 @@ export class NativeGraphs {
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
-    for (const event of ['pointerdown', 'keydown']) s.view.contentEl.removeEventListener(event, s.fold, { capture: true });
     s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;

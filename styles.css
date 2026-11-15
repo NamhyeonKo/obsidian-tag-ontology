@@ -90,7 +90,10 @@
 .tag-ontology-legend-title { flex: none; font-size: 10px; font-weight: var(--font-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
 .tag-ontology-legend-levels { flex: none; display: flex; gap: 12px; list-style: none; padding: 0; margin: 0; }
 .tag-ontology-legend-levels li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.tag-ontology-legend-swatch { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 15%, transparent); }
+.tag-ontology-legend-swatch { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; overflow: hidden; background: var(--legend-color); cursor: pointer; }
+.tag-ontology-legend-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.tag-ontology-legend-swatch::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.tag-ontology-legend-swatch:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 3px; }
 
 .tag-ontology-palette-setting { display: block; }
 .tag-ontology-palette-setting > .setting-item-control { justify-content: flex-start; margin-top: 10px; }

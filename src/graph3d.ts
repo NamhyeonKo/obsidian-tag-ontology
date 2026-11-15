@@ -88,7 +88,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     this.stage = root.createDiv('tag-ontology-3d-stage');
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings);
+    renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
     this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll());
@@ -203,7 +203,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   draw(operation: string) {
     const graph = this.graph, model = this.owner.model, settings = this.owner.settings;
     if (!graph || !this.status) return;
-    if (this.legend) renderDepthLegend(this.legend, settings);
+    if (this.legend) renderDepthLegend(this.legend, settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
     if (!model) { this.status.setText(this.owner.error ? `Could not load the tag dictionary: ${this.owner.error}` : 'Loading the tag dictionary…'); return; }
     const first = !this.layer;
     if (operation === 'refresh' || !this.base) this.base = this.owner.graphData();

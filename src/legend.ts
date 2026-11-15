@@ -1,6 +1,6 @@
 import type { Settings } from './settings.ts';
 
-export function renderDepthLegend(el: HTMLElement, settings: Pick<Settings, 'customColors' | 'hierarchyColors' | 'hierarchyPalette'>): void {
+export function renderDepthLegend(el: HTMLElement, settings: Pick<Settings, 'customColors' | 'hierarchyColors' | 'hierarchyPalette'>, changeColor: (depth: number, color: string) => void): void {
   el.empty();
   el.hidden = !settings.customColors || !settings.hierarchyColors;
   if (el.hidden) return;
@@ -13,9 +13,10 @@ export function renderDepthLegend(el: HTMLElement, settings: Pick<Settings, 'cus
     const last = depth === settings.hierarchyPalette.length - 1;
     const label = depth === 0 ? 'Root · 0' : `Level ${depth}`;
     const row = list.createEl('li', { attr: { 'aria-label': label + (last ? ' and deeper' : '') } });
-    const swatch = row.createSpan({ cls: 'tag-ontology-legend-swatch' });
+    const swatch = row.createEl('input', { cls: 'tag-ontology-legend-swatch', attr: { type: 'color', 'aria-label': `Change ${label.toLowerCase()} color`, title: `Change ${label.toLowerCase()} color` } });
+    swatch.value = color;
+    swatch.addEventListener('change', () => changeColor(depth, swatch.value));
     swatch.setCssProps({ '--legend-color': color });
-    swatch.setAttribute('aria-hidden', 'true');
     row.createSpan({ text: String(depth) + (last ? '+' : '') });
   });
 }

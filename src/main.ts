@@ -323,6 +323,14 @@ export default class TagOntologyPlugin extends Plugin {
     await this.saveData({ ...this.settings, expanded: [...this.native.savedExpanded] });
   }
 
+  async setPaletteColor(depth: number, color: string): Promise<void> {
+    const palette = this.settings.hierarchyPalette;
+    if (!Number.isInteger(depth) || depth < 0 || depth >= palette.length || !/^#[0-9a-f]{6}$/i.test(color) || palette[depth] === color) return;
+    const next = [...palette]; next[depth] = color;
+    Object.assign(this.settings, { hierarchyPalette: next, customHierarchyPalette: [...next], hierarchyPalettePreset: 'custom' });
+    await this.saveSettings();
+  }
+
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveState();
@@ -600,12 +608,7 @@ class OntologySettingsTab extends PluginSettingTab {
       slot.setAttribute('aria-label', this.depthName(index));
       new Setting(slot).setName(String(index)).addColorPicker(picker => {
         picker.setValue(color).onChange(async value => {
-          if (index >= this.owner.settings.hierarchyPalette.length || value === this.owner.settings.hierarchyPalette[index]) return;
-          const next = [...this.owner.settings.hierarchyPalette];
-          next[index] = value;
-          this.owner.settings.customHierarchyPalette = [...next];
-          this.owner.settings.hierarchyPalettePreset = 'custom';
-          await this.setControlValue('hierarchyPalette', next);
+          await this.owner.setPaletteColor(index, value);
           this.paletteDropdown?.setValue(this.presetName());
         });
       });

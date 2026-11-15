@@ -41,7 +41,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; saveState(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; saveState(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -1193,4 +1193,25 @@ test('custom palette is restored after presets, other settings and restart', asy
   (restored.settingTabs[0] as { display(): void }).display();
   restored.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('custom'); await settle();
   assert.deepEqual([...restored.plugin.settings.hierarchyPalette], custom);
+});
+
+test('editing a graph legend color saves the whole active preset as custom and restores it after restart', async () => {
+  const t = await setup(); t.ready(); await settle();
+  Object.assign(t.plugin.settings, { hierarchyPalette: colors.paletteFor(colors.PALETTE_PRESETS.rainbow, 10), hierarchyPalettePreset: 'rainbow' });
+  const expected = [...t.plugin.settings.hierarchyPalette]; expected[2] = '#123456';
+  await t.plugin.setPaletteColor(2, '#123456');
+  assert.deepEqual([...t.plugin.settings.hierarchyPalette], expected);
+  assert.deepEqual([...t.plugin.settings.customHierarchyPalette], expected);
+  assert.equal(t.plugin.settings.hierarchyPalettePreset, 'custom');
+  assert.ok(t.plugin.native.calls.includes('refresh:true'), 'all graphs receive the edit');
+  (t.settingTabs[0] as { display(): void }).display();
+  t.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('pastel'); await settle();
+  const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1))));
+  await restored.loaded; restored.ready(); await settle();
+  (restored.settingTabs[0] as { display(): void }).display();
+  restored.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('custom'); await settle();
+  assert.deepEqual([...restored.plugin.settings.hierarchyPalette], expected);
+  const writes = restored.savedWrites.length;
+  for (const [depth, color] of [[-1, '#112233'], [10, '#112233'], [0.5, '#112233'], [0, 'invalid']] as const) await restored.plugin.setPaletteColor(depth, color);
+  assert.equal(restored.savedWrites.length, writes, 'invalid edits are ignored');
 });

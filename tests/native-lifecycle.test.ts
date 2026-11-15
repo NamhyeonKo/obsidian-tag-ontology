@@ -173,6 +173,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const owner = {
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
+    paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) { owner.paletteEdits.push([depth, color]); },
     opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
@@ -196,11 +197,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const ids = () => Object.keys(forwarded.at(-1)!.nodes).sort();
   const click = (label: string) => all().find(el => el.text === label || el.attrs['aria-label'] === label)!.events.get('click')!({ preventDefault() {} });
   const layoutButtons = () => contentEl.all().filter(el => el.attrs['aria-label']?.startsWith('Layout: '));
-  // Picks a layout the way a user does: the folded button opens the others, then a click on one picks it.
-  const layout = (name: string) => {
-    layoutButtons().find(el => !el.hidden)!.events.get('click')!({});
-    click(`Layout: ${name}`);
-  };
+  const layout = (name: string) => click(`Layout: ${name}`);
   const search = (query: string) => {
     const input = sidebar.all().find(el => el.events.has('keydown'))!;
     input.value = query; input.events.get('keydown')!({ key: 'Enter' });
@@ -286,7 +283,7 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
   t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
-  const shown = t.layoutButtons().filter(el => !el.hidden);
+  const shown = t.layoutButtons().filter(el => el.classes.has('is-active'));
   assert.deepEqual(shown.map(el => el.attrs['aria-label']), ['Layout: Horizontal tree'], 'the toolbar shows a layout changed in settings');
   assert.equal(shown[0]!.attrs['aria-pressed'], 'true');
 });
@@ -515,31 +512,24 @@ test('the 3D button near the bottom of the toolbar opens the 3D view, and hides 
   assert.deepEqual(last.map(el => el.hidden), [false, false]);
 });
 
-test('the layout buttons fold into the current one, open in their own order, and fold again after a choice', async () => {
+test('all layout buttons stay visible in order and switch directly with the active layout marked', async () => {
   const t = await setup();
   t.controller.attach();
-  let reloads = 0; t.owner.saveSettings = async () => { reloads++; };
-  const sent = t.forwarded.length;
   const shown = () => t.layoutButtons().filter(el => !el.hidden).map(el => el.attrs['aria-label']);
+  const order = ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree'];
   const active = () => t.layoutButtons().filter(el => el.classes.has('is-active')).map(el => el.attrs['aria-label']);
-  const expanded = () => t.layoutButtons().map(el => el.attrs['aria-expanded']);
-  assert.deepEqual(shown(), ['Layout: Force']); assert.deepEqual(active(), ['Layout: Force'], 'the folded button keeps the accent');
-  assert.deepEqual(expanded(), ['false', undefined, undefined, undefined]);
+  assert.deepEqual(shown(), order);
+  const sent = t.forwarded.length;
   t.click('Layout: Force');
-  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree']); assert.deepEqual(active(), ['Layout: Force']);
-  assert.deepEqual(expanded(), ['true', undefined, undefined, undefined]);
-  t.click('Layout: Force');
-  assert.deepEqual(shown(), ['Layout: Force'], 'the current one folds them again');
-  assert.equal(t.forwarded.length, sent, 'without drawing the graph again');
+  assert.equal(t.forwarded.length, sent);
   t.layout('Vertical tree');
-  assert.equal(t.owner.settings.layout, 'tree'); assert.equal(t.forwarded.length, sent + 1);
-  assert.equal(reloads, 0); assert.equal(t.owner.saves, 1);
-  assert.deepEqual(shown(), ['Layout: Vertical tree']); assert.deepEqual(active(), ['Layout: Vertical tree']);
-  t.click('Layout: Vertical tree');
-  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree'], 'they open in their own order');
-  assert.deepEqual(active(), ['Layout: Vertical tree'], 'with the current one marked where it sits');
-  t.click('Layout: Horizontal tree');
-  assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.deepEqual(shown(), ['Layout: Horizontal tree']);
+  assert.equal(t.owner.settings.layout, 'tree');
+  assert.deepEqual(active(), ['Layout: Vertical tree']);
+  assert.deepEqual(shown(), order);
+  t.layout('Horizontal tree');
+  assert.equal(t.owner.settings.layout, 'tree-horizontal');
+  assert.deepEqual(shown(), order);
+  assert.deepEqual(active(), ['Layout: Horizontal tree']);
 });
 
 test('the explorer button follows the 3D button, opens the explorer, and hides with its separator while the explorer is off', async () => {
@@ -556,33 +546,6 @@ test('the explorer button follows the 3D button, opens the explorer, and hides w
   assert.equal(tools.children.at(-3)!.hidden, false);
   t.owner.settings.enableExplorer = true; t.controller.refresh();
   assert.deepEqual(last.map(el => el.hidden), [false, false]);
-});
-
-test('a click elsewhere in the graph or Escape folds the open layout buttons', async () => {
-  const t = await setup();
-  t.controller.attach();
-  const shown = () => t.layoutButtons().filter(el => !el.hidden).length;
-  t.click('Layout: Force');
-  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown', target: t.layoutButtons()[1] });
-  assert.equal(shown(), 4, 'a press on a layout button leaves them open for its click');
-  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown', target: t.contentEl });
-  assert.equal(shown(), 1);
-  t.click('Layout: Force');
-  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Enter', target: t.contentEl });
-  assert.equal(shown(), 4);
-  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: t.contentEl });
-  assert.equal(shown(), 1);
-  assert.equal(t.owner.settings.layout, 'force');
-  assert.ok(!t.layoutButtons()[0]!.focused, 'Escape from elsewhere leaves focus alone');
-});
-
-test('Escape from a layout button that folds away hands keyboard focus to the current one', async () => {
-  const t = await setup();
-  t.controller.attach();
-  t.click('Layout: Force');
-  const [current, , vertical] = t.layoutButtons();
-  t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: vertical });
-  assert.ok(vertical!.hidden); assert.ok(current!.focused);
 });
 
 test('tree hides notes without changing the saved setting', async () => {
@@ -1625,6 +1588,10 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
   assert.equal(swatches()[0].css['--legend-color'], '#4ea1ff');
+  assert.equal(swatches()[0].attrs.type, 'color');
+  assert.equal(swatches()[0].attrs['aria-label'], 'Change root · 0 color');
+  swatches()[0].value = '#112233'; swatches()[0].events.get('change')!();
+  assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
   t.owner.settings.expanded = [];
