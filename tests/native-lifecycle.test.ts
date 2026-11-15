@@ -8,7 +8,7 @@ import * as layer from '../src/layer.ts';
 import * as legend from '../src/legend.ts';
 import * as hierarchy from '../src/hierarchy.ts';
 import * as mindmapLayout from '../src/mindmap-layout.ts';
-import type { MindMapData } from '../src/mindmap.ts';
+import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
 import * as explorerLayout from '../src/explorer-layout.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
@@ -85,8 +85,10 @@ let layoutFails = 0;
 
 class TestMindMap {
   data?: MindMapData; destroyed = false; fitted = 0; focused?: string;
+  start: MindMapStart;
   select: (tag: string) => void; toggle: (tag: string) => void;
-  constructor(_parent: unknown, select: (tag: string) => void, toggle: (tag: string) => void) { this.select = select; this.toggle = toggle; mindmaps.push(this); }
+  constructor(_parent: unknown, select: (tag: string) => void, toggle: (tag: string) => void, start: MindMapStart) { this.start = start; this.select = select; this.toggle = toggle; mindmaps.push(this); }
+  chooseRoot(tag?: string) { this.start.choose(tag); }
   draw(data: MindMapData) { this.data = data; }
   paint(selected?: string, bright?: ReadonlySet<string>) { if (this.data) { this.data.selected = selected; this.data.bright = bright; } }
   fit() { this.fitted++; }
@@ -1671,15 +1673,17 @@ test('tree receives full dictionary depths and canonical node IDs even when a lo
 
 test('mind map is the fourth layout and shares filtering, expansion, palette and sidebar selection', async () => {
   const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true, expanded: ['cs', 'sec'] });
+  t.owner.model = new Ontology({ ...raw, hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] }, sec: { description: '', broader: ['hub'] } }, []);
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.chooseRoot('hub'); map.toggle('hub');
   map.toggle('cs'); map.toggle('sec'); await settle();
   assert.ok(t.contentEl.classes.has('is-mindmap'));
   assert.equal(t.layoutButtons().at(-1)!.attrs['aria-label'], 'Layout: Mind map');
   assert.ok(map.data!.nodes.every(node => node.id.startsWith('#')), 'notes remain hidden without changing the saved toggle');
   assert.equal(t.owner.settings.showNotes, true);
   const root = map.data!.nodes.find(node => node.tag === 'cs')!;
-  assert.equal(root.color, '#4ea1ff');
+  assert.equal(root.color, '#f0a33c');
   assert.equal(root.expanded, true); assert.equal(root.expandable, true);
   assert.equal(new Set(map.data!.nodes.map(node => node.id)).size, map.data!.nodes.length);
   map.select('cs');
@@ -1700,6 +1704,7 @@ test('mind map retains deeper expansion when a parent is closed and is disposed 
   const t = await setup({ layout: 'mindmap', expanded: ['cs', 'ml'] });
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.chooseRoot('cs');
   map.toggle('cs'); map.toggle('ml'); await settle();
   assert.ok(map.data!.nodes.some(node => node.tag === 'dl'));
   map.toggle('cs'); await settle();
@@ -1713,8 +1718,10 @@ test('mind map retains deeper expansion when a parent is closed and is disposed 
 
 test('a mind map arrow preserves selection and removes only the collapsed parent branch', async () => {
   const t = await setup({ layout: 'mindmap', expanded: ['cs', 'sec'] });
+  t.owner.model = new Ontology({ ...raw, hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] }, sec: { description: '', broader: ['hub'] } }, []);
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.chooseRoot('hub'); map.toggle('hub');
   map.toggle('cs'); map.toggle('sec'); await settle();
   map.select('crypto');
   map.toggle('cs'); await settle();
@@ -1731,18 +1738,40 @@ test('mind map enters collapsed, keeps interaction during refresh, and restores 
   t.controller.attach();
   t.layout('Mind map');
   let map = mindmaps.at(-1)!;
-  assert.deepEqual(map.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
+  assert.equal(map.data!.nodes.length, 0, 'show the starting-tag picker rather than every root');
+  map.chooseRoot('cs');
   map.toggle('cs'); map.toggle('ml'); await settle();
   t.controller.refresh();
   assert.ok(map.data!.nodes.some(node => node.tag === 'dl'), 'refresh does not close branches opened in this visit');
   t.layout('Force');
   assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml']);
   t.layout('Mind map'); map = mindmaps.at(-1)!;
-  assert.deepEqual(map.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
+  assert.equal(map.data!.nodes.length, 0, 'show the starting-tag picker rather than every root');
 });
 
 test('restoring a saved mind map layout starts with roots even when saved branches were expanded', async () => {
   const t = await setup({ layout: 'mindmap', expanded: ['cs', 'ml'] });
   t.controller.attach();
-  assert.deepEqual(mindmaps.at(-1)!.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
+  assert.equal(mindmaps.at(-1)!.data!.nodes.length, 0);
+});
+
+test('mind map starts with a picker, scopes a selected tag, and can choose a different start', async () => {
+  const t = await setup({ layout: 'mindmap' }); t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  assert.equal(map.data!.nodes.length, 0);
+  assert.equal(map.data!.root, undefined);
+  assert.ok(map.start.suggest('ml').some(item => item.tag === 'ml'));
+  map.chooseRoot('ml'); await settle();
+  assert.equal(map.data!.root, 'ml');
+  assert.deepEqual(map.data!.nodes.map(node => node.tag), ['ml']);
+  map.toggle('ml'); await settle();
+  assert.ok(map.data!.nodes.some(node => node.tag === 'dl'));
+  assert.ok(!map.data!.nodes.some(node => node.tag === 'cs' || node.tag === 'sec' || node.tag === 'crypto'));
+  map.chooseRoot(); await settle();
+  assert.equal(map.data!.nodes.length, 0);
+  map.chooseRoot('sec'); await settle();
+  assert.deepEqual(map.data!.nodes.map(node => node.tag), ['sec']);
+  t.owner.model = new Ontology({ cs: { description: '', broader: [] } }, []);
+  t.controller.refresh();
+  assert.equal(map.data!.root, undefined, 'a deleted starting tag returns to the picker');
 });

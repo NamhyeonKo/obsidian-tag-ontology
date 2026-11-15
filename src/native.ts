@@ -40,7 +40,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
   focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
-  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string;
+  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string; mindmapRoot?: string;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -368,10 +368,11 @@ export class NativeGraphs {
     const model = this.owner.model, settings = this.owner.settings;
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
+    if (settings.layout === 'mindmap' && (session.layout !== 'mindmap' || (session.mindmapRoot && !model.placed.has(session.mindmapRoot)))) session.mindmapRoot = undefined;
     renderDepthLegend(session.legend, settings);
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
-    const layer = buildLayer(session.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
+    const layer = buildLayer(session.base, model, { root: settings.layout === 'mindmap' ? session.mindmapRoot : undefined, expanded: new Set(settings.expanded), showNotes: settings.showNotes && settings.layout === 'force', showRelated: settings.showRelated,
       hierarchyColors: settings.customColors && settings.hierarchyColors, hierarchyPalette: settings.hierarchyPalette,
       tagColor: settings.customColors ? hexColor(this.owner.tagColor()) : undefined });
     // Links draw their style from the kinds every frame, and a link that only changes kind is no change to the core graph.
@@ -408,7 +409,7 @@ export class NativeGraphs {
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
-    session.status.textContent = tagsShown
+    session.status.textContent = settings.layout === 'mindmap' && !session.mindmapRoot ? 'Choose a starting tag to explore its branch.' : tagsShown
       ? `${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`
       : 'Turn on Tags in the graph filters to show the dictionary hierarchy.';
     this.metrics.push({ operation, ms: performance.now() - start, nodes: Object.keys(layer.data.nodes).length, visible: document.visibilityState === 'visible' });
@@ -493,6 +494,15 @@ export class NativeGraphs {
     session.mindmap ??= new MindMap(session.view.contentEl, tag => this.clickTag(tag, false), tag => {
       session.mindmapAnchor = session.resolved?.idOf.get(tag);
       this.toggleExpanded(tag);
+    }, {
+      app: this.owner.app,
+      suggest: query => (this.owner.model?.suggest(query, 20) ?? []).filter(item => this.owner.model?.placed.has(item.tag)).slice(0, 10),
+      choose: tag => {
+        if (tag && !this.owner.model?.placed.has(tag)) return;
+        session.mindmapRoot = tag;
+        this.update({ expanded: [] }, 'mindmap-root');
+        session.mindmap?.fit();
+      },
     });
     const nodes: MindMapData['nodes'] = session.renderer.nodes.map(node => {
       const tag = resolved.tagOf.get(node.id), raw = node.color;
@@ -511,7 +521,7 @@ export class NativeGraphs {
       if (!related && parent && !expanded.has(parent)) continue;
       if (ids.has(source) && ids.has(target)) edges.push({ source, target, related });
     }
-    session.mindmap.draw({ nodes, edges, anchor: session.mindmapAnchor, selected: this.selected ? resolved.idOf.get(this.selected) : undefined, bright: session.focusIds });
+    session.mindmap.draw({ root: session.mindmapRoot, roots: model.roots.slice(0, 8), startFrom: this.selected && model.placed.has(this.selected) ? this.selected : undefined, nodes: session.mindmapRoot ? nodes : [], edges: session.mindmapRoot ? edges : [], anchor: session.mindmapAnchor, selected: this.selected ? resolved.idOf.get(this.selected) : undefined, bright: session.focusIds });
     session.mindmapAnchor = undefined;
   }
 
@@ -973,6 +983,7 @@ export class NativeGraphs {
       if (name !== tag) {
         this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t);
         this.beforeMindMap = this.beforeMindMap?.map(t => t === tag ? name : t);
+        for (const session of this.sessions.values()) if (session.mindmapRoot === tag) session.mindmapRoot = name;
         void this.owner.saveState();
         this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name }
           : view.kind === 'group' && view.tag === tag ? { kind: 'group', tag: name } : view);

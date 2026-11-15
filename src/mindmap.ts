@@ -1,10 +1,15 @@
+import type { App } from 'obsidian';
+import type { Suggestion } from 'tag-ontology';
+import { TagSuggest } from './search.ts';
 import type { Core } from 'cytoscape';
 
 export interface MindMapNode {
   id: string; tag?: string; name: string; x: number; y: number; color?: string;
   expandable: boolean; expanded: boolean;
 }
+export interface MindMapStart { app: App; suggest(query: string): Suggestion[]; choose(tag?: string): void }
 export interface MindMapData {
+  root?: string; roots?: string[]; startFrom?: string;
   nodes: MindMapNode[];
   edges: { source: string; target: string; related: boolean }[];
   selected?: string; anchor?: string; bright?: ReadonlySet<string>;
@@ -21,12 +26,25 @@ export class MindMap {
   private layer: HTMLElement;
   private lines: SVGSVGElement;
   private resize: ResizeObserver;
+  private suggest: TagSuggest;
+  private start: HTMLElement;
+  private choices: HTMLElement;
+  private changeRoot: HTMLButtonElement;
   readonly el: HTMLElement;
 
-  constructor(parent: HTMLElement, private select: (tag: string) => void, private toggle: (tag: string) => void) {
+  constructor(parent: HTMLElement, private select: (tag: string) => void, private toggle: (tag: string) => void, private startActions: MindMapStart) {
     this.el = parent.createDiv('tag-ontology-mindmap');
     this.el.setAttribute('aria-label', 'Tag mind map');
     const stage = this.el.createDiv('tag-ontology-mindmap-stage');
+    this.start = this.el.createDiv('tag-ontology-mindmap-start');
+    this.start.createEl('h3', { text: 'Where do you want to start?' });
+    this.start.createEl('p', { text: 'Choose one tag to explore its branch.', cls: 'tag-ontology-muted' });
+    const search = this.start.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Choose a starting tag' } });
+    this.suggest = new TagSuggest(startActions.app, search, query => startActions.suggest(query), tag => startActions.choose(tag));
+    this.choices = this.start.createDiv('tag-ontology-tags');
+    this.changeRoot = this.el.createEl('button', { cls: 'tag-ontology-mindmap-change-root', text: 'Change starting tag' });
+    this.changeRoot.hidden = true;
+    this.changeRoot.addEventListener('click', () => startActions.choose());
     this.layer = this.el.createDiv('tag-ontology-mindmap-layer');
     this.lines = this.layer.createSvg('svg');
     this.lines.classList.add('tag-ontology-mindmap-lines');
@@ -51,6 +69,12 @@ export class MindMap {
 
   draw(data: MindMapData): void {
     this.data = data;
+    this.start.hidden = !!data.root;
+    this.changeRoot.hidden = !data.root;
+    this.choices.empty();
+    const choice = (tag: string, label: string) => this.choices.createEl('button', { text: label }).addEventListener('click', () => this.startActions.choose(tag));
+    if (data.startFrom) choice(data.startFrom, `Continue from #${data.startFrom}`);
+    for (const tag of data.roots ?? []) if (tag !== data.startFrom) choice(tag, '#' + tag);
     const cy = this.cy;
     if (!cy || this.closed) return;
     const ids = new Set(data.nodes.map(n => n.id));
@@ -125,7 +149,9 @@ export class MindMap {
 
   private fitWhenReady(): void {
     if (!this.pendingFit || !this.cy || !this.cy.width() || !this.cy.height() || !this.data?.nodes.length) return;
-    this.cy.fit(undefined, 64); this.pendingFit = false;
+    this.cy.fit(undefined, 64);
+    if (this.data.nodes.length === 1 && this.cy.zoom() > 1) this.cy.zoom({ level: 1, renderedPosition: { x: this.cy.width() / 2, y: this.cy.height() / 2 } });
+    this.pendingFit = false;
   }
   fit(): void { this.pendingFit = true; this.fitWhenReady(); }
   focusOn(id: string): void {
@@ -137,5 +163,5 @@ export class MindMap {
     const pan = this.cy.pan();
     this.layer.setCssProps({ '--mindmap-pan-x': `${pan.x}px`, '--mindmap-pan-y': `${pan.y}px`, '--mindmap-zoom': String(this.cy.zoom()) });
   }
-  destroy(): void { this.closed = true; this.resize.disconnect(); this.cy?.destroy(); this.cards.clear(); this.el.remove(); }
+  destroy(): void { this.closed = true; this.resize.disconnect(); this.suggest.close(); this.cy?.destroy(); this.cards.clear(); this.el.remove(); }
 }

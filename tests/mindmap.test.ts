@@ -11,11 +11,12 @@ class Element {
   events = new Map<string, () => void>(); css: Record<string, string> = {};
   classList = { add: (name: string) => this.classes.add(name), toggle: (name: string, on: boolean) => this.toggleClass(name, on) };
   createDiv(cls = '') { const child = new Element(); child.classes.add(cls); this.appendChild(child); return child; }
-  createEl(_name: string, opts?: { cls?: string }) { return this.createDiv(opts?.cls); }
+  createEl(_name: string, opts?: { cls?: string; text?: string }) { const child = this.createDiv(opts?.cls); child.text = opts?.text ?? ''; return child; }
   createSvg() { return this.createDiv(); }
   appendChild(child: Element) { child.remove(); child.removed = false; child.parent = this; this.children.push(child); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.removed = true; }
   replaceChildren() { this.children = []; }
+  empty() { this.children = []; }
   setAttribute(key: string, value: string) { this.attrs[key] = value; }
   setText(text: string) { this.text = text; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
@@ -25,7 +26,7 @@ class Element {
 }
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false) {
-  let width = 0, height = 0, fits = 0, disconnected = false, destroyed = false, resize = () => {};
+  let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
   let options: { minZoom: number } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
   const node = (id: string) => ({ id: () => id, empty: () => !positions.has(id), nonempty: () => positions.has(id),
@@ -33,7 +34,7 @@ async function setup(closeBeforeLoad = false) {
     renderedPosition: () => positions.get(id), remove: () => positions.delete(id) });
   const graph = { on() {}, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
-    width: () => width, height: () => height, resize() {}, fit() { fits++; }, zoom: () => 1,
+    width: () => width, height: () => height, resize() {}, fit() { fits++; zoom = 2.5; }, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
     pan: () => ({ x: 0, y: 0 }), animate() {}, destroy() { destroyed = true; } };
   const context = createContext({ console, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
@@ -41,24 +42,27 @@ async function setup(closeBeforeLoad = false) {
   const dependency = new SyntheticModule(['default'], function () { this.setExport('default', (opts: { minZoom: number }) => { options = opts; return graph; }); }, { context });
   await dependency.link(() => { throw new Error('Unexpected import'); }); await dependency.evaluate();
   const code = await transform(readFileSync(new URL('../src/mindmap.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
+  const search = new SyntheticModule(['TagSuggest'], function () { this.setExport('TagSuggest', class { close() {} }); }, { context });
+  await search.link(() => { throw new Error('Unexpected import'); }); await search.evaluate();
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
-  await module.link(() => { throw new Error('Unexpected static import'); }); await module.evaluate();
-  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void) => {
+  await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
+  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void }) => {
     draw(data: MindMapData): void; fit(): void; destroy(): void;
   } }).MindMap;
-  const root = new Element(), selected: string[] = [], toggled: string[] = [];
-  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag));
+  const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
+  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag) });
   if (closeBeforeLoad) map.destroy();
   await settle();
-  return { root, map, selected, toggled, options: () => options, fits: () => fits,
+  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits,
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
-const data: MindMapData = { nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
+const data: MindMapData = { root: 'root', nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
 
 test('a hidden mind map defers Fit until its pane has a size and permits fitting large maps', async () => {
   const t = await setup(); t.map.draw(data); t.map.fit();
   assert.equal(t.fits(), 0, 'zero-sized background tab must retain its pending fit');
   t.resize(800, 600); assert.equal(t.fits(), 1);
+  assert.equal(t.zoom(), 1, 'a single starting node should not zoom so far in that its children begin off-screen');
   assert.ok(t.options()!.minZoom <= 0.001);
   t.map.destroy(); assert.ok(t.disposed());
 });
@@ -83,4 +87,20 @@ test('switching layouts before the renderer import completes leaves no observer 
   assert.equal(t.options(), undefined);
   assert.equal(t.disconnected(), true);
   assert.ok(!t.root.all().some(el => el.classes.has('tag-ontology-mindmap')));
+});
+
+
+test('the initial mind map shows a starting-tag picker and a change-start button after selection', async () => {
+  const t = await setup();
+  t.map.draw({ nodes: [], edges: [], roots: ['a', 'b'] });
+  const start = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-start'))!;
+  const change = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-change-root'))!;
+  assert.equal(start.hidden, false); assert.equal(change.hidden, true);
+  t.root.all().find(el => el.text === '#a')!.events.get('click')!();
+  assert.deepEqual(t.chosen, ['a']);
+  t.map.draw(data);
+  assert.equal(start.hidden, true); assert.equal(change.hidden, false);
+  change.events.get('click')!();
+  assert.deepEqual(t.chosen, ['a', undefined]);
+  t.map.destroy();
 });

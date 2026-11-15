@@ -18,9 +18,9 @@ export interface Resolved {
   visible: Set<string>;
 }
 
-export function resolveTags(model: Ontology, data: NativeData, expanded: ReadonlySet<string>): Resolved {
+export function resolveTags(model: Ontology, data: NativeData, expanded: ReadonlySet<string>, root?: string): Resolved {
   // Unplaced entries have no position in the hierarchy, so they stay ordinary tags.
-  const { placed } = model;
+  const placed = root ? new Set(model.placed.has(root) ? [root, ...model.descendants(root)] : []) : model.placed;
   // The core graph merges tag case variants into one node, so match dictionary keys the same way.
   const byLower = new Map([...placed].map(tag => [tag.toLowerCase(), tag]));
   const tagOf = new Map<string, string>(), idOf = new Map<string, string>(), range = new Set<string>();
@@ -28,7 +28,7 @@ export function resolveTags(model: Ontology, data: NativeData, expanded: Readonl
     const tag = node.type === 'tag' ? byLower.get(id.slice(1).toLowerCase()) : undefined;
     if (tag) { tagOf.set(id, tag); idOf.set(tag, id); }
   }
-  const pending = [...tagOf.values()];
+  const pending = [...tagOf.values(), ...(root && placed.has(root) ? [root] : [])];
   while (pending.length) {
     const tag = pending.pop()!;
     if (range.has(tag)) continue;
@@ -36,7 +36,7 @@ export function resolveTags(model: Ontology, data: NativeData, expanded: Readonl
     pending.push(...(model.entries.get(tag)!.broader ?? []).filter(parent => placed.has(parent)));
   }
   for (const tag of range) if (!idOf.has(tag)) { idOf.set(tag, '#' + tag); tagOf.set('#' + tag, tag); }
-  const visible = new Set(model.roots.filter(tag => range.has(tag)));
+  const visible = new Set((root ? [root] : model.roots).filter(tag => range.has(tag)));
   const queue = [...visible];
   for (let index = 0; index < queue.length; index++) {
     if (!expanded.has(queue[index])) continue;
@@ -74,7 +74,7 @@ export function applyCollapse(data: NativeData, resolved: Resolved, model: Ontol
 
 export type EdgeKind = 'broader' | 'related';
 export interface NodeColor { a: number; rgb: number }
-export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor; hierarchyColors?: boolean; hierarchyPalette?: readonly string[] }
+export interface LayerState { expanded: ReadonlySet<string>; showNotes: boolean; showRelated: boolean; tagColor?: NodeColor; hierarchyColors?: boolean; hierarchyPalette?: readonly string[]; root?: string }
 
 // Adds links to the given nodes in place: buildLayer passes the fresh copy from applyCollapse.
 export function addEdges(data: NativeData, resolved: Resolved, model: Ontology, related: boolean) {
@@ -138,9 +138,14 @@ export function linkTone(source: string, target: string, { center, lit, hovered 
 export function buildLayer(data: NativeData, model: Ontology, state: LayerState) {
   // Hidden notes go first, so collapsing never copies them only to drop them.
   const shown = state.showNotes ? data : hideNotes(data);
-  const resolved = resolveTags(model, shown, state.expanded);
+  const resolved = resolveTags(model, shown, state.expanded, state.root);
   const collapsed = applyCollapse(shown, resolved, model);
   const { data: layered, kinds } = addEdges(collapsed, resolved, model, state.showRelated);
+  if (state.root) {
+    const keep = new Set([...resolved.visible].map(tag => resolved.idOf.get(tag)!));
+    for (const id of Object.keys(layered.nodes)) if (!keep.has(id)) delete layered.nodes[id];
+    for (const node of Object.values(layered.nodes)) for (const target of Object.keys(node.links)) if (!keep.has(target)) delete node.links[target];
+  }
   // Every node here is already a copy, so coloring tags leaves the core data alone.
   for (const [id, node] of Object.entries(layered.nodes)) {
     if (node.type !== 'tag') continue;

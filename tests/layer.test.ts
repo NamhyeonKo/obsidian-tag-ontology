@@ -206,3 +206,22 @@ test('the native layer uses edited palette colors and preserves object identity 
   const changed = buildLayer(core(), model, { ...state, hierarchyPalette: PALETTE }).data.nodes['#cs'].color as { rgb: number };
   assert.notEqual(changed.rgb, first.rgb);
 });
+
+test('a selected mind map root scopes the hierarchy without bringing in other roots', () => {
+  const input = core();
+  const state = { expanded: new Set<string>(), showNotes: false, showRelated: true, root: 'ml' };
+  let result = buildLayer(input, model, state);
+  assert.deepEqual([...result.resolved.visible], ['ml']);
+  assert.deepEqual(Object.keys(result.data.nodes), ['#ml']);
+  result = buildLayer(input, model, { ...state, expanded: new Set(['ml']) });
+  assert.ok(result.resolved.visible.has('dl'));
+  assert.ok(!result.resolved.visible.has('cs') && !result.resolved.visible.has('sec') && !result.resolved.visible.has('crypto'));
+  assert.equal(result.resolved.idOf.get('dl'), '#DL', 'keep core graph casing');
+});
+
+test('a valid unused starting tag can still appear as the only mind map node', () => {
+  const input: NativeData = { numLinks: 0, nodes: {} };
+  const out = buildLayer(input, model, { expanded: new Set(), showNotes: false, showRelated: true, root: 'ml' });
+  assert.deepEqual(Object.keys(out.data.nodes), ['#ml']);
+  assert.deepEqual(input.nodes, {});
+});
