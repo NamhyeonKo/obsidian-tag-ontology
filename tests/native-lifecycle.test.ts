@@ -501,7 +501,7 @@ test('toolbar uses the agreed icons and tooltips', async () => {
 test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
   const t = await setup();
   t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-4, -2);
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-3, -1);
   assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
   assert.deepEqual(last.map(el => el.hidden), [false, false]);
   t.click('Open in 3D (beta)');
@@ -532,20 +532,21 @@ test('all layout buttons stay visible in order and switch directly with the acti
   assert.deepEqual(active(), ['Layout: Horizontal tree']);
 });
 
-test('the explorer button follows the 3D button, opens the explorer, and hides with its separator while the explorer is off', async () => {
+test('the explorer follows 3D without a separator and keeps its own enabled setting', async () => {
   const t = await setup();
   t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-2);
-  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open ontology explorer (beta)');
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!;
+  const [three, explorer] = tools.children.slice(-2);
+  assert.equal(three.attrs['aria-label'], 'Open in 3D (beta)');
+  assert.equal(explorer.attrs['aria-label'], 'Open ontology explorer (beta)');
+  assert.equal(explorer.hidden, false);
   t.click('Open ontology explorer (beta)');
   assert.deepEqual(t.owner.opened, ['explorer']);
   t.owner.settings.enableExplorer = false; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [true, true]);
-  // The 3D button keeps its own setting.
-  assert.equal(tools.children.at(-3)!.hidden, false);
+  assert.equal(explorer.hidden, true);
+  assert.equal(three.hidden, false);
   t.owner.settings.enableExplorer = true; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  assert.equal(explorer.hidden, false);
 });
 
 test('tree hides notes without changing the saved setting', async () => {
@@ -1588,9 +1589,10 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
   assert.equal(swatches()[0].css['--legend-color'], '#4ea1ff');
-  assert.equal(swatches()[0].attrs.type, 'color');
-  assert.equal(swatches()[0].attrs['aria-label'], 'Change root · 0 color');
-  swatches()[0].value = '#112233'; swatches()[0].events.get('change')!();
+  const picker = swatches()[0].children[0];
+  assert.equal(picker.attrs.type, 'color');
+  assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
+  picker.value = '#112233'; picker.events.get('change')!();
   assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));

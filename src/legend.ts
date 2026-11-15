@@ -13,10 +13,11 @@ export function renderDepthLegend(el: HTMLElement, settings: Pick<Settings, 'cus
     const last = depth === settings.hierarchyPalette.length - 1;
     const label = depth === 0 ? 'Root · 0' : `Level ${depth}`;
     const row = list.createEl('li', { attr: { 'aria-label': label + (last ? ' and deeper' : '') } });
-    const swatch = row.createEl('input', { cls: 'tag-ontology-legend-swatch', attr: { type: 'color', 'aria-label': `Change ${label.toLowerCase()} color`, title: `Change ${label.toLowerCase()} color` } });
-    swatch.value = color;
-    swatch.addEventListener('change', () => changeColor(depth, swatch.value));
+    const swatch = row.createEl('label', { cls: 'tag-ontology-legend-swatch' });
     swatch.setCssProps({ '--legend-color': color });
+    const picker = swatch.createEl('input', { cls: 'tag-ontology-legend-picker', attr: { type: 'color', 'aria-label': `Change ${label.toLowerCase()} color`, title: `Change ${label.toLowerCase()} color` } });
+    picker.value = color;
+    picker.addEventListener('change', () => changeColor(depth, picker.value));
     row.createSpan({ text: String(depth) + (last ? '+' : '') });
   });
 }

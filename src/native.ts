@@ -242,7 +242,7 @@ export class NativeGraphs {
         });
       }
       session.open3d = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'box', 'Open in 3D (beta)', () => { void this.owner.openView('3d'); })];
-      session.openExplorer = [tools.createDiv('tag-ontology-separator'), this.iconButton(tools, 'waypoints', 'Open ontology explorer (beta)', () => { void this.owner.openView('explorer'); })];
+      session.openExplorer = [this.iconButton(tools, 'waypoints', 'Open ontology explorer (beta)', () => { void this.owner.openView('explorer'); })];
       this.syncToolbar(session);
       this.sessions.set(leaf, session);
       view.contentEl.addClass('tag-ontology-native');
