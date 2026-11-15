@@ -1,11 +1,11 @@
 import { DICTIONARY_LOCATIONS } from 'tag-ontology';
-import { PALETTE } from './colors.ts';
+import { PALETTE, PALETTE_PRESETS } from './colors.ts';
 
 export interface Settings {
   dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal' | 'mindmap';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
   // Custom colors use the hierarchy palette when enabled, otherwise tagColor (or the theme accent).
-  customColors: boolean; hierarchyColors: boolean; hierarchyPalette: string[]; tagColor: string;
+  customColors: boolean; hierarchyColors: boolean; hierarchyPalette: string[]; customHierarchyPalette: string[]; hierarchyPalettePreset: string; tagColor: string;
   // With customColors on, the selected tag's title in the sidebar takes the tag color too.
   titleAccent: boolean;
   // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
@@ -33,7 +33,7 @@ export function isHiddenPath(path: string): boolean {
 }
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: TOW_FOLDER_DICTIONARY, dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
-  customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+  customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
 };
 
@@ -42,6 +42,12 @@ export function isValidDictionaryPath(path: string, configDir: string): boolean 
   return path.endsWith('.json') && ![...path].some((c) => c === '\\' || c === ':' || c.charCodeAt(0) < 0x20)
     && !parts.some((part) => part === '' || part === '.' || part === '..')
     && !path.startsWith(`${configDir}/`) && parts[0] !== '.git';
+}
+
+function paletteOr(value: unknown, fallback: readonly string[]): string[] {
+  const values: unknown[] = Array.isArray(value) ? value : [];
+  const colors = [...values];
+  return colors.length > 0 && colors.every((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) ? colors : [...fallback];
 }
 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
@@ -63,9 +69,9 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), hierarchyColors: flag('hierarchyColors'),
-    hierarchyPalette: Array.isArray(value.hierarchyPalette) && value.hierarchyPalette.length > 0
-      && value.hierarchyPalette.every((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))
-      ? [...value.hierarchyPalette] : [...PALETTE],
+    hierarchyPalette: paletteOr(value.hierarchyPalette, PALETTE),
+    customHierarchyPalette: paletteOr(value.customHierarchyPalette, []),
+    hierarchyPalettePreset: typeof value.hierarchyPalettePreset === 'string' && (value.hierarchyPalettePreset === 'custom' || Object.hasOwn(PALETTE_PRESETS, value.hierarchyPalettePreset)) ? value.hierarchyPalettePreset : '',
     tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
     enable3d: flag('enable3d'),

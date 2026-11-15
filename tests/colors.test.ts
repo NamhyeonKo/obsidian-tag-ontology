@@ -52,3 +52,15 @@ test('sequential presets resample the same color family for any level count', ()
     }
   }
 });
+
+test('rainbow spans all seven color stops and resamples for the level count', () => {
+  const rainbow = PALETTE_PRESETS.rainbow;
+  assert.deepEqual(paletteFor(rainbow, 7), rainbow.colors);
+  for (const count of [1, 8, 16]) {
+    const palette = paletteFor(rainbow, count);
+    assert.equal(palette.length, count);
+    assert.equal(palette[0], rainbow.colors[0]);
+    if (count > 1) assert.equal(palette[count - 1], rainbow.colors[6]);
+    assert.ok(palette.every(color => /^#[0-9a-f]{6}$/.test(color)));
+  }
+});

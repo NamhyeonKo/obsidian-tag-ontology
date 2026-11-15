@@ -79,7 +79,6 @@ interface Node { id: string; x: number; y: number; fx: number | null; fy: number
 // The tree layout is stubbed with every node in one row, 400 apart; it records the nodes it was told the tree can't place.
 const inRow = (tags: string[]) => new Map(tags.map((tag, i) => [tag, { x: i * 400, y: 0 }]));
 const layoutOutside: string[][] = [];
-const layoutDepths: Map<string, number>[] = [];
 // The layout throws this many more times, standing in for anything that fails inside a render.
 let layoutFails = 0;
 
@@ -127,7 +126,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === './mindmap-layout.ts' ? { ...mindmapLayout }
       : specifier === './hierarchy.ts' ? { ...hierarchy }
       : specifier === './legend.ts' ? { ...legend }
-      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, depths: ReadonlyMap<string, number>, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutDepths.push(new Map(depths)); layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
+      : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
@@ -498,8 +497,8 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'network', 'list-tree', 'brain-circuit', 'box', 'waypoints']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: Mind map', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
+  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
 });
 
 test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
@@ -527,7 +526,7 @@ test('the layout buttons fold into the current one, open in their own order, and
   assert.deepEqual(shown(), ['Layout: Force']); assert.deepEqual(active(), ['Layout: Force'], 'the folded button keeps the accent');
   assert.deepEqual(expanded(), ['false', undefined, undefined, undefined]);
   t.click('Layout: Force');
-  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: Mind map']); assert.deepEqual(active(), ['Layout: Force']);
+  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree']); assert.deepEqual(active(), ['Layout: Force']);
   assert.deepEqual(expanded(), ['true', undefined, undefined, undefined]);
   t.click('Layout: Force');
   assert.deepEqual(shown(), ['Layout: Force'], 'the current one folds them again');
@@ -537,7 +536,7 @@ test('the layout buttons fold into the current one, open in their own order, and
   assert.equal(reloads, 0); assert.equal(t.owner.saves, 1);
   assert.deepEqual(shown(), ['Layout: Vertical tree']); assert.deepEqual(active(), ['Layout: Vertical tree']);
   t.click('Layout: Vertical tree');
-  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: Mind map'], 'they open in their own order');
+  assert.deepEqual(shown(), ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree'], 'they open in their own order');
   assert.deepEqual(active(), ['Layout: Vertical tree'], 'with the current one marked where it sits');
   t.click('Layout: Horizontal tree');
   assert.equal(t.owner.settings.layout, 'tree-horizontal'); assert.deepEqual(shown(), ['Layout: Horizontal tree']);
@@ -581,7 +580,7 @@ test('Escape from a layout button that folds away hands keyboard focus to the cu
   const t = await setup();
   t.controller.attach();
   t.click('Layout: Force');
-  const [current, vertical] = t.layoutButtons();
+  const [current, , vertical] = t.layoutButtons();
   t.contentEl.events.get('keydown')!({ type: 'keydown', key: 'Escape', target: vertical });
   assert.ok(vertical!.hidden); assert.ok(current!.focused);
 });
@@ -1654,24 +1653,7 @@ test('the depth legend expands to match a longer palette', async () => {
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });
 
-test('tree receives full dictionary depths and canonical node IDs even when a longer parent path is collapsed', async () => {
-  const t = await setup({ layout: 'tree', expanded: ['cs'] });
-  t.owner.model = new Ontology({
-    ...raw, deep: { description: '', broader: ['dl'] }, crypto: { description: '', broader: ['cs', 'deep'] },
-  }, []);
-  t.controller.attach();
-  let levels = layoutDepths.at(-1)!;
-  assert.equal(levels.get('#cs'), 0);
-  assert.equal(levels.get('#ml'), 1);
-  assert.equal(levels.get('#crypto'), 4);
-  assert.equal(levels.has('#DL'), false, 'collapsed nodes are not laid out');
-  t.owner.settings.expanded = ['cs', 'ml']; t.controller.refresh();
-  levels = layoutDepths.at(-1)!;
-  assert.equal(levels.get('#DL'), 2, 'the core graph case variant gets the canonical depth');
-  assert.equal(levels.get('#crypto'), 4);
-});
-
-test('mind map is the fourth layout and shares filtering, expansion, palette and sidebar selection', async () => {
+test('mind map is the second layout and shares filtering, expansion, palette and sidebar selection', async () => {
   const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true, expanded: ['cs', 'sec'] });
   t.owner.model = new Ontology({ ...raw, hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] }, sec: { description: '', broader: ['hub'] } }, []);
   t.controller.attach();
@@ -1679,7 +1661,7 @@ test('mind map is the fourth layout and shares filtering, expansion, palette and
   map.chooseRoot('hub'); map.toggle('hub');
   map.toggle('cs'); map.toggle('sec'); await settle();
   assert.ok(t.contentEl.classes.has('is-mindmap'));
-  assert.equal(t.layoutButtons().at(-1)!.attrs['aria-label'], 'Layout: Mind map');
+  assert.equal(t.layoutButtons()[1].attrs['aria-label'], 'Layout: Mind map');
   assert.ok(map.data!.nodes.every(node => node.id.startsWith('#')), 'notes remain hidden without changing the saved toggle');
   assert.equal(t.owner.settings.showNotes, true);
   const root = map.data!.nodes.find(node => node.tag === 'cs')!;

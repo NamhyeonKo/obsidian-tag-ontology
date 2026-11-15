@@ -22,7 +22,7 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+    customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
@@ -131,4 +131,13 @@ test('palette settings preserve nonempty variable-length palettes and reject inv
 
 test('the fourth mind map layout is restored from saved settings', () => {
   assert.equal(sanitizeSettings({ layout: 'mindmap' }, '.obsidian').layout, 'mindmap');
+});
+
+test('saved custom palettes and their explicit selection are validated independently of the active preset', () => {
+  const settings = sanitizeSettings({ hierarchyPalettePreset: 'rainbow', customHierarchyPalette: ['#123456'] }, '.obsidian');
+  assert.equal(settings.hierarchyPalettePreset, 'rainbow');
+  assert.deepEqual(settings.customHierarchyPalette, ['#123456']);
+  assert.equal(sanitizeSettings({ hierarchyPalettePreset: 'missing' }, '.obsidian').hierarchyPalettePreset, '');
+  assert.deepEqual(sanitizeSettings({ customHierarchyPalette: ['bad'] }, '.obsidian').customHierarchyPalette, []);
+  assert.deepEqual(sanitizeSettings({ hierarchyPalette: Array(2) }, '.obsidian').hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette);
 });

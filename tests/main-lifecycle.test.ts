@@ -1174,3 +1174,23 @@ test('saving mindmap graph state or settings persists the other layouts expansio
   assert.deepEqual([...(t.savedWrites.at(-1) as settings.Settings).expanded], ['cs', 'ml']);
   assert.deepEqual(t.plugin.settings.expanded, ['sec'], 'live mindmap expansion remains independent of its saved snapshot');
 });
+
+test('custom palette is restored after presets, other settings and restart', async () => {
+  const t = await setup(); t.ready(); await settle();
+  (t.settingTabs[0] as { display(): void }).display();
+  const row = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  const root = [...t.settingRows].reverse().find(row => row.name === '0')!;
+  await root.colorChanged!('#123456');
+  const custom = [...t.plugin.settings.hierarchyPalette];
+  row.dropdownChanged!('blue-gradient'); await settle();
+  t.plugin.settings.focus = true; await t.plugin.saveSettings();
+  row.dropdownChanged!('custom'); await settle();
+  assert.deepEqual([...t.plugin.settings.hierarchyPalette], custom);
+  assert.equal(row.dropdownValue, 'custom');
+  row.dropdownChanged!('pastel'); await settle();
+  const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1))));
+  await restored.loaded; restored.ready(); await settle();
+  (restored.settingTabs[0] as { display(): void }).display();
+  restored.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('custom'); await settle();
+  assert.deepEqual([...restored.plugin.settings.hierarchyPalette], custom);
+});

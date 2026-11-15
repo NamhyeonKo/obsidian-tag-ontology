@@ -70,7 +70,7 @@ type PanelView = { kind: 'roots' } | { kind: 'tag'; tag: string } | { kind: 'che
 type Mode = ({ kind: 'edit'; tag: string } | { kind: 'new' }) & { base: RawDictionary; draft: Draft; alias?: string; query?: string; open?: 'aliases' | ListKey };
 type ListKey = 'parents' | 'children' | 'related';
 const TOGGLES: [ToggleKey, string, string][] = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']];
-const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree'], ['mindmap', 'brain-circuit', 'Mind map']];
+const LAYOUTS: [Settings['layout'], string, string][] = [['force', 'share-2', 'Force'], ['mindmap', 'brain-circuit', 'Mind map'], ['tree', 'network', 'Vertical tree'], ['tree-horizontal', 'list-tree', 'Horizontal tree']];
 export const PANEL_VIEW = 'tag-ontology-panel';
 // The explorer, for the sidebar's view of one of its note groups: the notes it holds, newest first, and taking some out.
 export interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
@@ -476,7 +476,7 @@ export class NativeGraphs {
     const depths = new Map([...visible].map(tag => [idOf.get(tag)!, fullDepths.get(tag)!]));
     const outside = r.nodes.map(node => node.id).filter(id => !inTree.has(id));
     const positions = this.owner.settings.layout === 'mindmap' ? mindmapPositions(ids, edges, depths, outside)
-      : treePositions(ids, edges, depths, this.owner.settings.layout === 'tree-horizontal', outside);
+      : treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', outside);
     r.workerResults = null; session.home.clear();
     let moved = false;
     for (const node of r.nodes) {

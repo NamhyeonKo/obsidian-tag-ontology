@@ -546,36 +546,45 @@ class OntologySettingsTab extends PluginSettingTab {
   private depthName(index: number): string { return index === 0 ? 'Depth 0 (root)' : `Depth ${index}`; }
 
   private presetName(): string {
+    if (this.owner.settings.hierarchyPalettePreset) return this.owner.settings.hierarchyPalettePreset;
     const palette = this.owner.settings.hierarchyPalette;
     return Object.keys(PALETTE_PRESETS).find(key => paletteFor(PALETTE_PRESETS[key], palette.length)
       .every((color, i) => color === palette[i].toLowerCase())) ?? 'custom';
   }
 
-  private async changePalette(palette: string[]): Promise<void> {
-    await this.setControlValue('hierarchyPalette', palette);
+  private async changePalette(palette: string[], preset = this.presetName()): Promise<void> {
+    const current = this.owner.settings;
+    this.owner.settings = sanitizeSettings({ ...current, hierarchyPalette: palette, hierarchyPalettePreset: preset,
+      customHierarchyPalette: preset === 'custom' ? palette : this.presetName() === 'custom' ? current.hierarchyPalette : current.customHierarchyPalette,
+    }, this.app.vault.configDir);
+    await this.owner.saveSettings();
     this.paletteDropdown?.setValue(this.presetName());
     if (this.paletteSetting) this.paletteColors(this.paletteSetting);
   }
 
   private palettePreset(setting: Setting): Setting {
-    return setting.setName('Hierarchy palette').setDesc('Choose an example, edit colors below, or add more levels. Examples keep your level count. Gradients resample light to dark when levels change; editing a color switches to custom colors. Changes are saved automatically.')
+    return setting.setName('Hierarchy palette').setDesc('Choose an example, edit colors below, or add more levels. Examples keep your level count. Gradients resample light to dark when levels change; editing a color switches to custom colors. Custom colors are saved separately and restored when you select custom. Changes are saved automatically.')
       .addDropdown(dropdown => {
         this.paletteDropdown = dropdown;
         for (const [key, preset] of Object.entries(PALETTE_PRESETS)) dropdown.addOption(key, preset.name);
         dropdown.addOption('custom', 'Custom').setValue(this.presetName()).onChange(key => {
           const preset = PALETTE_PRESETS[key];
-          if (preset) void this.changePalette(paletteFor(preset, this.owner.settings.hierarchyPalette.length));
+          if (preset) void this.changePalette(paletteFor(preset, this.owner.settings.hierarchyPalette.length), key);
+          else if (key === 'custom') {
+            const settings = this.owner.settings;
+            void this.changePalette(settings.customHierarchyPalette.length ? settings.customHierarchyPalette : settings.hierarchyPalette, 'custom');
+          }
         });
       })
       .addExtraButton(button => button.setIcon('plus').setTooltip('Add level').onClick(() => {
         const palette = this.owner.settings.hierarchyPalette;
         const preset = PALETTE_PRESETS[this.presetName()];
-        void this.changePalette(preset?.gradient ? paletteFor(preset, palette.length + 1) : [...palette, PALETTE[palette.length % PALETTE.length]]);
+        void this.changePalette(preset ? paletteFor(preset, palette.length + 1) : [...palette, PALETTE[palette.length % PALETTE.length]]);
       }))
       .addExtraButton(button => button.setIcon('minus').setTooltip('Remove last level').onClick(() => {
         const palette = this.owner.settings.hierarchyPalette;
         const preset = PALETTE_PRESETS[this.presetName()];
-        if (palette.length > 1) void this.changePalette(preset?.gradient ? paletteFor(preset, palette.length - 1) : palette.slice(0, -1));
+        if (palette.length > 1) void this.changePalette(preset ? paletteFor(preset, palette.length - 1) : palette.slice(0, -1));
       }));
   }
 
@@ -594,6 +603,8 @@ class OntologySettingsTab extends PluginSettingTab {
           if (index >= this.owner.settings.hierarchyPalette.length || value === this.owner.settings.hierarchyPalette[index]) return;
           const next = [...this.owner.settings.hierarchyPalette];
           next[index] = value;
+          this.owner.settings.customHierarchyPalette = [...next];
+          this.owner.settings.hierarchyPalettePreset = 'custom';
           await this.setControlValue('hierarchyPalette', next);
           this.paletteDropdown?.setValue(this.presetName());
         });
