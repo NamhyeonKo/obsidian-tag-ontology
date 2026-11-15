@@ -1624,6 +1624,17 @@ test('the depth legend expands to match a longer palette', async () => {
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });
 
+test('mind map starting-tag colors follow the custom color toggle', async () => {
+  const t = await setup({ layout: 'mindmap', customColors: false, tagColor: '#123456' });
+  t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  assert.equal(map.start.color('cs'), undefined);
+  t.owner.settings.customColors = true;
+  assert.equal(map.start.color('cs'), '#123456');
+  t.owner.settings.customColors = false;
+  assert.equal(map.start.color('cs'), undefined);
+});
+
 test('mind map is the second layout and shares filtering, expansion, palette and sidebar selection', async () => {
   const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true, expanded: ['cs', 'sec'] });
   t.owner.model = new Ontology({ ...raw, hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] }, sec: { description: '', broader: ['hub'] } }, []);

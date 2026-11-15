@@ -25,11 +25,21 @@ test('explorer uses the chosen color mode, with facet colors only in Obsidian de
   const owner = { model, settings: { ...settings.DEFAULT_SETTINGS }, tagColor(tag: string) {
     return this.settings.hierarchyColors ? hierarchyColor(model, tag, this.settings.hierarchyPalette)! : '#123456';
   } };
-  const View = (module.namespace as unknown as { ExplorerView: new(leaf: object, owner: object) => { tagCard(tag: string): { color: string } } }).ExplorerView;
+  const View = (module.namespace as unknown as { ExplorerView: new(leaf: object, owner: object) => { tagCard(tag: string): { color: string }; chip(parent: object, text: string, tag: string): void } }).ExplorerView;
   const view = new View({}, owner);
+  const chipColor = () => {
+    const css: Record<string, string> = {};
+    view.chip({ createEl: () => ({ setCssProps: (props: Record<string, string>) => Object.assign(css, props), addEventListener() {} }) }, '#root', 'root');
+    return css['--tag-ontology-tags'];
+  };
+  assert.equal(chipColor(), undefined, 'default mode inherits the graph tag color');
   assert.equal(view.tagCard('root').color, '#4ea1ff');
   owner.settings.customColors = true;
+  assert.equal(chipColor(), '#123456');
   assert.equal(view.tagCard('root').color, '#123456');
   owner.settings.hierarchyColors = true;
   assert.equal(view.tagCard('root').color, PALETTE[0]);
+  assert.equal(chipColor(), PALETTE[0]);
+  owner.settings.customColors = false;
+  assert.equal(chipColor(), undefined, 'switching back does not retain a custom color');
 });

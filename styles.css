@@ -22,10 +22,10 @@
 .tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }
 .tag-ontology-header h3.tag-ontology-accent { color: var(--tag-ontology-color); }
-/* Obsidian tints tags with the accent through these variables. In the sidebar they take the graph's tag color instead: the
+/* Obsidian tints tags with the accent through these variables. In tag pickers they take the graph's tag color instead: the
    theme's, as the core graph draws tag nodes, or the plugin's tag color with custom colors on. */
-.tag-ontology-panel { --tag-ontology-tags: var(--graph-node-tag); }
-.tag-ontology-panel, .tag-ontology-panel .tag {
+.tag-ontology-panel, .tag-ontology-explorer-start { --tag-ontology-tags: var(--graph-node-tag); }
+.tag-ontology-panel, .tag-ontology-panel .tag, .tag-ontology-explorer-start .tag {
   --tag-color: var(--tag-ontology-tags); --tag-color-hover: var(--tag-ontology-tags);
   --tag-background: color-mix(in oklch, var(--tag-ontology-tags) 10%, transparent);
   --tag-background-hover: color-mix(in oklch, var(--tag-ontology-tags) 20%, transparent);

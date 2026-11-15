@@ -482,6 +482,7 @@ export class NativeGraphs {
       this.toggleExpanded(tag);
     }, {
       app: this.owner.app,
+      color: tag => this.owner.settings.customColors ? this.owner.tagColor(tag) : undefined,
       suggest: query => (this.owner.model?.suggest(query, 20) ?? []).filter(item => this.owner.model?.placed.has(item.tag)).slice(0, 10),
       choose: tag => {
         if (tag && !this.owner.model?.placed.has(tag)) return;

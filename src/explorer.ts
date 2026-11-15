@@ -183,7 +183,9 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   private chip(parent: HTMLElement, text: string, tag: string) {
-    parent.createEl('a', { href: '#', text, cls: 'tag' }).addEventListener('click', event => { event.preventDefault(); this.addTag(tag); });
+    const chip = parent.createEl('a', { href: '#', text, cls: 'tag' });
+    if (this.owner.settings.customColors) chip.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
+    chip.addEventListener('click', event => { event.preventDefault(); this.addTag(tag); });
   }
 
   // Everything that changes what is on the canvas ends here.
