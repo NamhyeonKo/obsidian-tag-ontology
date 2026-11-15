@@ -3,7 +3,6 @@ import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
 import { Modal, Notice, TFile, setIcon, setTooltip, type App, type ItemView, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
-import { hierarchyDepths } from './hierarchy.ts';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type NodeColor, type Resolved } from './layer.ts';
 import type { Settings } from './settings.ts';
@@ -458,10 +457,8 @@ export class NativeGraphs {
     const edges = [...visible].flatMap(tag => (model.entries.get(tag)!.broader ?? []).filter(parent => visible.has(parent) && (this.owner.settings.layout !== 'mindmap' || expanded.has(parent)))
       .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
-    const fullDepths = hierarchyDepths(model);
-    const depths = new Map([...visible].map(tag => [idOf.get(tag)!, fullDepths.get(tag)!]));
     const outside = r.nodes.map(node => node.id).filter(id => !inTree.has(id));
-    const positions = this.owner.settings.layout === 'mindmap' ? mindmapPositions(ids, edges, depths, outside)
+    const positions = this.owner.settings.layout === 'mindmap' ? mindmapPositions(ids, edges, outside)
       : treePositions(ids, edges, this.owner.settings.layout === 'tree-horizontal', outside);
     r.workerResults = null; session.home.clear();
     let moved = false;
