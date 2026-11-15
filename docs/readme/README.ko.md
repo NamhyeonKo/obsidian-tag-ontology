@@ -82,6 +82,8 @@ Tag Ontology는 기본 그래프 뷰 안에서 동작합니다. Obsidian이 필�
 
 ## 설정
 
+설정은 **사전 → 색상 → 집중 표시 → 추가 보기** 순서로 구성되며, Obsidian 1.13 이상과 이전 버전에서 같은 순서를 사용합니다. 색상 영역에는 사용자 색상 → 계층별 색상 → 팔레트 예시 → 단계별 색상 → 기본 태그 색 → 사이드바 제목 색 순서로 표시합니다. 색상·팔레트 및 집중 표시의 세부 옵션은 해당 기능을 켰을 때 표시합니다.
+
 사전 경로는 설정에서 선택하지 않으면 `tow/tag-dictionary.json` → `.tow/tag-dictionary.json` → `Tag-Dictionary.json` 순서로 확인합니다. 새로 설치하면 첫 위치에 빈 사전을 만듭니다. 기존 `Tag-Dictionary.json`은 계속 작동하며, TOW 0.5.0–0.5.1의 `.tow/` 사전도 계속 읽습니다. 설정에서 선택한 경로가 항상 우선합니다.
 
 **Obsidian Sync는 `.obsidian` 외의 점으로 시작하는 폴더를 동기화하지 않습니다** ([Sync 설정](https://obsidian.md/help/sync/settings)). Obsidian Sync를 사용한다면 사전 경로를 숨김 폴더 밖으로 지정하세요. Git과 파일 단위 동기화 도구는 무시 설정이 없는 한 점으로 시작하는 폴더도 동기화합니다.

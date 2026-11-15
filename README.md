@@ -206,18 +206,27 @@ The button at the bottom of the graph toolbar, or **Open ontology explorer**, op
 
 ### Settings
 
+Settings use the same section and item order on Obsidian 1.13+ and earlier versions. Color options appear when Custom colors is enabled; palette controls also require depth coloring. Focus options appear when focus is enabled.
+
 | Setting | Description |
 | --- | --- |
+| **Dictionary** | |
 | Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
 | Kebab-case tag names | Off by default. On: the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens, the names TOW checks. Existing names are kept. |
-| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
-| Enable ontology explorer (beta) | Show the explorer button on the graph toolbar and the Open ontology explorer command. Turning it off closes the explorer tab. On by default. |
+| **Colors** | |
+| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
+| &nbsp;&nbsp;Color by hierarchy depth | Apply colors by the longest ancestor path in the full dictionary. Filters and collapsing keep the colors stable; levels beyond the palette use its last color. |
+| &nbsp;&nbsp;Hierarchy palette | Choose Default, Pastel, Warm, Rainbow, Blue gradient, Purple gradient or saved Custom colors; add or remove levels. |
+| &nbsp;&nbsp;Palette colors | Edit the numbered colors horizontally. Edits here or in the graph legend are saved automatically as Custom. |
+| &nbsp;&nbsp;Tag color | Base color when depth coloring is off, or for tags outside the hierarchy. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
+| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
+| **Focus** | |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
-| Custom colors | Off by default: the graph keeps its own colors, and the tags in the sidebar tab take the graph's tag color. Turn it on to show the options below. |
-| &nbsp;&nbsp;Tag color | Color of every tag in the graph and in the sidebar tab. Follows the accent color (Settings → Appearance, or your theme) until you pick one; the reset button goes back to it. |
-| &nbsp;&nbsp;Tag title in the tag color | Show the selected tag's title in the sidebar tab in the tag color. Off: the text color. On by default. |
+| **Additional views** | |
+| Enable 3D view (beta) | Show the 3D button on the graph toolbar and the Open 3D graph command. Turning it off closes the 3D tabs. On by default. |
+| Enable ontology explorer (beta) | Show the explorer button on the graph toolbar and the Open ontology explorer command. Turning it off closes the explorer tab. On by default. |
 
 At low zoom levels the core graph hides labels and arrows. Zoom in to see them.
 

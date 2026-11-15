@@ -10,7 +10,10 @@ import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
 import type { NativeData } from '../src/layer.ts';
-import type { Setting, SettingDefinitionItem } from 'obsidian';
+import type { Setting, SettingDefinitionItem, SettingDefinitionGroup } from 'obsidian';
+
+const dictionarySetting = (tab: { getSettingDefinitions(): SettingDefinitionItem[] }) =>
+  (tab.getSettingDefinitions()[0] as SettingDefinitionGroup).items![0];
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -58,11 +61,12 @@ async function setup(saved?: Promise<unknown>) {
   class Folder { path: string; constructor(path = '') { this.path = path; } }
   class TestSetting {
     controlEl = { empty() {}, createDiv() { return { createDiv() { return { setAttribute() {} }; } }; } };
-    settingEl = { addClass() {}, toggle() {}, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
+    settingEl = { hidden: false, addClass() {}, toggle(value: boolean) { this.hidden = !value; }, buttons: [] as { hidden: boolean }[], querySelectorAll() { return this.buttons; } };
     name = ''; desc?: string; textValue?: string; textPlaceholder?: string; textCommitted?: () => void; toggleChanged?: (value: boolean) => void;
     colorValue = ''; colorChanged?: (value: string) => Promise<void>; dropdownValue = ''; dropdownChanged?: (value: string) => void;
     buttons: (() => void)[] = []; buttonNames: string[] = []; buttonEls: { hidden: boolean; removed: boolean }[] = [];
     constructor() { settingRows.push(this); }
+    heading = false; setHeading() { this.heading = true; return this; }
     setName(name: string) { this.name = name; return this; }
     setDesc(desc: string) { this.desc = desc; return this; }
     addText(callback: (text: { inputEl: { addEventListener(type: string, cb: () => void): void }; getValue(): string; setValue(value: string): unknown; setPlaceholder(value: string): unknown; onChange(callback: (value: string) => void): unknown }) => void) {
@@ -520,7 +524,7 @@ test('the dictionary path setting moves a chosen dictionary and updates its path
   t.vault.existing.add('custom/tags.json'); t.vault.files.set('custom/tags.json', contents);
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
   const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  (dictionarySetting(tab) as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
   assert.deepEqual(setting.buttonNames, ['Move to tow/']);
   await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
   assert.deepEqual(t.vault.renames, [['custom/tags.json', 'tow/tag-dictionary.json']]);
@@ -551,7 +555,7 @@ test('the move action refuses in a TOW vault whose config sits in hidden .tow/',
   await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
   const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  (dictionarySetting(tab) as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
   const exists = t.vault.adapter.exists;
   t.vault.adapter.exists = async path => path === '.tow/config.json' || await exists(path);
   await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
@@ -564,7 +568,7 @@ test('the move action stops if the target appears while creating tow/', async ()
   await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
   const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  (dictionarySetting(tab) as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
   t.vault.targetAppearsOnFolderCreate = true;
   await setting.buttons[setting.buttonNames.indexOf('Move to tow/')]!();
   assert.deepEqual(t.vault.renames, []);
@@ -574,7 +578,7 @@ test('the move action stops if the target appears while creating tow/', async ()
 
 const render = (t: Awaited<ReturnType<typeof setup>>) => {
   const s = t.newSetting();
-  const definition = (t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] }).getSettingDefinitions()[0] as unknown as { render(setting: Setting): void };
+  const definition = dictionarySetting(t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] }) as unknown as { render(setting: Setting): void };
   definition.render(s as unknown as Setting);
   return s;
 };
@@ -595,7 +599,7 @@ test('a dictionary already at the automatic tow path is not offered for moving',
   await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[] };
   const setting = t.newSetting();
-  (tab.getSettingDefinitions()[0] as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
+  (dictionarySetting(tab) as unknown as { render(setting: Setting): void }).render(setting as unknown as Setting);
   assert.deepEqual(setting.buttonNames, []);
 });
 
@@ -1214,4 +1218,26 @@ test('editing a graph legend color saves the whole active preset as custom and r
   const writes = restored.savedWrites.length;
   for (const [depth, color] of [[-1, '#112233'], [10, '#112233'], [0.5, '#112233'], [0, 'invalid']] as const) await restored.plugin.setPaletteColor(depth, color);
   assert.equal(restored.savedWrites.length, writes, 'invalid edits are ignored');
+});
+
+test('modern and legacy settings keep the same sections, order and conditional visibility', async () => {
+  const t = await setup(); await t.loaded;
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
+  const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Custom colors',
+    'Color by hierarchy depth', 'Hierarchy palette', 'Palette colors', 'Tag color', 'Tag title in the tag color',
+    'Focus', 'Keep the selected tag focused', 'Its descendants', 'Include notes',
+    'Additional views', 'Enable 3D view (beta)', 'Enable ontology explorer (beta)'];
+  for (const customColors of [true, false]) for (const hierarchyColors of [true, false]) for (const focus of [true, false]) {
+    Object.assign(t.plugin.settings, { customColors, hierarchyColors, focus });
+    const modern = Array.from(tab.getSettingDefinitions()).flatMap(def => {
+      assert.ok('type' in def && def.type === 'group');
+      const group = def as SettingDefinitionGroup;
+      return [group.heading!, ...group.items!.filter(item => typeof item.visible === 'function' ? item.visible() : item.visible !== false).map(item => item.name)];
+    });
+    t.settingRows.length = 0; tab.display();
+    const legacy = t.settingRows.filter(row => !row.settingEl.hidden && !/^\d+$/.test(row.name)).map(row => row.name);
+    assert.deepEqual(legacy, modern, JSON.stringify({ customColors, hierarchyColors, focus }));
+    if (customColors && hierarchyColors && focus) assert.deepEqual(modern, expected);
+    assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['Dictionary', 'Colors', 'Focus', 'Additional views']);
+  }
 });
