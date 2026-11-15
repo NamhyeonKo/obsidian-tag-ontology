@@ -448,26 +448,30 @@ class OntologySettingsTab extends PluginSettingTab {
 
   // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
   getSettingDefinitions(): SettingDefinitionItem[] {
+    const custom = () => this.owner.settings.customColors;
+    const palette = () => custom() && this.owner.settings.hierarchyColors;
     return [
-      { name: 'Dictionary path', desc: pathDescription(this.owner), render: (setting) => { this.dictionaryPathSetting(setting); } },
-      { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
-      { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
-      { ...ENABLE_EXPLORER, control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
-      { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
-      // What else stays bright only shows while focus is on.
-      { type: 'group', visible: () => this.owner.settings.focus, items:
-        FOCUS_SCOPE.map(({ key, name, desc }) => ({ name, desc, control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })) },
-      { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
-      // The color options only show while custom colors are on.
-      { type: 'group', visible: () => this.owner.settings.customColors, items: [
-        { ...HIERARCHY_COLORS, control: { type: 'toggle', key: 'hierarchyColors', defaultValue: DEFAULT_SETTINGS.hierarchyColors } },
-        // A plain color control has no way back to following the accent, so this row is drawn by hand.
-        { ...TAG_COLOR, render: (setting) => { this.tagColor(setting); } },
-        { ...TITLE, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
+      { type: 'group', heading: 'Dictionary', items: [
+        { name: 'Dictionary path', desc: pathDescription(this.owner), render: setting => { this.dictionaryPathSetting(setting); } },
+        { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
       ] },
-      { type: 'group', visible: () => this.owner.settings.customColors && this.owner.settings.hierarchyColors, items: [
-        { name: 'Hierarchy palette', render: setting => { this.palettePreset(setting); } },
-        { name: 'Palette colors', render: setting => { this.paletteColors(setting); } },
+      { type: 'group', heading: 'Colors', items: [
+        { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
+        { ...HIERARCHY_COLORS, visible: custom, control: { type: 'toggle', key: 'hierarchyColors', defaultValue: DEFAULT_SETTINGS.hierarchyColors } },
+        { name: 'Hierarchy palette', visible: palette, render: setting => { this.palettePreset(setting); } },
+        { name: 'Palette colors', visible: palette, render: setting => { this.paletteColors(setting); } },
+        // A plain color control has no way back to following the accent, so this row is drawn by hand.
+        { ...TAG_COLOR, visible: custom, render: setting => { this.tagColor(setting); } },
+        { ...TITLE, visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
+      ] },
+      { type: 'group', heading: 'Focus', items: [
+        { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
+        ...FOCUS_SCOPE.map(({ key, name, desc }) => ({ name, desc, visible: () => this.owner.settings.focus,
+          control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
+      ] },
+      { type: 'group', heading: 'Additional views', items: [
+        { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
+        { ...ENABLE_EXPLORER, control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
       ] },
     ];
   }
@@ -623,27 +627,12 @@ class OntologySettingsTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    new Setting(containerEl).setName('Dictionary').setHeading();
     this.dictionaryPathSetting(new Setting(containerEl));
     new Setting(containerEl).setName(KEBAB_NAMES.name).setDesc(KEBAB_NAMES.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.kebabNames).onChange(value => this.setControlValue('kebabNames', value));
     });
-    new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
-    });
-    new Setting(containerEl).setName(ENABLE_EXPLORER.name).setDesc(ENABLE_EXPLORER.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.enableExplorer).onChange(value => this.setControlValue('enableExplorer', value));
-    });
-    const scope: Setting[] = [];
-    new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.focus).onChange((value) => {
-        for (const setting of scope) setting.settingEl.toggle(value);
-        return this.setControlValue('focus', value);
-      });
-    });
-    for (const { key, name, desc } of FOCUS_SCOPE) scope.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
-    }));
-    for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
+    new Setting(containerEl).setName('Colors').setHeading();
     const custom: Setting[] = [], palette: Setting[] = [];
     const paletteVisible = () => { for (const row of palette) row.settingEl.toggle(this.owner.settings.customColors && this.owner.settings.hierarchyColors); };
     new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {
@@ -669,5 +658,24 @@ class OntologySettingsTab extends PluginSettingTab {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));
     for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
+    new Setting(containerEl).setName('Focus').setHeading();
+    const scope: Setting[] = [];
+    new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.focus).onChange((value) => {
+        for (const setting of scope) setting.settingEl.toggle(value);
+        return this.setControlValue('focus', value);
+      });
+    });
+    for (const { key, name, desc } of FOCUS_SCOPE) scope.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
+    }));
+    for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
+    new Setting(containerEl).setName('Additional views').setHeading();
+    new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
+    });
+    new Setting(containerEl).setName(ENABLE_EXPLORER.name).setDesc(ENABLE_EXPLORER.desc).addToggle((toggle) => {
+      toggle.setValue(this.owner.settings.enableExplorer).onChange(value => this.setControlValue('enableExplorer', value));
+    });
   }
 }
