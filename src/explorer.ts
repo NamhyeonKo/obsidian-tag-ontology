@@ -356,9 +356,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   private tagCard(tag: string): Card {
     const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
     const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
-    const { customColors, hierarchyColors } = this.owner.settings;
-    const color = customColors && hierarchyColors ? this.owner.tagColor(tag)
-      : entry?.facet ? facets.get(entry.facet)! : customColors ? this.owner.tagColor(tag) : this.colors.tag;
+    const color = this.owner.settings.customColors ? this.owner.tagColor(tag)
+      : entry?.facet ? facets.get(entry.facet)! : this.colors.tag;
     return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }

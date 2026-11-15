@@ -101,6 +101,7 @@
 .tag-ontology-palette-slot .setting-item { flex-direction: column; gap: 6px; padding: 0; border: 0; }
 .tag-ontology-palette-slot .setting-item-info { margin: 0; text-align: center; }
 .tag-ontology-palette-slot .setting-item-name { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.tag-ontology-palette-error { color: var(--text-error); }
 /* The fourth layout keeps the core graph's data and toolbar, with an accessible mind map over its canvas. */
 .tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
 .tag-ontology-mindmap-stage { position: absolute; inset: 0; }
