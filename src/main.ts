@@ -1,11 +1,13 @@
-import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
-import { hierarchyColor, PALETTE, PALETTE_PRESETS, paletteFor } from './colors.ts';
+import { hierarchyColor } from './colors.ts';
+import { choosePalette as paletteChoice, editPalette, fillPaletteSelect, paletteSelection, resizePalette as resizedPalette, savePalette as namedPalette } from './palettes.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Change, type Note, type RawDictionary, type Usage } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
 import { Graph3DView, VIEW_3D } from './graph3d.ts';
 import { ExplorerView, VIEW_EXPLORER } from './explorer.ts';
+import type { GraphMode } from './graph-modes.ts';
 import type { NativeData } from './layer.ts';
 
 export type { Settings } from './settings.ts';
@@ -37,6 +39,7 @@ export default class TagOntologyPlugin extends Plugin {
   private dictionaryMtimePath?: string;
   private redraw = false;
   private disposed = false;
+  private settingsTab?: OntologySettingsTab;
   // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
   private accent?: string;
 
@@ -72,8 +75,10 @@ export default class TagOntologyPlugin extends Plugin {
     this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
       void this.refreshViews({ notify: true });
     } });
-    this.addSettingTab(new OntologySettingsTab(this.app, this));
+    this.settingsTab = new OntologySettingsTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
+    this.registerEvent(this.app.workspace.on('active-leaf-change', leaf => this.native.activate(leaf)));
     // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
     // accent variables on <body>, so <body>'s style is watched too.
     this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
@@ -327,31 +332,66 @@ export default class TagOntologyPlugin extends Plugin {
     const palette = this.settings.hierarchyPalette;
     if (!Number.isInteger(depth) || depth < 0 || depth >= palette.length || !/^#[0-9a-f]{6}$/i.test(color) || palette[depth] === color) return;
     const next = [...palette]; next[depth] = color;
-    Object.assign(this.settings, { hierarchyPalette: next, customHierarchyPalette: [...next], hierarchyPalettePreset: 'custom' });
+    Object.assign(this.settings, editPalette(this.settings, next));
     await this.saveSettings();
   }
+
+  async choosePalette(key: string): Promise<void> {
+    const change = paletteChoice(this.settings, key);
+    if (!change) return;
+    Object.assign(this.settings, change);
+    await this.saveSettings();
+  }
+
+  async resizePalette(delta: 1 | -1): Promise<void> {
+    if (delta !== 1 && delta !== -1) return;
+    const change = resizedPalette(this.settings, delta);
+    if (!change) return;
+    Object.assign(this.settings, change);
+    await this.saveSettings();
+  }
+
+  async savePaletteAs(name: string): Promise<void> {
+    const previous = { key: this.settings.hierarchyPalettePreset, working: [...this.settings.customHierarchyPalette], source: this.settings.workingPaletteSource };
+    const change = namedPalette(this.settings, name), savedName = change.savedHierarchyPalettes.at(-1)!.name;
+    Object.assign(this.settings, change);
+    try { await this.saveSettings(); }
+    catch (error) {
+      this.settings.savedHierarchyPalettes = this.settings.savedHierarchyPalettes.filter(palette => palette.name !== savedName);
+      if (this.settings.hierarchyPalettePreset === change.hierarchyPalettePreset) this.settings.hierarchyPalettePreset = previous.key;
+      if (!this.settings.customHierarchyPalette.length) {
+        this.settings.customHierarchyPalette = previous.working; this.settings.workingPaletteSource = previous.source;
+      }
+      this.settingsTab?.syncPaletteControls();
+      throw error;
+    }
+  }
+
+  promptSavePalette(): void { new PaletteNameModal(this.app, this).open(); }
 
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveState();
     await this.refreshViews({ notify: true });
+    this.settingsTab?.syncPaletteControls();
   }
 
-  async openView(graph: '2d' | '3d' | 'explorer' = '2d'): Promise<void> {
+  async openView(graph: GraphMode | '2d' = '2d', newTab = false, source?: WorkspaceLeaf): Promise<void> {
     if (this.disposed) return;
     try {
       await this.checkOutsideChange();
       if (this.disposed) return;
       await this.loadModel();
       if (this.disposed) return;
-      // An open tab of the graph is reused.
-      const type = graph === '3d' ? VIEW_3D : graph === 'explorer' ? VIEW_EXPLORER : 'graph';
-      const existing = this.app.workspace.getLeavesOfType(type)[0];
+      const active = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
+      const existing = newTab ? undefined : source ?? this.app.workspace.getLeavesOfType('graph').find(leaf => leaf === active) ?? this.app.workspace.getLeavesOfType('graph')[0];
       const leaf = existing ?? this.app.workspace.getLeaf('tab');
-      if (!existing) await leaf.setViewState({ type, active: true });
+      if (!existing || leaf.view.getViewType() !== 'graph') await leaf.setViewState({ type: 'graph', active: true });
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
+      await this.native.switchMode(leaf, graph);
+      if (this.disposed) return;
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);
       await this.app.workspace.revealLeaf(leaf);
@@ -427,22 +467,46 @@ const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dic
 // UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
 const OPEN_3D = 'Open 3D graph';
 const OPEN_EXPLORER = 'Open ontology explorer';
-const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open ontology explorer command, that open the explorer. Turning it off closes the explorer tabs.' };
-const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'Show a button on the 2D graph toolbar, and the Open 3D graph command, that open the hierarchy in 3D. Turning it off closes the 3D tabs.' };
+const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Explore the ontology in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the explorer canvases.' };
+const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases.' };
 const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
   { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
   { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on the selected tag bright, and on its descendants when those are on.' },
 ] as const;
-const CUSTOM = { name: 'Custom colors', desc: 'Color the tags in the graph with your own colors. Turn off to keep the graph\'s own colors.' };
-const HIERARCHY_COLORS = { name: 'Color by hierarchy depth', desc: 'Use your palette from root to deepest descendant, using the last color for deeper levels. Depth follows the longest ancestor path in the full dictionary, so filters and collapsing never change colors.' };
-const TAG_COLOR = { name: 'Tag color', desc: 'Tag color when depth coloring is off, or for tags outside the hierarchy. It follows the accent color until you pick one.' };
-const TITLE = { name: 'Tag title in the tag color', desc: 'Show the selected tag\'s title in the sidebar in the tag color.' };
+const COLOR_MODE = { name: 'Color mode', desc: 'Choose how tags are colored.' };
+const TAG_COLOR = { name: 'Tag color', desc: 'Uses the accent color until you pick one.' };
+const TITLE = { name: 'Colored sidebar titles', desc: 'Use the selected tag’s color for its title.' };
+
+class PaletteNameModal extends Modal {
+  constructor(app: App, private owner: TagOntologyPlugin) { super(app); }
+  onOpen(): void {
+    this.titleEl.setText('Save palette');
+    let input: TextComponent;
+    const error = this.contentEl.createDiv({ cls: 'tag-ontology-palette-error' });
+    error.setAttribute('role', 'alert');
+    let saving = false;
+    const save = async () => {
+      if (saving) return;
+      saving = true;
+      try { await this.owner.savePaletteAs(input.getValue()); this.close(); }
+      catch (failure) { error.setText(reason(failure)); }
+      finally { saving = false; }
+    };
+    new Setting(this.contentEl).setName('Palette name').addText(text => {
+      input = text; text.setPlaceholder('Study'); text.inputEl.maxLength = 80;
+      text.inputEl.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); void save(); } });
+    });
+    new Setting(this.contentEl).addButton(button => button.setButtonText('Save palette').onClick(() => { void save(); }));
+  }
+}
 
 class OntologySettingsTab extends PluginSettingTab {
   private paletteSetting?: Setting;
   private paletteDropdown?: DropdownComponent;
+  private palettePickers: ColorComponent[] = [];
+  private paletteSaveSetting?: Setting;
   private commitPath?: () => Promise<void>;
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
 
@@ -456,10 +520,10 @@ class OntologySettingsTab extends PluginSettingTab {
         { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
       ] },
       { type: 'group', heading: 'Colors', items: [
-        { ...CUSTOM, control: { type: 'toggle', key: 'customColors', defaultValue: DEFAULT_SETTINGS.customColors } },
-        { ...HIERARCHY_COLORS, visible: custom, control: { type: 'toggle', key: 'hierarchyColors', defaultValue: DEFAULT_SETTINGS.hierarchyColors } },
-        { name: 'Hierarchy palette', visible: palette, render: setting => { this.palettePreset(setting); } },
-        { name: 'Palette colors', visible: palette, render: setting => { this.paletteColors(setting); } },
+        { ...COLOR_MODE, render: setting => { this.colorMode(setting); } },
+        { name: 'Palette', visible: palette, render: setting => { this.palettePreset(setting); } },
+        { name: 'Level colors', visible: palette, render: setting => { this.paletteColors(setting); } },
+        { name: 'My palettes', visible: palette, render: setting => { this.paletteSave(setting); } },
         // A plain color control has no way back to following the accent, so this row is drawn by hand.
         { ...TAG_COLOR, name: this.tagColorName(), visible: custom, render: setting => { this.tagColor(setting); } },
         { ...TITLE, visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
@@ -529,6 +593,13 @@ class OntologySettingsTab extends PluginSettingTab {
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
+    if (key === 'colorMode') {
+      if (value !== 'default' && value !== 'single' && value !== 'depth') return;
+      Object.assign(this.owner.settings, { customColors: value !== 'default', hierarchyColors: value === 'depth' });
+      await this.owner.saveSettings();
+      if (requireApiVersion('1.13.0')) this.update(); else this.renderLegacy();
+      return;
+    }
     if (key === 'dictionaryPath') {
       if (typeof value === 'string' && isValidDictionaryPath(value, this.app.vault.configDir)) await this.owner.setDictionaryPath(value);
       return;
@@ -562,63 +633,63 @@ class OntologySettingsTab extends PluginSettingTab {
 
   private depthName(index: number): string { return index === 0 ? 'Depth 0 (root)' : `Depth ${index}`; }
 
-  private presetName(): string {
-    if (this.owner.settings.hierarchyPalettePreset) return this.owner.settings.hierarchyPalettePreset;
-    const palette = this.owner.settings.hierarchyPalette;
-    return Object.keys(PALETTE_PRESETS).find(key => paletteFor(PALETTE_PRESETS[key], palette.length)
-      .every((color, i) => color === palette[i].toLowerCase())) ?? 'custom';
-  }
-
-  private async changePalette(palette: string[], preset = this.presetName()): Promise<void> {
-    const current = this.owner.settings;
-    this.owner.settings = sanitizeSettings({ ...current, hierarchyPalette: palette, hierarchyPalettePreset: preset,
-      customHierarchyPalette: preset === 'custom' ? palette : this.presetName() === 'custom' ? current.hierarchyPalette : current.customHierarchyPalette,
-    }, this.app.vault.configDir);
-    await this.owner.saveSettings();
-    this.paletteDropdown?.setValue(this.presetName());
-    if (this.paletteSetting) this.paletteColors(this.paletteSetting);
+  private colorMode(setting: Setting): Setting {
+    const value = !this.owner.settings.customColors ? 'default' : this.owner.settings.hierarchyColors ? 'depth' : 'single';
+    return setting.setName(COLOR_MODE.name).setDesc(COLOR_MODE.desc).addDropdown(dropdown => {
+      dropdown.addOption('default', 'Obsidian default').addOption('single', 'Single color').addOption('depth', 'Hierarchy depth')
+        .setValue(value).onChange(mode => this.setControlValue('colorMode', mode));
+    });
   }
 
   private palettePreset(setting: Setting): Setting {
-    return setting.setName('Hierarchy palette').setDesc('Choose an example, edit colors below, or add more levels. Examples keep your level count. Gradients resample light to dark when levels change; editing a color switches to custom colors. Custom colors are saved separately and restored when you select custom. Changes are saved automatically.')
+    return setting.setName('Palette').setDesc('Choose an example, a working copy or a saved palette.')
       .addDropdown(dropdown => {
         this.paletteDropdown = dropdown;
-        for (const [key, preset] of Object.entries(PALETTE_PRESETS)) dropdown.addOption(key, preset.name);
-        dropdown.addOption('custom', 'Custom').setValue(this.presetName()).onChange(key => {
-          const preset = PALETTE_PRESETS[key];
-          if (preset) void this.changePalette(paletteFor(preset, this.owner.settings.hierarchyPalette.length), key);
-          else if (key === 'custom') {
-            const settings = this.owner.settings;
-            void this.changePalette(settings.customHierarchyPalette.length ? settings.customHierarchyPalette : settings.hierarchyPalette, 'custom');
-          }
-        });
+        fillPaletteSelect(dropdown.selectEl, this.owner.settings);
+        dropdown.setValue(paletteSelection(this.owner.settings)).onChange(key => this.owner.choosePalette(key));
       })
-      .addExtraButton(button => button.setIcon('plus').setTooltip('Add level').onClick(() => {
-        const palette = this.owner.settings.hierarchyPalette;
-        const preset = PALETTE_PRESETS[this.presetName()];
-        void this.changePalette(preset ? paletteFor(preset, palette.length + 1) : [...palette, PALETTE[palette.length % PALETTE.length]]);
-      }))
-      .addExtraButton(button => button.setIcon('minus').setTooltip('Remove last level').onClick(() => {
-        const palette = this.owner.settings.hierarchyPalette;
-        const preset = PALETTE_PRESETS[this.presetName()];
-        if (palette.length > 1) void this.changePalette(preset ? paletteFor(preset, palette.length - 1) : palette.slice(0, -1));
-      }));
+      .addExtraButton(button => button.setIcon('plus').setTooltip('Add level').onClick(() => { void this.owner.resizePalette(1); }))
+      .addExtraButton(button => button.setIcon('minus').setTooltip('Remove last level').onClick(() => { void this.owner.resizePalette(-1); }));
+  }
+
+  private paletteSave(setting: Setting): Setting {
+    this.paletteSaveSetting = setting;
+    return setting.setName('My palettes').setDesc(this.paletteStatus())
+      .addButton(button => button.setButtonText('Save as…').onClick(() => this.owner.promptSavePalette()));
+  }
+
+  private paletteStatus(): string {
+    return paletteSelection(this.owner.settings) === 'custom'
+      ? 'Working copy is kept automatically. Save a name to add it to My palettes.'
+      : 'Save the current colors as a new named palette.';
+  }
+
+  syncPaletteControls(): void {
+    if (this.paletteDropdown) {
+      fillPaletteSelect(this.paletteDropdown.selectEl, this.owner.settings);
+      this.paletteDropdown.setValue(paletteSelection(this.owner.settings));
+    }
+    const colors = this.owner.settings.hierarchyPalette;
+    if (this.paletteSetting && this.palettePickers.length !== colors.length) this.paletteColors(this.paletteSetting);
+    else colors.forEach((color, i) => { this.palettePickers[i]?.setValue(color); });
+    this.paletteSaveSetting?.setDesc(this.paletteStatus());
   }
 
   private paletteColors(setting: Setting): Setting {
     this.paletteSetting = setting;
     const palette = this.owner.settings.hierarchyPalette;
-    setting.setName('Palette colors').setDesc(`Root = 0. ${palette.length} color levels; level ${palette.length - 1} and deeper use the last color.`);
+    setting.setName('Level colors').setDesc(`Root = 0. ${palette.length} color levels; level ${palette.length - 1} and deeper use the last color.`);
     setting.settingEl.addClass('tag-ontology-palette-setting');
     setting.controlEl.empty();
+    this.palettePickers = [];
     const row = setting.controlEl.createDiv('tag-ontology-palette-colors');
     palette.forEach((color, index) => {
       const slot = row.createDiv('tag-ontology-palette-slot');
       slot.setAttribute('aria-label', this.depthName(index));
       new Setting(slot).setName(String(index)).addColorPicker(picker => {
+        this.palettePickers.push(picker);
         picker.setValue(color).onChange(async value => {
           await this.owner.setPaletteColor(index, value);
-          this.paletteDropdown?.setValue(this.presetName());
         });
       });
     });
@@ -629,7 +700,9 @@ class OntologySettingsTab extends PluginSettingTab {
   hide(): void { void this.commitPath?.(); super.hide(); }
 
   // Fallback for Obsidian older than 1.13, which never calls getSettingDefinitions().
-  display(): void {
+  display(): void { this.renderLegacy(); }
+
+  private renderLegacy(): void {
     const { containerEl } = this;
     containerEl.empty();
     new Setting(containerEl).setName('Dictionary').setHeading();
@@ -638,30 +711,13 @@ class OntologySettingsTab extends PluginSettingTab {
       toggle.setValue(this.owner.settings.kebabNames).onChange(value => this.setControlValue('kebabNames', value));
     });
     new Setting(containerEl).setName('Colors').setHeading();
+    this.colorMode(new Setting(containerEl));
     const custom: Setting[] = [], palette: Setting[] = [];
-    let tagColor: Setting | undefined;
-    const paletteVisible = () => { for (const row of palette) row.settingEl.toggle(this.owner.settings.customColors && this.owner.settings.hierarchyColors); };
-    new Setting(containerEl).setName(CUSTOM.name).setDesc(CUSTOM.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.customColors).onChange((value) => {
-        for (const setting of custom) setting.settingEl.toggle(value);
-        const saved = this.setControlValue('customColors', value);
-        paletteVisible();
-        return saved;
-      });
-    });
-    custom.push(new Setting(containerEl).setName(HIERARCHY_COLORS.name).setDesc(HIERARCHY_COLORS.desc).addToggle(toggle => {
-      toggle.setValue(this.owner.settings.hierarchyColors).onChange(value => {
-        const saved = this.setControlValue('hierarchyColors', value);
-        tagColor?.setName(this.tagColorName());
-        paletteVisible();
-        return saved;
-      });
-    }));
     palette.push(this.palettePreset(new Setting(containerEl)));
     palette.push(this.paletteColors(new Setting(containerEl)));
-    paletteVisible();
-    tagColor = this.tagColor(new Setting(containerEl));
-    custom.push(tagColor);
+    palette.push(this.paletteSave(new Setting(containerEl)));
+    for (const row of palette) row.settingEl.toggle(this.owner.settings.customColors && this.owner.settings.hierarchyColors);
+    custom.push(this.tagColor(new Setting(containerEl)));
     custom.push(new Setting(containerEl).setName(TITLE.name).setDesc(TITLE.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));

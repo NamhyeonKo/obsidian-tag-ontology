@@ -1,5 +1,6 @@
 import { renderDepthLegend } from './legend.ts';
-import { ItemView, Setting, debounce, setIcon, setTooltip, type SliderComponent, type ToggleComponent, type WorkspaceLeaf } from 'obsidian';
+import { Component, ItemView, Setting, debounce, setIcon, setTooltip, type SliderComponent, type ToggleComponent, type WorkspaceLeaf } from 'obsidian';
+import { graphModeBar } from './graph-modes.ts';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
 import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
@@ -10,6 +11,20 @@ import { LABEL_SIZE, cssColorToHex } from './settings.ts';
 import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
+
+export class Graph3DView extends ItemView {
+  private canvas?: Graph3DCanvas;
+  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
+  getViewType() { return VIEW_3D; }
+  getDisplayText() { return '3D tag ontology'; }
+  getIcon() { return 'box'; }
+  async onOpen() {
+    if (!this.owner.settings.enable3d) { this.leaf.detach(); return; }
+    this.canvas = this.addChild(new Graph3DCanvas(this.contentEl, this.owner, this.leaf));
+    this.canvas.setVisible(true); await this.canvas.open();
+  }
+  onClose() { if (this.canvas) this.removeChild(this.canvas); return Promise.resolve(); }
+}
 
 interface Node3D {
   id: string; type: string; tag?: string; name: string; degree: number; radius: number;
@@ -49,7 +64,7 @@ const mix = (from: string, to: string, share: number) => '#' + [1, 3, 5].map(at 
 const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE;
 
 // The tag hierarchy in three dimensions. It layers the same shared state as the 2D graph, through NativeGraphs.
-export class Graph3DView extends ItemView implements LinkedGraph {
+export class Graph3DCanvas extends Component implements LinkedGraph {
   private graph?: Graph;
   private three?: Three; private ball?: SphereGeometry; private closed = false;
   // Where the camera looks, refreshed every frame.
@@ -74,25 +89,23 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private arrows?: InstancedMesh<ConeGeometry, MeshLambertMaterial>; private cone?: ConeGeometry; private arrowMaterial?: MeshLambertMaterial;
   private solid: Link3D[] = []; private related: Link3D[] = []; private pointed: Link3D[] = [];
 
-  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
-  getViewType(): string { return VIEW_3D; }
-  getDisplayText(): string { return '3D tag ontology'; }
-  getIcon(): string { return 'box'; }
+  private visible = false;
+  private syncModes = () => {};
+  private get app() { return this.owner.app; }
+  constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
 
-  async onOpen(): Promise<void> {
-    // With the 3D view off, a tab the workspace brings back on start closes before it loads three.js. The plugin closes the
-    // tabs open when it is turned off.
-    if (!this.owner.settings.enable3d) { this.leaf.detach(); return; }
+  async open(): Promise<void> {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
-    this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll());
-    this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll());
+    this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf));
+    this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf));
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
     this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.graph?.zoomToFit(600, 40); });
     tools.createDiv('tag-ontology-separator');
@@ -102,9 +115,9 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
-    // Back to the core graph, under the core graph's own icon.
+    // The same mode controls as the core graph and ontology explorer.
     tools.createDiv('tag-ontology-separator');
-    this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
+    this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.labelPanel(root);
     this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
@@ -158,7 +171,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     // A tab in the background has no size; the library would keep drawing it every frame, so it pauses until shown again.
     this.resize = new ResizeObserver(() => {
       const width = this.stage?.clientWidth ?? 0, height = this.stage?.clientHeight ?? 0;
-      if (!width || !height) { graph.pauseAnimation(); return; }
+      if (!this.visible || !width || !height) { graph.pauseAnimation(); return; }
       graph.width(width).height(height).resumeAnimation();
     });
     this.resize.observe(this.stage);
@@ -177,8 +190,17 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     this.draw('refresh');
   }
 
-  // The WebGL context and everything on the GPU go with the tab, so opening and closing it again and again doesn't pile them up.
-  onClose(): Promise<void> {
+  setVisible(visible: boolean) {
+    this.visible = visible;
+    if (visible && this.stage?.clientWidth && this.stage.clientHeight) this.graph?.width(this.stage.clientWidth).height(this.stage.clientHeight).resumeAnimation();
+    else this.graph?.pauseAnimation();
+    this.syncModes();
+  }
+
+  isVisible() { return this.visible && this.contentEl.isShown(); }
+
+  // The WebGL context and GPU resources go with the graph tab.
+  onunload(): void {
     this.closed = true;
     this.owner.native.unlink(this);
     this.resize?.disconnect();
@@ -197,13 +219,14 @@ export class Graph3DView extends ItemView implements LinkedGraph {
     }
     this.graph = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
     this.contentEl.empty();
-    return Promise.resolve();
   }
 
   draw(operation: string) {
+    this.syncModes();
     const graph = this.graph, model = this.owner.model, settings = this.owner.settings;
     if (!graph || !this.status) return;
-    if (this.legend) renderDepthLegend(this.legend, settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    if (this.legend) renderDepthLegend(this.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     if (!model) { this.status.setText(this.owner.error ? `Could not load the tag dictionary: ${this.owner.error}` : 'Loading the tag dictionary…'); return; }
     const first = !this.layer;
     if (operation === 'refresh' || !this.base) this.base = this.owner.graphData();
@@ -298,7 +321,7 @@ export class Graph3DView extends ItemView implements LinkedGraph {
   private click(item: Node3D) {
     const native = this.owner.native, double = native.isDouble(item.id);
     if (item.tag) {
-      native.clickTag(item.tag, double);
+      native.clickTag(item.tag, double, this.leaf);
       if (!double) this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
     }
     else if (item.type !== 'tag' && !double) native.openNote(item.id);

@@ -30,7 +30,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(child => child.all())]; }
 }
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
-async function setup(closeBeforeLoad = false) {
+async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
@@ -51,11 +51,11 @@ async function setup(closeBeforeLoad = false) {
   await search.link(() => { throw new Error('Unexpected import'); }); await search.evaluate();
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
   await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
-  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void }) => {
+  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined }) => {
     draw(data: MindMapData): void; fit(): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
-  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag) });
+  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color });
   if (closeBeforeLoad) map.destroy();
   await settle();
   return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits,
@@ -119,4 +119,18 @@ test('the hidden positioning nodes cannot be dragged away from the HTML labels',
   const cy = cytoscape({ headless: true, autoungrabify: t.options()!.autoungrabify, elements: [{ data: { id: 'root' } }] });
   assert.equal(cy.getElementById('root').grabbable(), false);
   cy.destroy(); t.map.destroy();
+});
+
+test('starting tags use custom colors only while enabled, including the continue tag', async () => {
+  let custom = false;
+  const t = await setup(false, tag => custom ? (tag === 'a' ? '#123456' : '#abcdef') : undefined);
+  const picker = { nodes: [], edges: [], roots: ['a'], startFrom: 'b' };
+  for (const enabled of [false, true, false]) {
+    custom = enabled; t.map.draw(picker);
+    const chips = t.root.all().filter(el => el.classes.has('tag'));
+    assert.equal(chips.length, 2);
+    assert.equal(chips.find(el => el.text === '#a')!.css['--tag-ontology-tags'], enabled ? '#123456' : undefined);
+    assert.equal(chips.find(el => el.text === 'Continue from #b')!.css['--tag-ontology-tags'], enabled ? '#abcdef' : undefined);
+  }
+  t.map.destroy();
 });

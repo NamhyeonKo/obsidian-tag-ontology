@@ -7,7 +7,7 @@ export interface MindMapNode {
   id: string; tag?: string; name: string; x: number; y: number; color?: string;
   expandable: boolean; expanded: boolean;
 }
-export interface MindMapStart { app: App; suggest(query: string): Suggestion[]; choose(tag?: string): void }
+export interface MindMapStart { app: App; suggest(query: string): Suggestion[]; choose(tag?: string): void; color(tag: string): string | undefined }
 export interface MindMapData {
   root?: string; roots?: string[]; startFrom?: string;
   nodes: MindMapNode[];
@@ -75,7 +75,11 @@ export class MindMap {
     this.start.hidden = !!data.root;
     this.changeRoot.hidden = !data.root;
     this.choices.empty(); this.continueChoices.empty();
-    const choice = (parent: HTMLElement, tag: string, label: string) => parent.createEl('a', { href: '#', text: label, cls: 'tag' }).addEventListener('click', event => { event.preventDefault(); this.startActions.choose(tag); });
+    const choice = (parent: HTMLElement, tag: string, label: string) => {
+      const chip = parent.createEl('a', { href: '#', text: label, cls: 'tag' }), color = this.startActions.color(tag);
+      if (color) chip.setCssProps({ '--tag-ontology-tags': color });
+      chip.addEventListener('click', event => { event.preventDefault(); this.startActions.choose(tag); });
+    };
     if (data.startFrom) choice(this.continueChoices, data.startFrom, `Continue from #${data.startFrom}`);
     for (const tag of data.roots ?? []) choice(this.choices, tag, '#' + tag);
     const cy = this.cy;
