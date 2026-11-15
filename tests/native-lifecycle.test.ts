@@ -6,7 +6,6 @@ import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as legend from '../src/legend.ts';
-import * as hierarchy from '../src/hierarchy.ts';
 import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
@@ -124,7 +123,6 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
       : specifier === './mindmap-layout.ts' ? { ...mindmapLayout }
-      : specifier === './hierarchy.ts' ? { ...hierarchy }
       : specifier === './legend.ts' ? { ...legend }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
@@ -1745,4 +1743,27 @@ test('saved non-mindmap expansion survives restarting while mind map is active',
   const restored = await setup(saved); restored.controller.attach();
   restored.layout('Force');
   assert.deepEqual([...restored.owner.settings.expanded], ['cs', 'ml']);
+});
+
+test('mind map lays out the chosen root and open paths without changing full-dictionary colors', async () => {
+  const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true });
+  t.owner.model = new Ontology({
+    hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] },
+    ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['cs', 'ml'] },
+  }, []);
+  t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  map.chooseRoot('cs'); map.toggle('cs'); await settle();
+  const node = (tag: string) => map.data!.nodes.find(node => node.tag === tag)!;
+  assert.equal(node('dl').x, node('ml').x, 'direct children share the next column while the long path is closed');
+  assert.equal(node('cs').x, 0.01, 'the chosen root starts at layout depth zero');
+  assert.equal(node('dl').color, '#30a46c', 'color retains full dictionary depth three');
+  const color = node('dl').color;
+  map.toggle('ml'); await settle();
+  assert.equal(node('dl').x - node('ml').x, 260, 'the opened longer path adds one column');
+  assert.equal(node('dl').color, color);
+  map.toggle('ml'); await settle();
+  assert.equal(node('dl').x, node('ml').x, 'a closed parent contributes no distance even while both tags remain visible');
+  assert.ok(!map.data!.edges.some(edge => edge.source === '#ml' && edge.target === '#DL'));
+  assert.equal(node('dl').color, color);
 });
