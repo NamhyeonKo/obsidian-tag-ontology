@@ -44,9 +44,9 @@ class Element {
 }
 class File {}
 type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
-  graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>;
+  graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
-  showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
+  showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
@@ -84,6 +84,7 @@ const layoutOutside: string[][] = [];
 let layoutFails = 0;
 
 class TestMindMap {
+  el = new Element();
   data?: MindMapData; destroyed = false; fitted = 0; focused?: string;
   start: MindMapStart;
   select: (tag: string) => void; toggle: (tag: string) => void;
@@ -153,7 +154,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       const code = await transform(readFileSync(new URL('../src/' + specifier.slice(2), import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
       return new SourceTextModule(code.code, { context });
     }
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
       : specifier === './graph3d.ts' ? { Graph3DCanvas: Canvas }
@@ -176,11 +177,11 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
-    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
-    changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
+    changed() {}, resetPan() {}, setPan(x: number, y: number) { this.panX = x; this.panY = y; this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
@@ -227,6 +228,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     async saveChange(change: Change, _base?: RawDictionary): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
+      getActiveViewOfType: () => undefined,
       getLeavesOfType: () => leaves,
       ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
     }, vault: { getAbstractFileByPath: (path: string) => path === owner.dictionaryPath && owner.dictionaryFound ? new File() : null } },
@@ -323,7 +325,7 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a native graph update must not reset the zoom');
   t.controller.refresh();
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
-  t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
+  await t.controller.switchMode(t.leaves[0], 'tree-horizontal');
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
   const shown = t.layoutButtons().filter(el => el.classes.has('is-active'));
   assert.deepEqual(shown.map(el => el.attrs['aria-label']), ['Layout: Horizontal tree'], 'the toolbar shows a layout changed in settings');
@@ -596,7 +598,7 @@ test('tree hides notes without changing the saved setting', async () => {
   t.controller.attach();
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
   assert.equal(t.owner.settings.showNotes, true);
-  t.owner.settings.layout = 'force'; t.controller.refresh();
+  await t.controller.switchMode(t.leaves[0], 'force');
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
 });
 
@@ -1762,7 +1764,8 @@ test('mind map is the second layout and shares filtering, expansion, palette and
   assert.ok(!map.data!.nodes.some(node => node.tag === 'crypto'));
   t.click('Fit'); assert.ok(map.fitted > 0);
   t.layout('Force');
-  assert.equal(map.destroyed, true);
+  assert.equal(map.destroyed, false);
+  assert.equal(map.el.hidden, true);
   assert.equal(t.contentEl.classes.has('is-mindmap'), false);
   assert.ok(t.renderer.nodes.every(node => node.fx === null && node.fy === null));
 });
@@ -1813,7 +1816,8 @@ test('mind map enters collapsed, keeps interaction during refresh, and restores 
   t.layout('Force');
   assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml']);
   t.layout('Mind map'); map = mindmaps.at(-1)!;
-  assert.equal(map.data!.nodes.length, 0, 'show the starting-tag picker rather than every root');
+  assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'dl'), 'returning preserves the previous branch');
 });
 
 test('restoring a saved mind map layout starts with roots even when saved branches were expanded', async () => {
@@ -1856,7 +1860,7 @@ test('saved non-mindmap expansion survives restarting while mind map is active',
   t.layout('Mind map');
   const map = mindmaps.at(-1)!;
   map.chooseRoot('sec'); map.toggle('sec'); await settle();
-  assert.deepEqual([...t.owner.settings.expanded], ['sec']);
+  assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml'], 'mind map keeps the saved non-mindmap expansion intact');
   const saved = { ...t.owner.settings, expanded: [...t.controller.savedExpanded] };
   const restored = await setup(saved); restored.controller.attach();
   restored.layout('Force');
@@ -1884,6 +1888,73 @@ test('mind map lays out the chosen root and open paths without changing full-dic
   assert.equal(node('dl').x, node('ml').x, 'a closed parent contributes no distance even while both tags remain visible');
   assert.ok(!map.data!.edges.some(edge => edge.source === '#ml' && edge.target === '#DL'));
   assert.equal(node('dl').color, color);
+});
+
+test('comparison tabs keep different 2D layouts and independent mind map branches', async () => {
+  const t = await setup(); t.controller.attach(); t.addTab(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[1], 'mindmap');
+  const map = mindmaps.at(-1)!; map.chooseRoot('cs'); map.toggle('cs');
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.controller.graphMode(t.leaves[1]), 'mindmap');
+  await t.controller.switchMode(t.leaves[0], 'tree');
+  assert.equal(t.controller.graphMode(t.leaves[1]), 'mindmap');
+  assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+  t.controller.activate(t.leaves[0]); t.controller.activate(null);
+  t.controller.collapseAll();
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'), 'sidebar actions follow the last activated graph, not the last switched mode');
+});
+
+test('returning to 2D layouts restores zoom, pan and the same mind map instance', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.scale = t.renderer.targetScale = 3; t.renderer.setPan(120, 240);
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  const map = mindmaps.at(-1)!; map.chooseRoot('cs'); map.toggle('cs');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.equal(t.renderer.scale, 3); assert.equal(t.renderer.panX, 120); assert.equal(t.renderer.panY, 240);
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.equal(mindmaps.at(-1), map); assert.equal(map.destroyed, false); assert.equal(map.el.hidden, false);
+  assert.equal(map.data!.root, 'cs'); assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+});
+
+test('mode switches update the sidebar expansion label for the selected tag', async () => {
+  const t = await setup({ expanded: ['cs'] }); t.controller.attach();
+  t.controller.clickTag('cs', false);
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'));
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Expand in graph'));
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'));
+});
+
+test('tree pins are released when returning from an embedded canvas to Force', async () => {
+  const t = await setup({ layout: 'tree' });
+  const send = t.renderer.setData;
+  t.renderer.setData = function(data) {
+    const previous = new Map(this.nodes.map(node => [node.id, node])); send.call(this, data);
+    for (const node of this.nodes) {
+      const old = previous.get(node.id);
+      if (old) { node.x = old.x; node.y = old.y; node.fx = old.fx; node.fy = old.fy; }
+    }
+  };
+  t.controller.attach(); t.addTab(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  await t.controller.switchMode(t.leaves[1], 'force');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.ok(t.renderer.nodes.every(node => node.fx === null && node.fy === null));
+});
+
+test('group actions and history retain the source explorer in split views', async () => {
+  const t = await setup(); t.controller.attach();
+  const aTaken: string[][] = [], bTaken: string[][] = [];
+  const a = { groupNotes: () => [{ path: 'A.md', mtime: 1 }], takeOut: (_tag: string, paths: string[]) => aTaken.push(paths) };
+  const b = { groupNotes: () => [{ path: 'B.md', mtime: 1 }], takeOut: (_tag: string, paths: string[]) => bTaken.push(paths) };
+  t.controller.explorer = b; t.controller.showGroup('ml', a); t.click('Take out latest 10');
+  assert.deepEqual(aTaken, [['A.md']]); assert.deepEqual(bTaken, []);
+  t.controller.showGroup('ml', b); t.click('Take out latest 10');
+  assert.deepEqual(bTaken, [['B.md']]);
+  t.click('Back'); t.click('Take out latest 10');
+  assert.deepEqual(aTaken, [['A.md'], ['A.md']]);
 });
 
 test('graph palette picker lists named snapshots and working copy, and save opens the shared dialog', async () => {

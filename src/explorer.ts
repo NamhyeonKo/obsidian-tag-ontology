@@ -75,13 +75,13 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
-    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
+    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false, this.leaf));
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
     cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
     cy.on('dbltap', 'node[type="note"]', event => this.owner.native.openNote(this.pathOf(event)));
     cy.on('cxttap', 'node[type="note"]', event => this.menu(event, [['Open note', 'file-text', () => this.owner.native.openNote(this.pathOf(event))]]));
-    cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event)));
+    cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event), this));
     cy.on('dbltap', 'node[type="group"]', event => this.takeLatest(this.tagOf(event)));
     cy.on('cxttap', 'node[type="group"]', event => this.menu(event, [[`Take out latest ${TAKE_OUT}`, 'arrow-down-to-line', () => this.takeLatest(this.tagOf(event))]]));
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
@@ -124,8 +124,9 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   onunload(): void {
     this.closed = true;
     this.owner.native.unlink(this);
-    if (this.owner.native.explorer === this) { this.owner.native.explorer = undefined; this.owner.native.renderPanel(); }
     this.cy?.destroy(); this.cy = undefined;
+    if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
+    this.owner.native.renderPanel();
     this.contentEl.empty();
   }
 

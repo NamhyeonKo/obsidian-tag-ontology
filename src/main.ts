@@ -78,6 +78,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.settingsTab = new OntologySettingsTab(this.app, this);
     this.addSettingTab(this.settingsTab);
     this.registerEvent(this.app.workspace.on('layout-change', () => this.native.attach()));
+    this.registerEvent(this.app.workspace.on('active-leaf-change', leaf => this.native.activate(leaf)));
     // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
     // accent variables on <body>, so <body>'s style is watched too.
     this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
@@ -389,7 +390,7 @@ export default class TagOntologyPlugin extends Plugin {
       if (this.disposed) return;
       // Attaches like attach() and also redraws the sidebar, which may still show a failure this load cleared.
       this.native.refresh(false);
-      await this.native.switchMode(leaf, graph === '2d' ? this.settings.layout : graph);
+      await this.native.switchMode(leaf, graph);
       if (this.disposed) return;
       // The sidebar tab opens and comes forward with the graph, even when the sidebar is closed or shows another tab.
       this.native.showPanel(true);

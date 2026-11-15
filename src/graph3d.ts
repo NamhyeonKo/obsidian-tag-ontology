@@ -104,8 +104,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
-    this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll());
-    this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll());
+    this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf));
+    this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf));
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
     this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.graph?.zoomToFit(600, 40); });
     tools.createDiv('tag-ontology-separator');
@@ -321,7 +321,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private click(item: Node3D) {
     const native = this.owner.native, double = native.isDouble(item.id);
     if (item.tag) {
-      native.clickTag(item.tag, double);
+      native.clickTag(item.tag, double, this.leaf);
       if (!double) this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
     }
     else if (item.type !== 'tag' && !double) native.openNote(item.id);
