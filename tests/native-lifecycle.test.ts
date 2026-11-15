@@ -1673,6 +1673,7 @@ test('mind map is the fourth layout and shares filtering, expansion, palette and
   const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true, expanded: ['cs', 'sec'] });
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.toggle('cs'); map.toggle('sec'); await settle();
   assert.ok(t.contentEl.classes.has('is-mindmap'));
   assert.equal(t.layoutButtons().at(-1)!.attrs['aria-label'], 'Layout: Mind map');
   assert.ok(map.data!.nodes.every(node => node.id.startsWith('#')), 'notes remain hidden without changing the saved toggle');
@@ -1699,6 +1700,7 @@ test('mind map retains deeper expansion when a parent is closed and is disposed 
   const t = await setup({ layout: 'mindmap', expanded: ['cs', 'ml'] });
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.toggle('cs'); map.toggle('ml'); await settle();
   assert.ok(map.data!.nodes.some(node => node.tag === 'dl'));
   map.toggle('cs'); await settle();
   assert.ok(!map.data!.nodes.some(node => node.tag === 'dl'));
@@ -1713,6 +1715,7 @@ test('a mind map arrow preserves selection and removes only the collapsed parent
   const t = await setup({ layout: 'mindmap', expanded: ['cs', 'sec'] });
   t.controller.attach();
   const map = mindmaps.at(-1)!;
+  map.toggle('cs'); map.toggle('sec'); await settle();
   map.select('crypto');
   map.toggle('cs'); await settle();
   assert.equal(map.data!.selected, '#crypto');
@@ -1721,4 +1724,25 @@ test('a mind map arrow preserves selection and removes only the collapsed parent
   assert.ok(!map.data!.edges.some(edge => edge.source === '#cs' && edge.target === '#crypto'));
   assert.ok(map.data!.edges.some(edge => edge.source === '#sec' && edge.target === '#crypto'));
   assert.equal(map.data!.nodes.find(node => node.tag === 'crypto')!.y, map.data!.nodes.find(node => node.tag === 'sec')!.y);
+});
+
+test('mind map enters collapsed, keeps interaction during refresh, and restores the other layouts expansion', async () => {
+  const t = await setup({ expanded: ['cs', 'ml'] });
+  t.controller.attach();
+  t.layout('Mind map');
+  let map = mindmaps.at(-1)!;
+  assert.deepEqual(map.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
+  map.toggle('cs'); map.toggle('ml'); await settle();
+  t.controller.refresh();
+  assert.ok(map.data!.nodes.some(node => node.tag === 'dl'), 'refresh does not close branches opened in this visit');
+  t.layout('Force');
+  assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml']);
+  t.layout('Mind map'); map = mindmaps.at(-1)!;
+  assert.deepEqual(map.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
+});
+
+test('restoring a saved mind map layout starts with roots even when saved branches were expanded', async () => {
+  const t = await setup({ layout: 'mindmap', expanded: ['cs', 'ml'] });
+  t.controller.attach();
+  assert.deepEqual(mindmaps.at(-1)!.data!.nodes.filter(node => node.tag).map(node => node.tag).sort(), ['cs', 'sec']);
 });

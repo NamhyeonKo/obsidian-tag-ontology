@@ -118,6 +118,7 @@ class ChoiceModal extends Modal {
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
+  private beforeMindMap?: string[];
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
   // One sidebar panel serves every graph tab: a tag's details, the dictionary check, or the root tags until either is chosen.
@@ -158,6 +159,7 @@ export class NativeGraphs {
   }
 
   attach() {
+    this.syncMindMapExpansion();
     const leaves = this.owner.app.workspace.getLeavesOfType('graph');
     for (const [id, session] of this.sessions) {
       if (!leaves.includes(session.leaf) || session.leaf.view !== session.view) this.detach(id, false);
@@ -334,9 +336,21 @@ export class NativeGraphs {
     void this.owner.app.workspace.ensureSideLeaf(PANEL_VIEW, 'left', { reveal });
   }
 
+  private syncMindMapExpansion() {
+    const settings = this.owner.settings;
+    if (settings.layout === 'mindmap' && !this.beforeMindMap) {
+      this.beforeMindMap = [...settings.expanded];
+      settings.expanded = [];
+    } else if (settings.layout !== 'mindmap' && this.beforeMindMap) {
+      settings.expanded = this.beforeMindMap.filter(tag => this.owner.model?.entries.has(tag));
+      this.beforeMindMap = undefined;
+    }
+  }
+
   // Graph state is shared by every graph tab, like the core graph's own options.
   private update(patch: Partial<LayerSettings>, operation: string) {
     Object.assign(this.owner.settings, patch);
+    this.syncMindMapExpansion();
     void this.owner.saveState();
     for (const session of this.sessions.values()) this.render(session, operation);
     this.drawLinked(operation);
@@ -957,7 +971,9 @@ export class NativeGraphs {
       const change: Change = mode.kind === 'edit' ? { kind: 'edit', tag, draft } : { kind: 'add', draft };
       if (!await this.owner.saveChange(change, base)) return false;
       if (name !== tag) {
-        this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t); void this.owner.saveState();
+        this.owner.settings.expanded = this.owner.settings.expanded.map(t => t === tag ? name : t);
+        this.beforeMindMap = this.beforeMindMap?.map(t => t === tag ? name : t);
+        void this.owner.saveState();
         this.history = this.history.map(view => view.kind === 'tag' && view.tag === tag ? { kind: 'tag', tag: name }
           : view.kind === 'group' && view.tag === tag ? { kind: 'group', tag: name } : view);
         for (const view of this.linked) view.renamed?.(tag, name);
