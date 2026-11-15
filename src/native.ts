@@ -521,7 +521,7 @@ export class NativeGraphs {
       if (!related && parent && !expanded.has(parent)) continue;
       if (ids.has(source) && ids.has(target)) edges.push({ source, target, related });
     }
-    session.mindmap.draw({ root: session.mindmapRoot, roots: model.roots.slice(0, 8), startFrom: this.selected && model.placed.has(this.selected) ? this.selected : undefined, nodes: session.mindmapRoot ? nodes : [], edges: session.mindmapRoot ? edges : [], anchor: session.mindmapAnchor, selected: this.selected ? resolved.idOf.get(this.selected) : undefined, bright: session.focusIds });
+    session.mindmap.draw({ root: session.mindmapRoot, roots: model.roots, startFrom: this.selected && model.placed.has(this.selected) ? this.selected : undefined, nodes: session.mindmapRoot ? nodes : [], edges: session.mindmapRoot ? edges : [], anchor: session.mindmapAnchor, selected: this.selected ? resolved.idOf.get(this.selected) : undefined, bright: session.focusIds });
     session.mindmapAnchor = undefined;
   }
 

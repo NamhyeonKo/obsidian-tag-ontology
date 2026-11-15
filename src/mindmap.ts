@@ -29,6 +29,7 @@ export class MindMap {
   private suggest: TagSuggest;
   private start: HTMLElement;
   private choices: HTMLElement;
+  private continueChoices: HTMLElement;
   private changeRoot: HTMLButtonElement;
   readonly el: HTMLElement;
 
@@ -36,11 +37,13 @@ export class MindMap {
     this.el = parent.createDiv('tag-ontology-mindmap');
     this.el.setAttribute('aria-label', 'Tag mind map');
     const stage = this.el.createDiv('tag-ontology-mindmap-stage');
-    this.start = this.el.createDiv('tag-ontology-mindmap-start');
+    this.start = this.el.createDiv('tag-ontology-explorer-start tag-ontology-mindmap-start');
     this.start.createEl('h3', { text: 'Where do you want to start?' });
-    this.start.createEl('p', { text: 'Choose one tag to explore its branch.', cls: 'tag-ontology-muted' });
+    this.start.createEl('p', { text: 'Search for a tag or pick a root tag.', cls: 'tag-ontology-muted' });
     const search = this.start.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Choose a starting tag' } });
     this.suggest = new TagSuggest(startActions.app, search, query => startActions.suggest(query), tag => startActions.choose(tag));
+    this.continueChoices = this.start.createDiv('tag-ontology-tags');
+    this.start.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
     this.choices = this.start.createDiv('tag-ontology-tags');
     this.changeRoot = this.el.createEl('button', { cls: 'tag-ontology-mindmap-change-root', text: 'Change starting tag' });
     this.changeRoot.hidden = true;
@@ -71,10 +74,10 @@ export class MindMap {
     this.data = data;
     this.start.hidden = !!data.root;
     this.changeRoot.hidden = !data.root;
-    this.choices.empty();
-    const choice = (tag: string, label: string) => this.choices.createEl('button', { text: label }).addEventListener('click', () => this.startActions.choose(tag));
-    if (data.startFrom) choice(data.startFrom, `Continue from #${data.startFrom}`);
-    for (const tag of data.roots ?? []) if (tag !== data.startFrom) choice(tag, '#' + tag);
+    this.choices.empty(); this.continueChoices.empty();
+    const choice = (parent: HTMLElement, tag: string, label: string) => parent.createEl('a', { href: '#', text: label, cls: 'tag' }).addEventListener('click', event => { event.preventDefault(); this.startActions.choose(tag); });
+    if (data.startFrom) choice(this.continueChoices, data.startFrom, `Continue from #${data.startFrom}`);
+    for (const tag of data.roots ?? []) choice(this.choices, tag, '#' + tag);
     const cy = this.cy;
     if (!cy || this.closed) return;
     const ids = new Set(data.nodes.map(n => n.id));

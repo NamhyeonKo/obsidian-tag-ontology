@@ -8,9 +8,13 @@ import type { MindMapData } from '../src/mindmap.ts';
 class Element {
   children: Element[] = []; parent?: Element; classes = new Set<string>(); attrs: Record<string, string> = {};
   text = ''; hidden = false; disabled = false; removed = false;
-  events = new Map<string, () => void>(); css: Record<string, string> = {};
+  events = new Map<string, (event?: { preventDefault(): void }) => void>(); css: Record<string, string> = {};
   classList = { add: (name: string) => this.classes.add(name), toggle: (name: string, on: boolean) => this.toggleClass(name, on) };
-  createDiv(cls = '') { const child = new Element(); child.classes.add(cls); this.appendChild(child); return child; }
+  createDiv(options: string | { cls?: string; text?: string } = '') { const child = new Element();
+    const cls = typeof options === 'string' ? options : options.cls ?? '';
+    for (const name of cls.split(' ')) if (name) child.classes.add(name);
+    if (typeof options !== 'string') child.text = options.text ?? '';
+    this.appendChild(child); return child; }
   createEl(_name: string, opts?: { cls?: string; text?: string }) { const child = this.createDiv(opts?.cls); child.text = opts?.text ?? ''; return child; }
   createSvg() { return this.createDiv(); }
   appendChild(child: Element) { child.remove(); child.removed = false; child.parent = this; this.children.push(child); }
@@ -21,7 +25,7 @@ class Element {
   setText(text: string) { this.text = text; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   toggleClass(name: string, on: boolean) { if (on) this.classes.add(name); else this.classes.delete(name); }
-  addEventListener(name: string, callback: () => void) { this.events.set(name, callback); }
+  addEventListener(name: string, callback: (event?: { preventDefault(): void }) => void) { this.events.set(name, callback); }
   all(): Element[] { return [this, ...this.children.flatMap(child => child.all())]; }
 }
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -96,7 +100,10 @@ test('the initial mind map shows a starting-tag picker and a change-start button
   const start = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-start'))!;
   const change = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-change-root'))!;
   assert.equal(start.hidden, false); assert.equal(change.hidden, true);
-  t.root.all().find(el => el.text === '#a')!.events.get('click')!();
+  assert.ok(start.classes.has('tag-ontology-explorer-start'), 'reuse the explorer start screen styling');
+  assert.ok(t.root.all().some(el => el.text === 'Root tags'));
+  assert.ok(t.root.all().find(el => el.text === '#a')!.classes.has('tag'));
+  t.root.all().find(el => el.text === '#a')!.events.get('click')!({ preventDefault() {} });
   assert.deepEqual(t.chosen, ['a']);
   t.map.draw(data);
   assert.equal(start.hidden, true); assert.equal(change.hidden, false);

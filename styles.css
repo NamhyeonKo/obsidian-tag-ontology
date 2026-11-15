@@ -117,11 +117,6 @@
 .tag-ontology-mindmap-node.is-faded, .tag-ontology-mindmap-lines path.is-faded { opacity: 0.2; }
 .tag-ontology-mindmap-error { position: absolute; top: 40%; left: 20%; max-width: 60%; color: var(--text-error); }
 .tag-ontology-native.is-mindmap .graph-controls { z-index: 3; }
-.tag-ontology-mindmap-start { position: absolute; z-index: 2; top: 38%; left: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 120px)); padding: 20px; border: 1px solid var(--background-modifier-border); border-radius: 14px; background: var(--background-primary); box-shadow: 0 6px 24px #0000000a; text-align: center; }
-.tag-ontology-mindmap-start[hidden], .tag-ontology-mindmap-change-root[hidden] { display: none; }
-.tag-ontology-mindmap-start h3 { margin: 0 0 8px; }
-.tag-ontology-mindmap-start p { margin: 0 0 14px; font-size: var(--font-ui-small); }
-.tag-ontology-mindmap-start input { width: 100%; margin-bottom: 14px; }
-.tag-ontology-mindmap-start .tag-ontology-tags { justify-content: center; }
-.tag-ontology-mindmap-start .tag-ontology-tags button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-ui-smaller); }
 .tag-ontology-mindmap-change-root { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
+
+.tag-ontology-mindmap-change-root[hidden] { display: none; }

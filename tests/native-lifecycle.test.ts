@@ -1775,3 +1775,10 @@ test('mind map starts with a picker, scopes a selected tag, and can choose a dif
   t.controller.refresh();
   assert.equal(map.data!.root, undefined, 'a deleted starting tag returns to the picker');
 });
+
+test('the mind map picker includes every dictionary root rather than truncating the list', async () => {
+  const t = await setup({ layout: 'mindmap' });
+  t.owner.model = new Ontology(Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`root-${i}`, { description: '', broader: [] }])), []);
+  t.controller.attach();
+  assert.equal(mindmaps.at(-1)!.data!.roots!.length, 12);
+});
