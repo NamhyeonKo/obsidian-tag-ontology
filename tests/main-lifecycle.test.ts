@@ -109,6 +109,8 @@ async function setup(saved?: Promise<unknown>) {
   class TestPluginSettingTab {
     app: unknown; containerEl = { empty() {} };
     constructor(app: unknown) { this.app = app; }
+    definitions?: SettingDefinitionItem[];
+    update() { this.definitions = (this as unknown as { getSettingDefinitions(): SettingDefinitionItem[] }).getSettingDefinitions(); }
     hide() {}
   }
   const types: string[] = [], open = new Map<string, unknown[]>();
@@ -1246,11 +1248,11 @@ test('tag color label follows depth coloring in both settings screens without ch
   const t = await setup(); await t.loaded;
   Object.assign(t.plugin.settings, { customColors: true, tagColor: '#123456' });
   const before = [...t.plugin.settings.hierarchyPalette];
-  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
-  tab.display();
+  const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void; update(): void; definitions: SettingDefinitionItem[] };
+  tab.display(); tab.update();
   const picker = t.settingRows.find(row => row.name === 'Tag color')!;
   const depth = t.settingRows.find(row => row.name === 'Color by hierarchy depth')!;
-  const name = () => (tab.getSettingDefinitions()[1] as SettingDefinitionGroup).items!.find(item => 'render' in item && item.desc?.toString().startsWith('Tag color when'))!.name;
+  const name = () => (tab.definitions[1] as SettingDefinitionGroup).items![4].name;
   assert.equal(name(), 'Tag color');
   await depth.toggleChanged!(true);
   assert.equal(picker.name, 'Color for tags outside the hierarchy');
@@ -1261,4 +1263,7 @@ test('tag color label follows depth coloring in both settings screens without ch
   assert.equal(picker.name, 'Tag color');
   assert.equal(name(), picker.name);
   assert.equal(t.plugin.settings.tagColor, '#123456');
+  Object.defineProperty(tab, 'update', { value: undefined });
+  await depth.toggleChanged!(true);
+  assert.equal(picker.name, 'Color for tags outside the hierarchy', 'legacy Obsidian has no update API');
 });

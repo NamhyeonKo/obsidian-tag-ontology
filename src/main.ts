@@ -535,6 +535,7 @@ class OntologySettingsTab extends PluginSettingTab {
     }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
+    if (key === 'hierarchyColors') this.update?.();
   }
 
   private tagColorName(): string {
