@@ -1,5 +1,6 @@
 import type { Ontology } from 'tag-ontology';
-import { PALETTE } from './colors.ts';
+// Facet categories keep their existing colors independently of the depth palette examples.
+const FACET_PALETTE = ['#4ea1ff', '#f0a33c', '#e5484d', '#30a46c', '#a67cf0', '#14b8a6', '#e879a6', '#a3a33a'];
 
 // Where the explorer puts new cards, what the Search Around menu offers and which lines join the cards, without the DOM.
 export interface Point { x: number; y: number }
@@ -96,7 +97,7 @@ export function tagsOfNote(model: Ontology, path: string): string[] {
 
 // Facets are free text, so each takes the palette color of its place in name order.
 export function facetColors(facets: Iterable<string>): Map<string, string> {
-  return new Map([...new Set(facets)].sort().map((facet, i) => [facet, PALETTE[i % PALETTE.length]]));
+  return new Map([...new Set(facets)].sort().map((facet, i) => [facet, FACET_PALETTE[i % FACET_PALETTE.length]]));
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

@@ -1566,13 +1566,13 @@ test('depth colors reach the native renderer and remain stable across expansion 
   const t = await setup({ customColors: true, hierarchyColors: true });
   t.controller.attach();
   const rootColor = t.forwarded.at(-1)!.nodes['#cs'].color as { rgb: number };
-  assert.equal(rootColor.rgb, 0x4ea1ff);
+  assert.equal(rootColor.rgb, 0xef4444);
   t.owner.settings.expanded = ['cs', 'ml'];
   t.controller.refresh();
   const expanded = t.forwarded.at(-1)!.nodes;
   assert.equal(expanded['#cs'].color, rootColor);
-  assert.equal((expanded['#ml'].color as { rgb: number }).rgb, 0xf0a33c);
-  assert.equal((expanded['#DL'].color as { rgb: number }).rgb, 0xe5484d);
+  assert.equal((expanded['#ml'].color as { rgb: number }).rgb, 0xf97316);
+  assert.equal((expanded['#DL'].color as { rgb: number }).rgb, 0xeab308);
   t.owner.settings.hierarchyColors = false;
   t.controller.refresh();
   assert.equal((t.forwarded.at(-1)!.nodes['#DL'].color as { rgb: number }).rgb, parseInt(t.owner.tagColor().slice(1), 16));
@@ -1586,7 +1586,7 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
-  assert.equal(swatches()[0].css['--legend-color'], '#4ea1ff');
+  assert.equal(swatches()[0].css['--legend-color'], '#ef4444');
   const picker = swatches()[0].children[0];
   assert.equal(picker.attrs.type, 'color');
   assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
@@ -1632,7 +1632,7 @@ test('mind map is the second layout and shares filtering, expansion, palette and
   assert.ok(map.data!.nodes.every(node => node.id.startsWith('#')), 'notes remain hidden without changing the saved toggle');
   assert.equal(t.owner.settings.showNotes, true);
   const root = map.data!.nodes.find(node => node.tag === 'cs')!;
-  assert.equal(root.color, '#f0a33c');
+  assert.equal(root.color, '#f97316');
   assert.equal(root.expanded, true); assert.equal(root.expandable, true);
   assert.equal(new Set(map.data!.nodes.map(node => node.id)).size, map.data!.nodes.length);
   map.select('cs');
@@ -1757,7 +1757,7 @@ test('mind map lays out the chosen root and open paths without changing full-dic
   const node = (tag: string) => map.data!.nodes.find(node => node.tag === tag)!;
   assert.equal(node('dl').x, node('ml').x, 'direct children share the next column while the long path is closed');
   assert.equal(node('cs').x, 0.01, 'the chosen root starts at layout depth zero');
-  assert.equal(node('dl').color, '#30a46c', 'color retains full dictionary depth three');
+  assert.equal(node('dl').color, '#22c55e', 'color retains full dictionary depth three');
   const color = node('dl').color;
   map.toggle('ml'); await settle();
   assert.equal(node('dl').x - node('ml').x, 260, 'the opened longer path adds one column');

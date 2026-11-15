@@ -6,6 +6,7 @@ import { transform } from 'esbuild';
 import { Ontology, isIncludedNote } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
 import * as colors from '../src/colors.ts';
+import * as palettes from '../src/palettes.ts';
 import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
@@ -44,7 +45,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; saveState(): Promise<void>; graphData(): NativeData;
+  onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer'): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>) {
@@ -89,7 +90,7 @@ async function setup(saved?: Promise<unknown>) {
       callback(picker); return this;
     }
     addDropdown(callback: (dropdown: { addOption(key: string, name: string): unknown; setValue(value: string): unknown; onChange(cb: (value: string) => void): unknown }) => void) {
-      const dropdown = { addOption: (_key: string, _name: string) => dropdown,
+      const dropdown = { selectEl: { value: '', empty() {}, createEl() { return { createEl() {} }; } }, addOption: (_key: string, _name: string) => dropdown,
         setValue: (value: string) => { this.dropdownValue = value; return dropdown; },
         onChange: (cb: (value: string) => void) => { this.dropdownChanged = cb; return dropdown; } };
       callback(dropdown); return this;
@@ -106,6 +107,13 @@ async function setup(saved?: Promise<unknown>) {
       this.settingEl.buttons.push(buttonEl);
       callback({ buttonEl, setButtonText: text => { this.buttonNames[index] = text; return { onClick: click }; }, onClick: click }); return this;
     }
+  }
+  const modals: TestModal[] = [];
+  class TestModal {
+    closed = false; errorText = ''; title = '';
+    titleEl = { setText: (text: string) => { this.title = text; } };
+    contentEl = { createDiv: () => ({ setAttribute() {}, setText: (text: string) => { this.errorText = text; } }) };
+    onOpen() {} open() { modals.push(this); this.onOpen(); } close() { this.closed = true; }
   }
   class TestPluginSettingTab {
     app: unknown; containerEl = { empty() {} };
@@ -193,9 +201,10 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { requireApiVersion: () => modernSettings, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
+      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './colors.ts' ? { ...colors }
+      : specifier === './palettes.ts' ? { ...palettes }
       : specifier === './settings.ts' ? { ...settings }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './vault-data.ts' ? { vaultData }
@@ -213,7 +222,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
-  return { plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
+  return { modals, plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
     legacySettings: () => { modernSettings = false; }, restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -1112,7 +1121,7 @@ test('depth coloring resolves each tag and falls back to the saved color when di
 test('palette presets and individual depth pickers save colors and stay in sync', async () => {
   const t = await setup(); t.ready(); await settle();
   (t.settingTabs[0] as { display(): void }).display();
-  const preset = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  const preset = t.settingRows.find(row => row.name === 'Palette')!;
   const root = () => [...t.settingRows].reverse().find(row => row.name === '0')!;
   const child = () => [...t.settingRows].reverse().find(row => row.name === '1')!;
   assert.equal(preset.dropdownValue, 'default');
@@ -1132,7 +1141,7 @@ test('palette presets and individual depth pickers save colors and stay in sync'
 test('palette levels can grow and shrink, and presets preserve the chosen count', async () => {
   const t = await setup(); t.ready(); await settle();
   (t.settingTabs[0] as { display(): void }).display();
-  const preset = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  const preset = t.settingRows.find(row => row.name === 'Palette')!;
   preset.buttons[0](); await settle();
   assert.equal(t.plugin.settings.hierarchyPalette.length, 9);
   assert.ok(t.settingRows.some(row => row.name === '8'));
@@ -1149,7 +1158,7 @@ test('palette levels can grow and shrink, and presets preserve the chosen count'
 test('gradient presets resample on resize, survive settings reopen, and hand edits become custom', async () => {
   const t = await setup(); t.ready(); await settle();
   (t.settingTabs[0] as { display(): void }).display();
-  let row = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  let row = t.settingRows.find(row => row.name === 'Palette')!;
   row.dropdownChanged!('blue-gradient'); await settle();
   const preset = colors.PALETTE_PRESETS['blue-gradient'];
   assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(preset, 8));
@@ -1159,7 +1168,7 @@ test('gradient presets resample on resize, survive settings reopen, and hand edi
   row.buttons[1](); await settle();
   assert.deepEqual(t.plugin.settings.hierarchyPalette, colors.paletteFor(preset, 8));
   (t.settingTabs[0] as { display(): void }).display();
-  row = [...t.settingRows].reverse().find(row => row.name === 'Hierarchy palette')!;
+  row = [...t.settingRows].reverse().find(row => row.name === 'Palette')!;
   assert.equal(row.dropdownValue, 'blue-gradient');
   const root = [...t.settingRows].reverse().find(row => row.name === '0')!;
   await root.colorChanged!('#123456');
@@ -1185,7 +1194,7 @@ test('saving mindmap graph state or settings persists the other layouts expansio
 test('custom palette is restored after presets, other settings and restart', async () => {
   const t = await setup(); t.ready(); await settle();
   (t.settingTabs[0] as { display(): void }).display();
-  const row = t.settingRows.find(row => row.name === 'Hierarchy palette')!;
+  const row = t.settingRows.find(row => row.name === 'Palette')!;
   const root = [...t.settingRows].reverse().find(row => row.name === '0')!;
   await root.colorChanged!('#123456');
   const custom = [...t.plugin.settings.hierarchyPalette];
@@ -1198,7 +1207,7 @@ test('custom palette is restored after presets, other settings and restart', asy
   const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1))));
   await restored.loaded; restored.ready(); await settle();
   (restored.settingTabs[0] as { display(): void }).display();
-  restored.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('custom'); await settle();
+  restored.settingRows.find(row => row.name === 'Palette')!.dropdownChanged!('custom'); await settle();
   assert.deepEqual([...restored.plugin.settings.hierarchyPalette], custom);
 });
 
@@ -1212,11 +1221,11 @@ test('editing a graph legend color saves the whole active preset as custom and r
   assert.equal(t.plugin.settings.hierarchyPalettePreset, 'custom');
   assert.ok(t.plugin.native.calls.includes('refresh:true'), 'all graphs receive the edit');
   (t.settingTabs[0] as { display(): void }).display();
-  t.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('pastel'); await settle();
+  t.settingRows.find(row => row.name === 'Palette')!.dropdownChanged!('pastel'); await settle();
   const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1))));
   await restored.loaded; restored.ready(); await settle();
   (restored.settingTabs[0] as { display(): void }).display();
-  restored.settingRows.find(row => row.name === 'Hierarchy palette')!.dropdownChanged!('custom'); await settle();
+  restored.settingRows.find(row => row.name === 'Palette')!.dropdownChanged!('custom'); await settle();
   assert.deepEqual([...restored.plugin.settings.hierarchyPalette], expected);
   const writes = restored.savedWrites.length;
   for (const [depth, color] of [[-1, '#112233'], [10, '#112233'], [0.5, '#112233'], [0, 'invalid']] as const) await restored.plugin.setPaletteColor(depth, color);
@@ -1226,8 +1235,8 @@ test('editing a graph legend color saves the whole active preset as custom and r
 test('modern and legacy settings keep the same sections, order and conditional visibility', async () => {
   const t = await setup(); await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
-  const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Custom colors',
-    'Color by hierarchy depth', 'Hierarchy palette', 'Palette colors', 'Color for tags outside the hierarchy', 'Tag title in the tag color',
+  const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Color mode',
+    'Palette', 'Level colors', 'My palettes', 'Color for tags outside the hierarchy', 'Colored sidebar titles',
     'Focus', 'Keep the selected tag focused', 'Its descendants', 'Include notes',
     'Additional views', 'Enable 3D view (beta)', 'Enable ontology explorer (beta)'];
   for (const customColors of [true, false]) for (const hierarchyColors of [true, false]) for (const focus of [true, false]) {
@@ -1245,27 +1254,45 @@ test('modern and legacy settings keep the same sections, order and conditional v
   }
 });
 
-test('tag color label follows depth coloring in both settings screens without changing saved colors', async () => {
+test('color mode updates both settings APIs while keeping all saved colors', async () => {
   const t = await setup(); await t.loaded;
   Object.assign(t.plugin.settings, { customColors: true, tagColor: '#123456' });
   const before = [...t.plugin.settings.hierarchyPalette];
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void; update(): void; definitions: SettingDefinitionItem[] };
   tab.display(); tab.update();
-  const picker = t.settingRows.find(row => row.name === 'Tag color')!;
-  const depth = t.settingRows.find(row => row.name === 'Color by hierarchy depth')!;
+  const mode = () => [...t.settingRows].reverse().find(row => row.name === 'Color mode')!;
   const name = () => (tab.definitions[1] as SettingDefinitionGroup).items![4].name;
-  assert.equal(name(), 'Tag color');
-  await depth.toggleChanged!(true);
-  assert.equal(picker.name, 'Color for tags outside the hierarchy');
-  assert.equal(name(), picker.name);
+  assert.equal(mode().dropdownValue, 'single');
+  mode().dropdownChanged!('depth'); await settle();
+  assert.equal(name(), 'Color for tags outside the hierarchy');
+  mode().dropdownChanged!('default'); await settle();
+  assert.equal(t.plugin.settings.customColors, false);
+  t.legacySettings(); Object.defineProperty(tab, 'update', { value: undefined });
+  mode().dropdownChanged!('depth'); await settle();
+  assert.equal(mode().dropdownValue, 'depth');
+  assert.ok(t.settingRows.some(row => row.name === 'Color for tags outside the hierarchy'));
   assert.equal(t.plugin.settings.tagColor, '#123456');
   assert.deepEqual([...t.plugin.settings.hierarchyPalette], before);
-  await depth.toggleChanged!(false);
-  assert.equal(picker.name, 'Tag color');
-  assert.equal(name(), picker.name);
-  assert.equal(t.plugin.settings.tagColor, '#123456');
-  t.legacySettings();
-  Object.defineProperty(tab, 'update', { value: undefined });
-  await depth.toggleChanged!(true);
-  assert.equal(picker.name, 'Color for tags outside the hierarchy', 'legacy Obsidian has no update API');
+});
+
+test('named palette dialog validates names and saves an independent snapshot', async () => {
+  const t = await setup(); await t.loaded;
+  await t.plugin.setPaletteColor(0, '#123456');
+  t.plugin.promptSavePalette();
+  const modal = t.modals.at(-1)!;
+  const input = t.settingRows.find(row => row.name === 'Palette name')!;
+  const save = t.settingRows.find(row => row.buttonNames.includes('Save palette'))!;
+  save.buttons[0](); await settle();
+  assert.equal(modal.closed, false); assert.match(modal.errorText, /name/);
+  input.textValue = 'Study'; save.buttons[0](); await settle();
+  assert.equal(modal.closed, true);
+  assert.equal(t.plugin.settings.hierarchyPalettePreset, 'saved:Study');
+  await t.plugin.setPaletteColor(0, '#654321');
+  assert.equal(t.plugin.settings.savedHierarchyPalettes[0].colors[0], '#123456');
+  const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1))));
+  await restored.loaded;
+  await restored.plugin.choosePalette('saved:Study');
+  assert.equal(restored.plugin.settings.hierarchyPalette[0], '#123456');
+  await restored.plugin.choosePalette('custom');
+  assert.equal(restored.plugin.settings.hierarchyPalette[0], '#654321');
 });
