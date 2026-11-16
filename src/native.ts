@@ -1192,10 +1192,28 @@ export class NativeGraphs {
     // One pass rather than Math.min(...xs): spreading a graph of about 125,000 nodes into one call overflows the stack.
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
-    const scale = Math.min(1.4, r.width * devicePixelRatio / (right - left + 220), r.height * devicePixelRatio / (bottom - top + 220));
+    // The graph fits in the space the toolbar, legend, status line and the core settings buttons leave uncovered.
+    const edge = this.covered(session), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.bottom);
+    const scale = Math.min(1.4, width * devicePixelRatio / (right - left + 220), height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
-    r.setPan(r.width * devicePixelRatio / 2 - (left + right) / 2 * scale, r.height * devicePixelRatio / 2 - (top + bottom) / 2 * scale);
+    r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, height / 2 * devicePixelRatio - (top + bottom) / 2 * scale);
     r.changed();
+  }
+
+  // How far in from each side of the canvas the controls drawn over it reach, in CSS pixels, plus a gap.
+  private covered(session: Session) {
+    const box = session.view.contentEl.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
+    for (const el of Array.from(session.overlay.querySelectorAll('.tag-ontology-tools > *'))) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
+    }
+    for (const el of [session.legend, session.status]) {
+      const rect = el.getBoundingClientRect();
+      if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
+    }
+    const controls = session.view.contentEl.querySelector('.graph-controls')?.getBoundingClientRect();
+    if (controls?.width) edge.right = Math.max(0, box.right - controls.left + gap);
+    return edge;
   }
 
   private detach(id: WorkspaceLeaf, redraw: boolean) {

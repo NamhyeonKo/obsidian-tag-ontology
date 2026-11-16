@@ -24,6 +24,7 @@ class Element {
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
   getBoundingClientRect() { return { left: 10, bottom: 20, width: 30 }; }
+  querySelectorAll() { return []; } querySelector() { return null; }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
   createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
