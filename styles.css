@@ -114,7 +114,7 @@
 .tag-ontology-legend-save::after { content: ''; position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--interactive-accent); }
 /* The swatches line up in one column, with the level numbers small beside them. */
 .tag-ontology-legend-levels { flex: 0 1 auto; align-self: stretch; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 4px 0; margin: 0; scrollbar-width: none; }
-.tag-ontology-legend-levels li { display: flex; align-items: center; gap: 5px; padding-left: 8px; white-space: nowrap; }
+.tag-ontology-legend-levels li { display: flex; align-items: center; gap: 5px; padding-left: 11px; white-space: nowrap; }
 .tag-ontology-legend-levels span { font-size: 10px; }
 .tag-ontology-legend-swatch { position: relative; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 15%, transparent); }
 .tag-ontology-legend-picker { position: absolute; inset: -6px; width: 21px; height: 21px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
