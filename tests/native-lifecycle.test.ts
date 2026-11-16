@@ -18,7 +18,7 @@ import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology
 class Element {
   tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
-  css: Record<string, string> = {}; disabled = false; checked = false;
+  css: Record<string, string> = {}; disabled = false; checked = false; shown = true; isShown() { return this.shown; }
   // The window the element is in, like Obsidian's Node.win.
   win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
@@ -1114,7 +1114,7 @@ test('back, forward and home move through the tags shown and disable at the ends
 });
 
 test('the expand button in the bar shows the state with waypoints or circle-small and stays highlighted', async () => {
-  const t = await setup();
+  const t = await setup(); t.controller.attach();
   t.click('#cs');
   assert.equal(expandButton(t).attrs.icon, 'waypoints'); assert.equal(expandButton(t).attrs['aria-label'], 'Collapse in graph');
   assert.ok(expandButton(t).classes.has('is-active'));
@@ -1124,8 +1124,37 @@ test('the expand button in the bar shows the state with waypoints or circle-smal
   assert.deepEqual([...t.owner.settings.expanded], []);
 });
 
+test('unloading while Open graph is still opening reveals nothing', async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.shown = false; t.controller.activate(null);
+  t.click('#cs'); t.click('#ml'); const saves = t.owner.saves, expanded = [...t.owner.settings.expanded];
+  t.click('Open graph'); t.controller.destroy();
+  await Promise.resolve();
+  assert.deepEqual([...t.owner.settings.expanded], expanded); assert.equal(t.owner.saves, saves);
+});
+
+test('a tag without child tags shows as expanded and the button is off', async () => {
+  const t = await setup(); t.controller.attach();
+  t.click('#cs'); t.click('#ml'); t.click('#dl');
+  assert.equal(expandButton(t).attrs.icon, 'waypoints'); assert.equal(expandButton(t).attrs['aria-label'], 'No child tags');
+  assert.equal(expandButton(t).attrs['aria-disabled'], 'true'); assert.ok(!expandButton(t).classes.has('is-active'));
+});
+
+test('with the graph tab hidden the expand button opens the graph instead', async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.shown = false; t.controller.activate(null);
+  assert.equal(expandButton(t).attrs.icon, 'git-fork'); assert.equal(expandButton(t).attrs['aria-label'], 'Open graph');
+  assert.equal(expandButton(t).attrs['aria-disabled'], 'false');
+  t.click('#cs'); t.click('Open graph');
+  await Promise.resolve();
+  assert.deepEqual(t.owner.opened, ['2d']);
+  assert.ok(t.owner.settings.expanded.includes('cs'));
+  t.contentEl.shown = true; t.controller.activate(null);
+  assert.equal(expandButton(t).attrs['aria-label'], 'Collapse in graph');
+});
+
 test('the expand button is disabled on the root list and the title has no button', async () => {
-  const t = await setup();
+  const t = await setup(); t.controller.attach();
   assert.equal(expandButton(t).attrs['aria-disabled'], 'true'); assert.ok(!expandButton(t).classes.has('is-active'));
   t.click('#cs');
   const header = t.sidebar.all().find(el => el.classes.has('tag-ontology-header'))!;

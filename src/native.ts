@@ -141,6 +141,8 @@ class ChoiceModal extends Modal {
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
+  // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
+  private destroyed = false;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -276,6 +278,7 @@ export class NativeGraphs {
       try { view.update(); }
       catch (error) { this.fail(leaf, error); }
     }
+    this.syncNav();
   }
 
   // The tab goes back to the core graph and stays with it until the plugin loads again.
@@ -307,7 +310,9 @@ export class NativeGraphs {
 
   activate(leaf: WorkspaceLeaf | null) {
     const session = leaf ? this.sessions.get(leaf) : undefined;
-    if (session) { this.current = session; this.syncNav(); }
+    if (session) this.current = session;
+    // Switching tabs can hide or show the graph, which the panel's graph button follows.
+    this.syncNav();
   }
 
   graphMode(leaf: WorkspaceLeaf): GraphMode {
@@ -402,8 +407,11 @@ export class NativeGraphs {
     bar.createDiv('tag-ontology-spacer');
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
+    // With no graph on screen, expanding would change a graph nobody sees, so the button opens one instead.
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
-      if (this.selected) this.toggleExpanded(this.selected);
+      const tag = this.selected;
+      if (!this.graphShown()) { void this.owner.openView().then(() => { if (!this.destroyed && tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
+      if (tag) this.toggleExpanded(tag);
     });
     this.nav.expand.addClass('tag-ontology-expand');
     const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
@@ -430,6 +438,10 @@ export class NativeGraphs {
   }
 
   get savedExpanded(): string[] { return this.owner.settings.expanded; }
+
+  private graphShown() {
+    return [...this.sessions.values()].some(session => session.view.contentEl.isShown()) || [...this.linked].some(view => view.isVisible?.());
+  }
 
   private activeSession(leaf?: WorkspaceLeaf) {
     const active = leaf ?? this.owner.app.workspace.getActiveViewOfType(ItemView)?.leaf;
@@ -1152,13 +1164,16 @@ export class NativeGraphs {
     const session = this.activeSession();
     const expanded = tag !== undefined && (session?.mode === '2d' ? this.settingsFor(session).expanded : this.owner.settings.expanded).includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
-    disable(expand, !tag); expand.toggleClass('is-active', !!tag);
+    const shown = this.graphShown();
+    // Expanding only shows child tags, so a tag without any is always as open as it gets.
+    const leaf = tag !== undefined && !this.owner.model!.children.get(tag)?.length;
+    disable(expand, shown && (!tag || leaf)); expand.toggleClass('is-active', !shown || !!tag && !leaf);
     // Forms start from the last dictionary that loaded, so they wait while the file is missing or broken.
     const blocked = this.missing() || this.owner.error !== undefined;
     disable(add, !this.owner.model || blocked); add.toggleClass('is-active', this.mode?.kind === 'new');
     disable(edit, !tag || blocked); edit.toggleClass('is-active', this.mode?.kind === 'edit');
-    setIcon(expand, expanded ? 'waypoints' : 'circle-small');
-    setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
+    setIcon(expand, !shown ? 'git-fork' : expanded || leaf ? 'waypoints' : 'circle-small');
+    setTooltip(expand, !shown ? 'Open graph' : leaf ? 'No child tags' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
   private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
@@ -1247,5 +1262,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }
