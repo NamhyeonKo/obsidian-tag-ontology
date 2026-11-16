@@ -1,9 +1,12 @@
-.tag-ontology-overlay { position: absolute; inset: 16px 16px 12px; z-index: 2; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
-.tag-ontology-tools { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 8px; }
+.tag-ontology-overlay {
+  position: absolute; inset: 16px 16px 12px; z-index: 2; pointer-events: none;
+  display: grid; grid-template: "tools tools tools" minmax(0, 1fr) "legend actions ." auto "status status status" auto / 1fr auto 1fr; gap: 12px;
+}
+.tag-ontology-tools { grid-area: tools; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 8px; }
 .tag-ontology-tools > * { pointer-events: auto; }
 /* Collapse all, Expand all and Fit sit in a row at the bottom centre. */
 .tag-ontology-actions {
-  flex: none; align-self: center; display: flex; gap: 8px; padding: 5px;
+  grid-area: actions; align-self: end; display: flex; gap: 8px; padding: 5px;
   border: 1px solid var(--background-modifier-border); border-radius: 22px;
   background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   backdrop-filter: blur(12px); box-shadow: 0 4px 18px #0000000a; pointer-events: auto;
@@ -76,7 +79,7 @@
 /* The label panel's open and close buttons are real buttons; they keep the core panel's icon look. */
 .tag-ontology-3d-controls button.graph-controls-button { background: none; box-shadow: none; border: none; }
 .tag-ontology-muted, .tag-ontology-status { color: var(--text-muted); }
-.tag-ontology-status { font-size: var(--font-ui-smaller); }
+.tag-ontology-status { grid-area: status; font-size: var(--font-ui-smaller); }
 .tag-ontology-form label { display: block; margin: 14px 0 4px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }
 .tag-ontology-form label:first-child { margin-top: 0; }
 .tag-ontology-form input[type="text"], .tag-ontology-form textarea { width: 100%; }
@@ -96,9 +99,9 @@
 .tag-ontology-footer { display: flex; gap: 6px; margin-top: 6px; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); }
 .tag-ontology-suggestion-tag { font-weight: var(--font-semibold); }
 .tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }
-/* The legend stands as a column at the end of the toolbar, a little wider than its 34px buttons and centred under them. */
+/* The legend stands as a column in the bottom left corner, its bottom level with the view actions row. */
 .tag-ontology-legend {
-  order: 1; flex: none; min-height: 0; max-height: 100%; width: 42px; margin-left: -4px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0;
+  grid-area: legend; justify-self: start; align-self: end; width: 42px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0;
   border: 1px solid var(--background-modifier-border); border-radius: 12px;
   background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   backdrop-filter: blur(12px); box-shadow: 0 4px 18px #0000000a;
@@ -109,9 +112,10 @@
 .tag-ontology-legend-palette { margin-bottom: 2px; }
 .tag-ontology-legend-save { position: relative; color: var(--interactive-accent); }
 .tag-ontology-legend-save::after { content: ''; position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--interactive-accent); }
-/* Each level centres on its own, so the swatch rings stay clear of the border. */
+/* The swatches line up in one column, with the level numbers small beside them. */
 .tag-ontology-legend-levels { flex: 0 1 auto; align-self: stretch; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 4px 0; margin: 0; scrollbar-width: none; }
-.tag-ontology-legend-levels li { display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.tag-ontology-legend-levels li { display: flex; align-items: center; gap: 5px; padding-left: 8px; white-space: nowrap; }
+.tag-ontology-legend-levels span { font-size: 10px; }
 .tag-ontology-legend-swatch { position: relative; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 15%, transparent); }
 .tag-ontology-legend-picker { position: absolute; inset: -6px; width: 21px; height: 21px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .tag-ontology-legend-swatch:focus-within { outline: 2px solid var(--interactive-accent); outline-offset: 4px; }
@@ -145,9 +149,9 @@
 .tag-ontology-mode { position: absolute; inset: 0; }
 .tag-ontology-mode[hidden] { display: none; }
 .tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
-/* Bottom left, level with the view actions row: the overlay's 12px inset, the status line and a 12px gap put the row's middle
+/* Bottom right, level with the view actions row: the overlay's 12px inset, the status line and a 12px gap put the row's middle
    about 60px up, and the 30px button centres there. */
-.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; left: 16px; z-index: 2; cursor: pointer; transition: color 120ms, box-shadow 120ms, background-color 120ms; }
+.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; right: 16px; z-index: 2; cursor: pointer; transition: color 120ms, box-shadow 120ms, background-color 120ms; }
 /* The pointer over the button, and only there, shows in the button itself. */
 .tag-ontology-mindmap-change-root:hover:not(:focus-visible) { background-color: var(--interactive-hover); color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent); }
 

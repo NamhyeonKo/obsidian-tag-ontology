@@ -149,7 +149,7 @@ Then try the sidebar tab: press **+** to add a tag of your own under `machine-le
 
 ### Graph toolbar
 
-Collapse all, Expand all and Fit sit in a row at the bottom centre of the graph; the other round buttons run down its left side, with the depth legend under them. Each shows its name when you hover it:
+Collapse all, Expand all and Fit sit in a row at the bottom centre of the graph; the other round buttons run down its left side, and the depth legend stands in the bottom left corner. Each shows its name when you hover it:
 
 | Button | What it does |
 | --- | --- |

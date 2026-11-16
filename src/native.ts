@@ -98,10 +98,10 @@ export const DOUBLE_CLICK_MS = 200;
 const FADED = { id: '\0focus' };
 
 // How far in from each side of a graph view the controls drawn over it reach, in CSS pixels plus a gap: the toolbar column on
-// the left with the legend, the view actions row and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
+// the left with the legend under it, the view actions row and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
 export function coveredEdges(view: HTMLElement) {
   const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *'))) {
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *, .tag-ontology-legend'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
   }
@@ -214,10 +214,10 @@ export class NativeGraphs {
         this.failed.add(leaf);
         continue;
       }
-      // The toolbar, the view actions row and the status line share one column, so a status line that wraps pushes the rest up
-      // instead of covering it. The legend stands at the end of the toolbar.
+      // The toolbar, the legend and view actions row, and the status line stack in the overlay's grid, so a status line that
+      // wraps pushes the rest up instead of covering it.
       const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
-      const actions = overlay.createDiv('tag-ontology-actions'), legend = tools.createDiv('tag-ontology-legend');
+      const actions = overlay.createDiv('tag-ontology-actions'), legend = overlay.createDiv('tag-ontology-legend');
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),

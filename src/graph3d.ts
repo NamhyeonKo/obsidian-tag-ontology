@@ -104,7 +104,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
-    this.legend = tools.createDiv('tag-ontology-legend');
+    this.legend = overlay.createDiv('tag-ontology-legend');
     renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
