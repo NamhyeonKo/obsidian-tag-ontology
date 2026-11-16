@@ -140,12 +140,18 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   // Animation frames wait until a test advances the fake clock with tick().
   const frames = new Map<number, () => void>();
   let frameId = 0, clock = 0;
-  const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
+  // Timers run on the same clock when tick() passes their time.
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  const tick = (ms: number) => {
+    clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame();
+    for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.fn(); }
+  };
   const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
   const errors: unknown[][] = [];
   const context = createContext({
     performance: { now: () => clock }, devicePixelRatio: 1, structuredClone, console: { error: (...args: unknown[]) => errors.push(args) },
-    window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
+    window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); },
+      setTimeout: (fn: () => void, ms: number) => { timers.set(++frameId, { at: clock + ms, fn }); return frameId; }, clearTimeout: (id?: number) => { if (id !== undefined) timers.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
@@ -179,7 +185,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
-    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, sizes: {} as Record<string, number>, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
@@ -190,6 +196,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       this.nodes = Object.keys(data.nodes).map(id => {
         const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
         renderSources.set(node, node.render!);
+        // Like the core graph, size comes from the node's weight; tests set it per id.
+        (node as Node & { getSize(): number }).getSize = () => renderer.sizes[id] ?? 12;
         return node;
       });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
@@ -289,6 +297,53 @@ test('hierarchy links always show arrows, related links are dashed, other links 
 
 // A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
 const nodeClick = (t: { renderer: { onNodeClick: unknown } }, id: string) => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, id, 'tag');
+// A double click as the browser reports it: a first press, the core graph's node click, a second click, then dblclick on
+// the tab, whatever node the second click lands on.
+const nodeDouble = (t: { renderer: { onNodeClick: unknown }; contentEl: Element }, id: string) => {
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, id);
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
+};
+
+test('a single click on a tag node waits for a possible second click, then centers it', async () => {
+  const t = await setup(); t.controller.attach();
+  // The first fit runs for two seconds; let it finish so it doesn't set the zoom.
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeClick(t, '#cs'); t.tick(200);
+  assert.equal(t.renderer.scale, 0.2);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'), 'the selection shows at once');
+  t.tick(100); t.tick(400);
+  assert.equal(t.renderer.scale, 2);
+});
+
+test('a tag clicked in a graph tab without a 2D session still brings the sidebar forward', async () => {
+  const t = await setup(); t.controller.attach();
+  const calls = t.sideCalls.length;
+  (t.controller.clickTag as (...args: unknown[]) => void)('cs', false, {});
+  assert.ok(t.sideCalls.length > calls);
+});
+
+test('scrolling before a single click starts its move cancels the move', async () => {
+  const t = await setup(); t.controller.attach();
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeClick(t, '#cs'); t.tick(100);
+  t.contentEl.events.get('wheel')!({});
+  t.tick(300); t.tick(400);
+  assert.equal(t.renderer.scale, 0.2);
+});
+
+test('detaching a graph removes its double-click listeners', async () => {
+  const t = await setup(); t.controller.attach();
+  assert.ok(t.contentEl.events.has('dblclick') && t.contentEl.events.has('mousedown'));
+  t.controller.destroy();
+  assert.ok(!t.contentEl.events.has('dblclick')); assert.ok(!t.contentEl.events.has('mousedown'));
+});
+
+test('a double click moves at once and the single-click move never runs', async () => {
+  const t = await setup(); t.controller.attach();
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeDouble(t, '#cs'); t.tick(16);
+  assert.ok(t.renderer.scale > 0.2); assert.ok(t.owner.settings.expanded.includes('cs'));
+});
 
 test('a click selects a dictionary tag without expanding it', async () => {
   const t = await setup(); t.controller.attach();
@@ -299,12 +354,48 @@ test('a click selects a dictionary tag without expanding it', async () => {
 
 test('a double click expands or collapses the tag like the panel button and keeps what is expanded below it', async () => {
   const t = await setup({ expanded: ['ml'] }); t.controller.attach();
-  nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  nodeDouble(t, '#cs');
   assert.ok(t.ids().includes('#DL')); assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'ml']); assert.equal(t.owner.saves, 1);
-  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  t.tick(400); nodeDouble(t, '#cs');
   assert.ok(!t.ids().includes('#ml')); assert.deepEqual([...t.owner.settings.expanded], ['ml']); assert.equal(t.owner.saves, 2);
-  t.tick(400); nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  t.tick(400); nodeDouble(t, '#cs');
   assert.ok(t.ids().includes('#DL'), 'ml comes back expanded');
+});
+
+test('a double click whose second click misses the moved node still expands the tag', async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
+  // The camera moved, so the second click lands on empty canvas: no node click, only the browser's dblclick.
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
+  assert.ok(t.owner.settings.expanded.includes('cs'));
+});
+
+test('a double click keeps moving the tag to the middle after the second press stopped the first move', async () => {
+  const t = await setup(); t.controller.attach(); t.tick(2500);
+  t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs'); t.tick(16);
+  // The second press stops the camera move, as any press does.
+  t.contentEl.events.get('pointerdown')!({});
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
+  t.tick(400);
+  assert.ok(t.owner.settings.expanded.includes('cs')); assert.equal(t.renderer.scale, 2);
+});
+
+test("a double click whose second press lands on another node expands the first tag and keeps it selected", async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
+  // The camera moved, so the second press hits #sec instead.
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); nodeClick(t, '#sec'); t.contentEl.events.get('dblclick')!({});
+  assert.ok(t.owner.settings.expanded.includes('cs')); assert.ok(!t.owner.settings.expanded.includes('sec'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+});
+
+test('a double click on empty canvas expands nothing, even right after a tag click', async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
+  t.tick(600);
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
+  assert.ok(!t.owner.settings.expanded.includes('cs'));
 });
 
 test('quick clicks on two different tags are two selections', async () => {
@@ -504,7 +595,7 @@ test('search reveals a tag whose expanded ancestor sits under a collapsed one', 
 test('the panel button reads the live expansion after Expand all', async () => {
   const t = await setup();
   t.controller.attach();
-  nodeClick(t, '#cs'); nodeClick(t, '#cs');
+  nodeDouble(t, '#cs');
   t.click('Collapse in graph');
   t.click('Expand all');
   assert.ok(t.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'), 'the label follows Expand all');
@@ -544,6 +635,52 @@ test('choosing a suggestion reveals the tag', async () => {
   t.suggests[0]!.onChoose('dl');
   assert.deepEqual([...t.owner.settings.expanded].sort(), ['cs', 'dl', 'ml']);
   assert.ok(t.ids().includes('#DL'));
+});
+
+test('revealing a tag zooms in further for a smaller node but never zooms out', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#DL': 8, '#ml': 10 };
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('dl'); t.tick(400);
+  assert.equal(t.renderer.scale, 2);
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('ml'); t.tick(400);
+  assert.equal(t.renderer.scale, 1.6);
+  t.renderer.scale = t.renderer.targetScale = 3;
+  t.suggests[0]!.onChoose('ml'); t.tick(400);
+  assert.equal(t.renderer.scale, 3);
+});
+
+test('the reveal glides from the zoom on screen, not an older target left by a pinch', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#DL': 8 };
+  // A pinch leaves targetScale behind; the zoom on screen is 3.
+  t.renderer.scale = 3; t.renderer.targetScale = 0.5;
+  t.suggests[0]!.onChoose('dl');
+  const scales: number[] = [];
+  for (let i = 0; i < 30; i++) { t.tick(16); scales.push(t.renderer.scale); }
+  assert.ok(scales.every(scale => scale >= 3), String(scales));
+});
+
+test('the reveal eases in over several frames instead of jumping', async () => {
+  const t = await setup(); t.controller.attach(); t.tick(2500);
+  t.renderer.sizes = { '#DL': 8 }; t.renderer.scale = t.renderer.targetScale = 0.5;
+  t.suggests[0]!.onChoose('dl');
+  const scales: number[] = [];
+  for (let i = 0; i < 30; i++) { t.tick(16); scales.push(t.renderer.scale); }
+  assert.ok(scales[0]! > 0.5 && scales[0]! < 1.2, String(scales));
+  assert.ok(scales.every((scale, i) => i === 0 || scale >= scales[i - 1]!), String(scales));
+  assert.equal(scales.at(-1), 2);
+});
+
+test('the reveal zoom follows a node that shrinks once it is expanded', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#cs': 16 };
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('cs'); t.tick(400);
+  assert.equal(t.renderer.scale, 1);
+  t.renderer.sizes = { '#cs': 8 }; t.tick(16);
+  assert.equal(t.renderer.scale, 2);
 });
 
 test('the suggestion source is the model', async () => {
@@ -769,7 +906,7 @@ test('in a tree, a native update that moves nothing asks for no redraw', async (
   let wakes = 0; t.renderer.changed = () => { wakes++; };
   t.renderer.setData(core());
   assert.equal(wakes, 0);
-  nodeClick(t, '#ml'); nodeClick(t, '#ml');
+  nodeDouble(t, '#ml');
   assert.ok(wakes > 0, 'expanding places the new nodes and redraws');
 });
 
@@ -799,7 +936,7 @@ test('Fit works on a graph too big to spread into one call', async () => {
 for (const [name, trigger] of [
   ['a native update', t => t.renderer.setData(core())],
   ['a toolbar button', t => t.click('Expand all')],
-  ['a double click on a tag', t => { nodeClick(t, '#cs'); nodeClick(t, '#cs'); }],
+  ['a double click on a tag', t => nodeDouble(t, '#cs')],
   ['a refresh', t => t.controller.refresh()],
 ] as [string, (t: Awaited<ReturnType<typeof setup>>) => void][]) {
   test(`${name} that fails to render gives the tab back to the core graph with nothing left pinned`, async () => {
@@ -969,17 +1106,9 @@ test('parent, child and related lists start open', async () => {
 test('choosing a tag in the sidebar centers it in the open graph', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
-  t.suggests[0]!.onChoose('dl');
+  t.suggests[0]!.onChoose('dl'); t.tick(400);
   const node = t.renderer.nodes.find(n => n.id === '#DL')!;
   assert.deepEqual(t.renderer.pans.at(-1), [400 - node.x * t.renderer.scale, 300 - node.y * t.renderer.scale]);
-});
-
-test('clicking a node in the graph keeps the camera where it is', async () => {
-  const t = await setup({ layout: 'tree' });
-  t.controller.attach();
-  const pans = t.renderer.pans.length;
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(t.renderer.pans.length, pans);
 });
 
 test('custom colors give every tag node the tag color and turning them off gives the core colors back', async () => {

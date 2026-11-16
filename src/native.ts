@@ -29,7 +29,7 @@ interface NativeRenderer {
   getHighlightNode: () => unknown;
   worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void }[];
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void; getSize?: () => number }[];
   links: NativeLink[];
 }
 type RendererNode = NativeRenderer['nodes'][number];
@@ -58,7 +58,10 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>;
   mode: '2d' | '3d' | 'explorer'; nativePaused?: boolean; syncModes(): void;
   canvases: Map<'3d' | 'explorer', { root: HTMLElement; graph: Graph3DCanvas | ExplorerCanvas; ready: Promise<void> }>;
-  fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
+  // The tag the last click picked, and when the first press of the current click sequence began.
+  lastTag?: { tag: string; at: number }; firstDown?: number; pressCount: number;
+  press: (event: MouseEvent) => void; double: () => void;
+  fitFrame?: number; stopFit: () => void; stopInput: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -90,7 +93,7 @@ export interface LinkedGraph {
   renamed?(from: string, to: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
-export const DOUBLE_CLICK_MS = 350;
+export const DOUBLE_CLICK_MS = 200;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
 
@@ -139,10 +142,20 @@ class ChoiceModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
+// Screen radius a revealed tag is zoomed to: a small child tag zooms in further than a large parent.
+// A smallest node (8) lands at scale 2, a root with 16 children at about 1.3.
+const REVEAL_SIZE = 16;
+// How long the camera takes to glide to a revealed tag.
+const REVEAL_MS = 350;
+// How long a single click on a 2D node waits for a second click before it moves the camera (Cytoscape's default).
+const SINGLE_CLICK_WAIT_MS = 250;
+const FOLLOW_MS = 2000;
+
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
   private destroyed = false;
+  private centerTimer?: number;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -207,10 +220,12 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, press: () => {}, double: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
-      for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
+      // User input stops a camera move, and a single click's move still waiting to start: it must not override a pan or zoom.
+      session.stopInput = () => { session.stopFit(); window.clearTimeout(this.centerTimer); };
+      for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopInput, { capture: true });
       // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
       // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
       // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
@@ -239,11 +254,31 @@ export class NativeGraphs {
         return this.render(session, first ? 'initial' : 'update');
       };
       r.setData = session.wrapped;
+      // A click acts at once and moves the camera, so the second click of a double click can land off the node. The
+      // browser's dblclick follows the system's double-click time and distance around the first click (like Windows'
+      // double-click rectangle), not what is under the pointer, so it decides the double click here.
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        this.clickTag(tag, this.isDouble(id), leaf);
+        // The second press of a double click belongs to the tag the first one picked; the camera has moved, so it may be on
+        // another node, which must not take the selection. The dblclick that follows handles it.
+        if (session.pressCount >= 2) return;
+        session.lastTag = { tag, at: performance.now() };
+        this.clickTag(tag, false, leaf);
       };
+      session.press = event => {
+        session.pressCount = event.detail;
+        if (event.detail === 1) session.firstDown = performance.now();
+      };
+      view.contentEl.addEventListener('mousedown', session.press, { capture: true });
+      session.double = () => {
+        const last = session.lastTag;
+        // Only a double click whose first click picked a tag.
+        if (!session.active || !last || session.firstDown === undefined || last.at < session.firstDown) return;
+        session.lastTag = undefined;
+        this.clickTag(last.tag, true, leaf);
+      };
+      view.contentEl.addEventListener('dblclick', session.double);
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
@@ -682,10 +717,18 @@ export class NativeGraphs {
   // A click on a dictionary tag in any graph: select it, and on a double click expand or collapse it.
   clickTag(tag: string, double: boolean, leaf?: WorkspaceLeaf) {
     this.activeSession(leaf);
+    window.clearTimeout(this.centerTimer);
     this.leave(() => {
       this.go({ kind: 'tag', tag });
       if (double) this.toggleExpanded(tag, leaf);
       else this.showSelection();
+      // Either click brings the tag to the middle of the graph it was clicked in. Like a single tap that requires a double
+      // tap to fail (UIKit's require(toFail:)), a single click waits to see whether a second click follows, so the node
+      // stays under the pointer for it; a double click moves at once.
+      // Only 2D graph tabs have a session to move; the sidebar comes forward from any graph.
+      const session = leaf && this.sessions.get(leaf);
+      if (session && double) this.centerOn(session, tag);
+      else if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
     });
   }
@@ -731,18 +774,34 @@ export class NativeGraphs {
     }
     this.update({ expanded: [...expanded] }, 'reveal');
     // Center the chosen tag in every open graph; with no graph open there is nothing to move.
-    for (const session of this.sessions.values()) {
-      if (session.mode !== '2d') continue;
-      const id = session.resolved?.idOf.get(tag), r = session.renderer;
-      if (!id) continue;
-      if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); continue; }
-      const center = () => {
-        const node = r.nodes.find(n => n.id === id);
-        if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
-      };
-      center(); this.follow(session, center);
-    }
+    for (const session of this.sessions.values()) this.centerOn(session, tag);
     for (const view of this.linked) if (view.isVisible?.() !== false) view.focusOn(tag);
+  }
+
+  // Moves a tag to the middle of a 2D graph, zoomed in by its node's size.
+  private centerOn(session: Session, tag: string) {
+    if (session.mode !== '2d') return;
+    const id = session.resolved?.idOf.get(tag), r = session.renderer;
+    if (!id) return;
+    if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
+    // One eased camera move: the node glides from where it is to the middle while the zoom goes to where the node is
+    // REVEAL_SIZE on screen. Scale and pan are both set here every frame, so the core graph's own zoom easing never pulls
+    // the other way (after a pinch its targetScale can still hold an older, smaller zoom). It starts from the zoom on screen
+    // and never zooms out. After the move the node stays centered while the force layout settles, and the zoom follows
+    // its size, which changes when expanding changes its links.
+    const ratio = devicePixelRatio, from = r.scale, node0 = r.nodes.find(n => n.id === id);
+    if (!node0) return;
+    const startX = node0.x * from + (r.panX ?? 0), startY = node0.y * from + (r.panY ?? 0);
+    const center = (progress: number) => {
+      const node = r.nodes.find(n => n.id === id);
+      if (!node) return;
+      const size = node.getSize?.(), to = Math.max(from, size ? REVEAL_SIZE / size : from);
+      const t = 1 - (1 - Math.min(1, progress * FOLLOW_MS / REVEAL_MS)) ** 3, scale = from + (to - from) * t;
+      const x = startX + (r.width * ratio / 2 - startX) * t, y = startY + (r.height * ratio / 2 - startY) * t;
+      r.targetScale = scale; r.setScale(scale);
+      r.setPan(x - node.x * scale, y - node.y * scale); r.changed();
+    };
+    this.follow(session, center);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -1210,7 +1269,7 @@ export class NativeGraphs {
 
   // Repeats a move every frame for a while (two seconds while the force layout settles) and passes how far along it is,
   // ending on 1; any user input stops it.
-  private follow(session: Session, move: (progress: number) => void, ms = 2000) {
+  private follow(session: Session, move: (progress: number) => void, ms = FOLLOW_MS) {
     session.stopFit();
     const started = performance.now();
     const frame = () => {
@@ -1244,8 +1303,10 @@ export class NativeGraphs {
     for (const { graph, root } of s.canvases.values()) { graph.unload(); root.remove(); }
     s.canvases.clear();
     s.stopFit();
-    for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
+    for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopInput, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    s.view.contentEl.removeEventListener('mousedown', s.press, { capture: true });
+    s.view.contentEl.removeEventListener('dblclick', s.double);
     s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
@@ -1264,5 +1325,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { this.destroyed = true; for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; window.clearTimeout(this.centerTimer); for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }
