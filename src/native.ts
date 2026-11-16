@@ -987,9 +987,10 @@ export class NativeGraphs {
   // Obsidian's own tag style tells tags apart from buttons and note links.
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
     const asList = this.owner.settings.tagListStyle === 'list';
-    const list = parent.createDiv(asList ? 'tag-ontology-tag-list' : 'tag-ontology-tags');
+    // As a list it is the same bulleted list as the note lists.
+    const list = asList ? parent.createEl('ul') : parent.createDiv('tag-ontology-tags');
     for (const tag of tags) {
-      const link = (asList ? list.createDiv('tag-ontology-tag-row') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
+      const link = (asList ? list.createEl('li') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
       link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }

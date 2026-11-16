@@ -1059,7 +1059,8 @@ test('an empty tag name in the dictionary does not break the all-tags list', asy
 });
 
 test('the tag list style setting shows every tag list as chips or one tag per line', async () => {
-  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.classes.has('tag-ontology-tag-row')).length;
+  // As a list, each tag sits in its own item of a bulleted list, like the note lists.
+  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.tag === 'li' && el.children[0]?.classes.has('tag')).length;
   const chips = await setup();
   assert.equal(rows(chips), 0);
   const list = await setup({ tagListStyle: 'list' });
