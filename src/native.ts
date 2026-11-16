@@ -146,12 +146,15 @@ class ChoiceModal extends Modal {
 const REVEAL_SIZE = 16;
 // How long the camera takes to glide to a revealed tag.
 const REVEAL_MS = 350;
+// How long a single click on a 2D node waits for a second click before it moves the camera (Cytoscape's default).
+const SINGLE_CLICK_WAIT_MS = 250;
 const FOLLOW_MS = 2000;
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
   private destroyed = false;
+  private centerTimer?: number;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -709,14 +712,18 @@ export class NativeGraphs {
   // A click on a dictionary tag in any graph: select it, and on a double click expand or collapse it.
   clickTag(tag: string, double: boolean, leaf?: WorkspaceLeaf) {
     this.activeSession(leaf);
+    window.clearTimeout(this.centerTimer);
     this.leave(() => {
       this.go({ kind: 'tag', tag });
       if (double) this.toggleExpanded(tag, leaf);
       else this.showSelection();
-      // Either click brings the tag to the middle of the graph it was clicked in, right away. The second press of a double
-      // click stops the move the first one started (any press does), so the double click starts it again from where it is.
+      // Either click brings the tag to the middle of the graph it was clicked in. Like a single tap that requires a double
+      // tap to fail (UIKit's require(toFail:)), a single click waits to see whether a second click follows, so the node
+      // stays under the pointer for it; a double click moves at once.
       const session = leaf && this.sessions.get(leaf);
-      if (session) this.centerOn(session, tag);
+      if (!session) return;
+      if (double) this.centerOn(session, tag);
+      else this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
     });
   }
@@ -1311,5 +1318,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { this.destroyed = true; for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; window.clearTimeout(this.centerTimer); for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }

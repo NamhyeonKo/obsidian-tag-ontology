@@ -304,14 +304,22 @@ const nodeDouble = (t: { renderer: { onNodeClick: unknown }; contentEl: Element 
   t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
 };
 
-test('a single click on a tag node centers it right away', async () => {
+test('a single click on a tag node waits for a possible second click, then centers it', async () => {
   const t = await setup(); t.controller.attach();
   // The first fit runs for two seconds; let it finish so it doesn't set the zoom.
   t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
-  nodeClick(t, '#cs'); t.tick(16);
-  assert.ok(t.renderer.scale > 0.2);
-  t.tick(400);
+  nodeClick(t, '#cs'); t.tick(200);
+  assert.equal(t.renderer.scale, 0.2);
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'), 'the selection shows at once');
+  t.tick(100); t.tick(400);
   assert.equal(t.renderer.scale, 2);
+});
+
+test('a double click moves at once and the single-click move never runs', async () => {
+  const t = await setup(); t.controller.attach();
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeDouble(t, '#cs'); t.tick(16);
+  assert.ok(t.renderer.scale > 0.2); assert.ok(t.owner.settings.expanded.includes('cs'));
 });
 
 test('a click selects a dictionary tag without expanding it', async () => {
