@@ -126,6 +126,8 @@
 .tag-ontology-mode { position: absolute; inset: 0; }
 .tag-ontology-mode[hidden] { display: none; }
 .tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
-.tag-ontology-mindmap-change-root { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
+/* Bottom centre, level with the depth legend: the overlay's 12px inset, the status line and a 12px gap put the legend's middle
+   about 60px up, and the 30px button centres there. */
+.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 2; }
 
 .tag-ontology-mindmap-change-root[hidden] { display: none; }
