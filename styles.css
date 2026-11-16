@@ -108,7 +108,7 @@
 /* The fourth layout keeps the core graph's data and toolbar, with an accessible mind map over its canvas. */
 .tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
 .tag-ontology-mindmap-stage { position: absolute; inset: 0; }
-.tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; transform: translate(var(--mindmap-pan-x, 0px), var(--mindmap-pan-y, 0px)) scale(var(--mindmap-zoom, 1)); }
+.tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; }
 .tag-ontology-mindmap-lines { position: absolute; width: 1px; height: 1px; overflow: visible; }
 .tag-ontology-mindmap-lines path { fill: none; stroke: var(--text-faint); stroke-width: 1.2; opacity: 0.45; }
 .tag-ontology-mindmap-lines path.is-related { stroke-dasharray: 5 5; opacity: 0.3; }

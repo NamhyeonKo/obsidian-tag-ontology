@@ -70,7 +70,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.readTheme();
     const { default: cytoscape } = await import('cytoscape');
     if (this.closed) return;
-    const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, style: this.style() });
+    const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, textureOnViewport: true, style: this.style() });
     // The tab can still be laying out when Cytoscape measures its container, and a resized tab needs a new measure too.
     const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);

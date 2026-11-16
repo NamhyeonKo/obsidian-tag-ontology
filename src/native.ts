@@ -51,6 +51,8 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
+  pendingRender?: boolean;
+  staticPositions?: { key: string; positions: Map<string, { x: number; y: number }> };
   choice: Settings['layout']; mindmapExpanded: string[];
   viewports: Map<Settings['layout'], { scale: number; targetScale: number; x: number; y: number; positions: Map<string, { x: number; y: number }> }>;
   toggles: Partial<Record<ToggleKey, HTMLElement>>;
@@ -341,6 +343,10 @@ export class NativeGraphs {
 
   private showMode(session: Session) {
     const explorer = this.explorer;
+    if (session.mode === '2d' && session.pendingRender) {
+      session.pendingRender = false; this.render(session, 'refresh');
+      if (!session.active) return;
+    }
     if (session.mode !== '2d' && !session.nativePaused) {
       session.stopFit(); session.nativePaused = true;
       session.renderer.worker.postMessage({ run: false });
@@ -436,6 +442,8 @@ export class NativeGraphs {
   // Every redraw comes through here: native updates, refreshes and the user's own actions. One that fails can leave the
   // renderer half updated, so only that tab lets go, and the others still draw.
   private render(session: Session, operation: string) {
+    if (session.mode !== '2d') { session.pendingRender = true; return; }
+    session.pendingRender = false;
     try { return this.draw(session, operation); }
     catch (error) { this.fail(session.leaf, error); }
   }
@@ -505,11 +513,20 @@ export class NativeGraphs {
     const r = session.renderer, current = new Set(r.links);
     for (const link of session.links.keys()) if (!current.has(link)) session.links.delete(link);
     for (const link of r.links) {
-      if (session.links.has(link)) continue;
+      const key = edgeKey(link.source.id, link.target.id), saved = session.links.get(link);
+      // Ordinary note links need no per-frame wrapper while Focus is inactive.
+      if (!session.focusIds && !session.kinds.has(key)) {
+        if (saved) {
+          link.render = saved.render;
+          if (link.line && saved.texture) link.line.texture = saved.texture;
+          session.links.delete(link);
+        }
+        continue;
+      }
+      if (saved) continue;
       const original = { render: link.render, texture: link.line?.texture };
       session.links.set(link, original);
       // A link keeps its endpoints, so build the key once instead of on every frame.
-      const key = edgeKey(link.source.id, link.target.id);
       link.render = () => {
         if (!original.texture && link.line) original.texture = link.line.texture;
         const kind = session.kinds.get(key);
@@ -537,6 +554,11 @@ export class NativeGraphs {
     const current = new Set(session.renderer.nodes);
     for (const node of session.nodeRenders.keys()) if (!current.has(node)) session.nodeRenders.delete(node);
     for (const node of session.renderer.nodes) {
+      if (!session.focusIds) {
+        const saved = session.nodeRenders.get(node);
+        if (saved) { node.render = saved; session.nodeRenders.delete(node); }
+        continue;
+      }
       const original = node.render;
       if (!original || session.nodeRenders.has(node)) continue;
       session.nodeRenders.set(node, original);
@@ -555,8 +577,10 @@ export class NativeGraphs {
       .map(parent => [idOf.get(parent)!, idOf.get(tag)!] as [string, string]));
     // Notes are hidden here, so the only other nodes are tags the hierarchy doesn't place; the layout puts them in its corner.
     const outside = r.nodes.map(node => node.id).filter(id => !inTree.has(id));
-    const positions = settings.layout === 'mindmap' ? mindmapPositions(ids, edges, outside)
-      : treePositions(ids, edges, settings.layout === 'tree-horizontal', outside);
+    const key = JSON.stringify([settings.layout, ids, edges, outside]);
+    if (session.staticPositions?.key !== key) session.staticPositions = { key, positions: settings.layout === 'mindmap' ? mindmapPositions(ids, edges, outside)
+      : treePositions(ids, edges, settings.layout === 'tree-horizontal', outside) };
+    const positions = session.staticPositions.positions;
     r.workerResults = null; session.home.clear();
     let moved = false;
     for (const node of r.nodes) {
@@ -700,7 +724,7 @@ export class NativeGraphs {
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
     if (session.choice === 'mindmap') session.mindmap?.paint(tag ? resolved?.idOf.get(tag) : undefined, bright);
     const center = bright ? session.renderer.nodes.find(node => node.id === resolved!.idOf.get(tag!)) : undefined;
-    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; session.renderer.changed(); }
+    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; this.styleLinks(session); this.styleNodes(session); session.renderer.changed(); }
   }
 
   renderPanel() {

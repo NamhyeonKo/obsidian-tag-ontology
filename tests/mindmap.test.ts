@@ -7,6 +7,7 @@ import cytoscape from 'cytoscape';
 import type { MindMapData } from '../src/mindmap.ts';
 
 class Element {
+  style = { transform: '' };
   children: Element[] = []; parent?: Element; classes = new Set<string>(); attrs: Record<string, string> = {};
   text = ''; hidden = false; disabled = false; removed = false;
   events = new Map<string, (event?: { preventDefault(): void }) => void>(); css: Record<string, string> = {};
@@ -32,6 +33,7 @@ class Element {
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
+  let pan = { x: 0, y: 0 };
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
   const node = (id: string) => ({ id: () => id, empty: () => !positions.has(id), nonempty: () => positions.has(id),
@@ -40,7 +42,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   const graph = { on() {}, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
     width: () => width, height: () => height, resize() {}, fit() { fits++; zoom = 2.5; }, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
-    pan: () => ({ x: 0, y: 0 }), animate() {}, destroy() { destroyed = true; } };
+    pan: () => pan, animate() {}, destroy() { destroyed = true; } };
   const context = createContext({ console, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
   } });
@@ -59,9 +61,17 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   if (closeBeforeLoad) map.destroy();
   await settle();
   return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits,
+    viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
 const data: MindMapData = { root: 'root', nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
+
+test('pan and zoom update only the layer transform instead of inherited CSS variables', async () => {
+  const t = await setup(); t.resize(800, 600); t.map.draw(data); t.viewport(25, -40, 1.5);
+  const layer = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-layer'))!;
+  assert.equal(layer.style.transform, 'translate(25px, -40px) scale(1.5)');
+  assert.equal(layer.css['--mindmap-pan-x'], undefined); t.map.destroy();
+});
 
 test('a hidden mind map defers Fit until its pane has a size and permits fitting large maps', async () => {
   const t = await setup(); t.map.draw(data); t.map.fit();
