@@ -906,7 +906,7 @@ export class NativeGraphs {
     }
     panel.createEl('hr');
     for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
-      const details = panel.createEl('details'); details.open = !rollup;
+      const details = panel.createEl('details'); details.open = true;
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
       this.noteLinks(details, paths);
     }
@@ -952,7 +952,7 @@ export class NativeGraphs {
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
       const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
       if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
@@ -960,26 +960,26 @@ export class NativeGraphs {
     if (found) {
       const aliases = groupNonCanonical(found.nonCanonical);
       if (aliases.length) {
-        const details = panel.createEl('details'); details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
         details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
         for (const group of aliases) {
-          const nested = details.createEl('details');
+          const nested = details.createEl('details'); nested.open = true;
           nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
           this.noteLinks(nested, group.notes);
         }
       }
       const broader = groupRedundant(found.redundant);
       if (broader.length) {
-        const details = panel.createEl('details'); details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
         details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
         for (const group of broader) {
-          const nested = details.createEl('details');
+          const nested = details.createEl('details'); nested.open = true;
           nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
           this.noteLinks(nested, group.notes);
         }
       }
     }
-    const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    const unused = panel.createEl('details'); unused.open = true; unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
     this.tagLinks(unused, model.unused);
   }
@@ -987,9 +987,10 @@ export class NativeGraphs {
   // Obsidian's own tag style tells tags apart from buttons and note links.
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
     const asList = this.owner.settings.tagListStyle === 'list';
-    const list = parent.createDiv(asList ? 'tag-ontology-tag-list' : 'tag-ontology-tags');
+    // As a list it is the same bulleted list as the note lists.
+    const list = asList ? parent.createEl('ul') : parent.createDiv('tag-ontology-tags');
     for (const tag of tags) {
-      const link = (asList ? list.createDiv('tag-ontology-tag-row') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
+      const link = (asList ? list.createEl('li') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
       link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }

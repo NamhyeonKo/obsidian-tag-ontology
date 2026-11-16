@@ -1023,6 +1023,8 @@ test('the dictionary check shows similar names, alias spellings and broader tags
   for (const text of ['Similar: #ml', 'Written as an alias or in another case (1)', '#ML → #ml · 1 note', 'Broader tag next to a narrower tag (1)', '#ml · 1 note']) {
     assert.ok(texts.includes(text), text);
   }
+  const closed = t.sidebar.all().filter(el => el.tag === 'details' && !(el as unknown as { open?: boolean }).open);
+  assert.deepEqual(closed.map(el => el.children[0]!.text), [], 'every section of the check starts open');
 });
 
 test('the dictionary check draws no extra sections without findings', async () => {
@@ -1059,7 +1061,8 @@ test('an empty tag name in the dictionary does not break the all-tags list', asy
 });
 
 test('the tag list style setting shows every tag list as chips or one tag per line', async () => {
-  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.classes.has('tag-ontology-tag-row')).length;
+  // As a list, each tag sits in its own item of a bulleted list, like the note lists.
+  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.tag === 'li' && el.children[0]?.classes.has('tag')).length;
   const chips = await setup();
   assert.equal(rows(chips), 0);
   const list = await setup({ tagListStyle: 'list' });
@@ -1108,9 +1111,9 @@ test('the sidebar search expands a tag without an open graph', async () => {
   assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'dl'));
 });
 
-test('parent, child and related lists start open', async () => {
+test('every list in a tag view starts open, notes including descendants too', async () => {
   const t = await setup();
-  const relations = () => t.sidebar.all().filter(el => el.tag === 'details' && /^(Parents|Children|Related) /.test(el.children[0]!.text));
+  const relations = () => t.sidebar.all().filter(el => el.tag === 'details');
   const seen: string[] = [];
   for (const tag of ['ml', 'overfitting']) {
     t.suggests[0]!.onChoose(tag);
@@ -1119,7 +1122,7 @@ test('parent, child and related lists start open', async () => {
       seen.push(list.children[0]!.text.split(' ')[0]!);
     }
   }
-  assert.deepEqual([...new Set(seen)].sort(), ['Children', 'Parents', 'Related']);
+  assert.deepEqual([...new Set(seen)].sort(), ['Children', 'Including', 'Parents', 'Related', 'Tagged']);
 });
 
 test('choosing a tag in the sidebar centers it in the open graph', async () => {

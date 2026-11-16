@@ -37,9 +37,6 @@
 .tag-ontology-panel.tag-ontology-tinted { --tag-ontology-tags: var(--tag-ontology-color); }
 .tag-ontology-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tag-ontology-panel p { line-height: 1.6; }
-.tag-ontology-tag-list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 8px; }
-.tag-ontology-tag-row { display: flex; align-items: baseline; gap: 6px; }
-.tag-ontology-tag-row::before { content: '•'; color: var(--text-faint); }
 /* A long name stays one tag on one line, in either style; the full name shows on hover. */
 .tag-ontology-panel .tag { max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag-ontology-all-letter { margin: 10px 0 2px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }
@@ -49,8 +46,12 @@
 .tag-ontology-panel hr { margin: 12px 0; }
 .tag-ontology-panel ul { margin: 4px 0 12px; padding-left: 18px; }
 .tag-ontology-panel li { padding: 4px 0; overflow-wrap: anywhere; }
-.tag-ontology-panel li a { cursor: pointer; text-decoration: none; color: var(--text-normal); }
-.tag-ontology-panel li a:hover { color: var(--text-accent); text-decoration: underline; }
+/* Tags keep their tag look inside a list. */
+.tag-ontology-panel li .tag { display: inline-block; vertical-align: middle; }
+/* Tags sit closer than notes, so a long tag list stays compact. */
+.tag-ontology-panel li:has(> .tag) { padding: 1px 0; }
+.tag-ontology-panel li a:not(.tag) { cursor: pointer; text-decoration: none; color: var(--text-normal); }
+.tag-ontology-panel li a:not(.tag):hover { color: var(--text-accent); text-decoration: underline; }
 /* The 3D view: the WebGL canvas fills the tab under the same toolbar and status line as 2D. */
 .tag-ontology-3d { position: relative; padding: 0; overflow: hidden; }
 .tag-ontology-3d-stage { position: absolute; inset: 0; }
