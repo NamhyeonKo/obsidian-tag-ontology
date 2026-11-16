@@ -322,6 +322,15 @@ test('a tag clicked in a graph tab without a 2D session still brings the sidebar
   assert.ok(t.sideCalls.length > calls);
 });
 
+test('scrolling before a single click starts its move cancels the move', async () => {
+  const t = await setup(); t.controller.attach();
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeClick(t, '#cs'); t.tick(100);
+  t.contentEl.events.get('wheel')!({});
+  t.tick(300); t.tick(400);
+  assert.equal(t.renderer.scale, 0.2);
+});
+
 test('a double click moves at once and the single-click move never runs', async () => {
   const t = await setup(); t.controller.attach();
   t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
