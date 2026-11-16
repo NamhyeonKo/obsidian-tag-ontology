@@ -30,8 +30,9 @@
 /* Too short for the toolbar column above the actions row (388px of buttons, plus the row and status line): the toolbar
    becomes a row along the top, wrapping when narrow and clear of the settings buttons on the right. */
 @container (max-height: 480px) {
-  .tag-ontology-tools { flex-direction: row; flex-wrap: wrap; align-items: center; margin-right: 48px; }
-  .tag-ontology-layouts { flex-direction: row; }
+  .tag-ontology-tools { flex-direction: row; flex-wrap: wrap; align-items: center; align-content: flex-start; margin-right: 48px; }
+  /* The mode group may narrow to one button and wrap its buttons, so it fits in a narrow pane too. */
+  .tag-ontology-tools > .tag-ontology-layouts { flex: 0 1 auto; min-width: 34px; flex-direction: row; flex-wrap: wrap; }
   .tag-ontology-separator { width: 1px; height: 20px; margin: 0; }
 }
 .tag-ontology-nav { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
