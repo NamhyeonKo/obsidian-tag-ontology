@@ -149,6 +149,6 @@
 .tag-ontology-mode { position: absolute; inset: 0; }
 .tag-ontology-mode[hidden] { display: none; }
 .tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
-/* The mind map's Change starting tag joins the view actions row after a divider. */
-.tag-ontology-change-root { position: relative; margin-left: 8px; }
-.tag-ontology-change-root::before { content: ''; position: absolute; left: -9px; top: 7px; bottom: 7px; width: 1px; background: var(--background-modifier-border); }
+/* The mind map's Change starting tag and the explorer's Clear canvas join the view actions row after a divider. */
+.tag-ontology-after-divider { position: relative; margin-left: 8px; }
+.tag-ontology-after-divider::before { content: ''; position: absolute; left: -9px; top: 7px; bottom: 7px; width: 1px; background: var(--background-modifier-border); }

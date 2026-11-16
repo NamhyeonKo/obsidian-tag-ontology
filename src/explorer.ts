@@ -60,9 +60,20 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
+    // The same buttons in the same places as the graph modes, so switching modes moves nothing; the ones the explorer has no
+    // use for stay disabled.
+    const unused = (button: HTMLElement) => { button.setAttribute('aria-disabled', 'true'); return button; };
+    unused(this.button(actions, 'chevrons-down-up', 'Not used in the ontology explorer', () => {}, 'top'));
+    unused(this.button(actions, 'chevrons-up-down', 'Not used in the ontology explorer', () => {}, 'top'));
     this.button(actions, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
-    // A group the sidebar shows goes with the canvas, so the sidebar draws again.
-    this.button(actions, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top');
+    // Clearing the canvas brings back the start screen, like the mind map's Change starting tag. A group the sidebar shows goes
+    // with the canvas, so the sidebar draws again.
+    this.button(actions, 'home', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
+      .addClass('tag-ontology-after-divider');
+    for (const icon of ['file-text', 'link']) unused(this.button(tools, icon, 'Not used in the ontology explorer', () => {})).addClass('tag-ontology-toggle');
+    tools.createDiv('tag-ontology-separator');
+    this.button(tools, 'book-open-check', 'Dictionary check', () => this.owner.native.checkDictionary());
+    tools.createDiv('tag-ontology-separator');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.buildStart(root);
     this.measurer = createEl('canvas').getContext('2d') ?? undefined;

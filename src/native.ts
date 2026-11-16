@@ -293,7 +293,7 @@ export class NativeGraphs {
         session.mindmapRoot = undefined;
         this.update({ expanded: [] }, 'mindmap-root', session);
       }, 'top');
-      session.changeRoot.addClass('tag-ontology-change-root');
+      session.changeRoot.addClass('tag-ontology-after-divider');
       for (const [key, icon, name] of TOGGLES) {
         session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && session.choice !== 'force') return;
