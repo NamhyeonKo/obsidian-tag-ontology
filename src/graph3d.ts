@@ -7,7 +7,7 @@ import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMateria
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import { DOUBLE_CLICK_MS, type LinkedGraph } from './native.ts';
-import { FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
+import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
 import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
@@ -634,6 +634,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
           this.applyForces(); this.graph?.d3ReheatSimulation(); save();
         }); }).settingEl.addClass('mod-slider');
     }
+    new Setting(forces).addButton(button => button.setButtonText('Restore defaults').onClick(() => {
+      owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
+      for (const [key, component] of sliders) component.setValue(owner.settings.forces3d[key]);
+      this.applyForces(); this.graph?.d3ReheatSimulation(); save();
+    }));
     // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
     open.addEventListener('click', () => {
       toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
