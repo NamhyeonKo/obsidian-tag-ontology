@@ -318,7 +318,7 @@ test('a single click on a tag node waits for a possible second click, then cente
 test('a tag clicked in a graph tab without a 2D session still brings the sidebar forward', async () => {
   const t = await setup(); t.controller.attach();
   const calls = t.sideCalls.length;
-  t.controller.clickTag('cs', false, {} as never);
+  (t.controller.clickTag as (...args: unknown[]) => void)('cs', false, {});
   assert.ok(t.sideCalls.length > calls);
 });
 
