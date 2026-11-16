@@ -139,6 +139,9 @@ class ChoiceModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
+// About the scale Obsidian's local graph opens at.
+const REVEAL_SCALE = 1;
+
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
@@ -736,6 +739,9 @@ export class NativeGraphs {
       const id = session.resolved?.idOf.get(tag), r = session.renderer;
       if (!id) continue;
       if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); continue; }
+      // Zoom in to about the local graph's scale; the core renderer eases toward targetScale and center() follows it each frame.
+      // A view already closer stays as it is.
+      if (r.targetScale < REVEAL_SCALE) r.targetScale = REVEAL_SCALE;
       const center = () => {
         const node = r.nodes.find(n => n.id === id);
         if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }

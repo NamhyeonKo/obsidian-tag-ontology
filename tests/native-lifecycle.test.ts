@@ -546,6 +546,16 @@ test('choosing a suggestion reveals the tag', async () => {
   assert.ok(t.ids().includes('#DL'));
 });
 
+test('revealing a tag zooms a far-out graph in to the local graph scale but never zooms out', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('dl');
+  assert.equal(t.renderer.targetScale, 1);
+  t.renderer.scale = t.renderer.targetScale = 3;
+  t.suggests[0]!.onChoose('ml');
+  assert.equal(t.renderer.targetScale, 3);
+});
+
 test('the suggestion source is the model', async () => {
   const t = await setup();
   t.controller.attach();
