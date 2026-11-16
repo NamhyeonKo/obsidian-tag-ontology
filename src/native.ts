@@ -1005,7 +1005,7 @@ export class NativeGraphs {
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
     const asList = this.owner.settings.tagListStyle === 'list';
     // As a list it is the same bulleted list as the note lists.
-    const list = asList ? parent.createEl('ul') : parent.createDiv('tag-ontology-tags');
+    const list = asList ? parent.createEl('ul', { cls: 'tag-ontology-tag-list' }) : parent.createDiv('tag-ontology-tags');
     for (const tag of tags) {
       const link = (asList ? list.createEl('li') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
