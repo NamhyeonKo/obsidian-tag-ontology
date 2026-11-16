@@ -585,7 +585,8 @@ test('turning a tree mode off hides its button and moves a tab in it back to for
   const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: Vertical tree')!;
   t.click('Layout: Vertical tree'); await settle();
   assert.equal(t.controller.graphMode(t.leaves[0]), 'tree');
-  t.owner.settings.enableTree = false; t.owner.settings.layout = 'force'; t.controller.refresh();
+  // Another tab picked the mind map last, so the shared layout is mind map; this tab still goes to force.
+  t.owner.settings.enableTree = false; t.owner.settings.layout = 'mindmap'; t.controller.refresh();
   assert.equal(button.hidden, true); assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
   t.click('Layout: Vertical tree'); await settle();
   assert.equal(t.controller.graphMode(t.leaves[0]), 'force');

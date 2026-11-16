@@ -298,8 +298,8 @@ export class NativeGraphs {
         entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
         if (session.mode === mode) session.mode = '2d';
       }
-      // settings.layout is already back on force; a tab showing a turned-off tree follows it.
-      if (!modeEnabled(settings, session.choice)) { session.choice = settings.layout; if (session.mode === '2d') this.render(session, 'layout'); }
+      // A tab showing a turned-off tree goes to force, whatever layout another tab picked last.
+      if (!modeEnabled(settings, session.choice)) { session.choice = 'force'; if (session.mode === '2d') this.render(session, 'layout'); }
       this.showMode(session);
     }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
