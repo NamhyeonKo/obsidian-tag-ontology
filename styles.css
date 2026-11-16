@@ -128,6 +128,8 @@
 .tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
 /* Bottom centre, level with the depth legend: the overlay's 12px inset, the status line and a 12px gap put the legend's middle
    about 60px up, and the 30px button centres there. */
-.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 2; }
+.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 2; cursor: pointer; transition: color 120ms, box-shadow 120ms, background-color 120ms; }
+/* The pointer over the button, and only there, shows in the button itself. */
+.tag-ontology-mindmap-change-root:hover { background-color: var(--interactive-hover); color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent); }
 
 .tag-ontology-mindmap-change-root[hidden] { display: none; }
