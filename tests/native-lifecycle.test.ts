@@ -174,6 +174,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.evaluate();
   const NativeGraphs = (module.namespace as { NativeGraphs: new(owner: object) => Controller }).NativeGraphs;
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
+  const renderSources = new Map<object, () => void>();
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
@@ -187,11 +188,13 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       forwarded.push(data);
       this.nodes = Object.keys(data.nodes).map(id => {
         const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
+        renderSources.set(node, node.render!);
         return node;
       });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
           render() { link.arrows = renderer.fShowArrow; link.seen = renderer.getHighlightNode(); } };
+        renderSources.set(link, link.render);
         return link;
       }));
     },
@@ -252,7 +255,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     leaves.push({ view: { renderer: tab, contentEl: tabEl, getViewType: () => 'graph', update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus, canvases, delayCanvas: (ready: Promise<void>) => { canvasReady = ready; } };
+  return { controller, renderer, renderSources, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus, canvases, delayCanvas: (ready: Promise<void>) => { canvasReady = ready; } };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -330,6 +333,24 @@ test('tree layout keeps the user zoom across native updates and refits only when
   const shown = t.layoutButtons().filter(el => el.classes.has('is-active'));
   assert.deepEqual(shown.map(el => el.attrs['aria-label']), ['Layout: Horizontal tree'], 'the toolbar shows a layout changed in settings');
   assert.equal(shown[0]!.attrs['aria-pressed'], 'true');
+});
+
+test('unchanged static graph shapes reuse layout positions across metadata refreshes', async () => {
+  const t = await setup({ layout: 'tree' }); t.controller.attach();
+  const calls = layoutOutside.length;
+  t.controller.refresh(); t.controller.refresh();
+  assert.equal(layoutOutside.length, calls);
+  t.controller.expandAll(); assert.equal(layoutOutside.length, calls + 1);
+});
+
+test('native drawing is deferred while embedded modes are active and flushed on return', async () => {
+  const t = await setup(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  const draws = t.forwarded.length;
+  t.controller.refresh(); t.controller.refresh();
+  assert.equal(t.forwarded.length, draws);
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.equal(t.forwarded.length, draws + 1);
 });
 
 test('notes and related toggles start from settings and persist', async () => {
@@ -768,6 +789,7 @@ for (const [name, trigger] of [
     keepNodes(t.renderer);
     const coreSetData = t.renderer.setData;
     t.controller.attach();
+    t.owner.model = new Ontology({ ...raw, cs: { description: '', broader: ['sec'] } }, []);
     layoutFails = 1;
     try { assert.doesNotThrow(() => trigger(t)); } finally { layoutFails = 0; }
     assert.equal(t.renderer.setData, coreSetData);
@@ -1004,6 +1026,20 @@ test('with custom colors the sidebar tags take the tag color, and the sidebar ti
   assert.ok(panel.classes.has('tag-ontology-tinted'), 'the tags keep matching the graph');
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
+});
+
+test('Force leaves native node and note-link renderers untouched until Focus has a selection', async () => {
+  const t = await setup({ focus: true, expanded: ['cs', 'ml'] }); t.controller.attach();
+  const unchanged = () => {
+    for (const node of t.renderer.nodes) assert.equal(node.render, t.renderSources.get(node));
+    const note = t.renderer.links.find(l => l.source.id === 'A.md' && l.target.id === 'B.md')!;
+    assert.equal(note.render, t.renderSources.get(note));
+  };
+  unchanged();
+  nodeClick(t, '#cs');
+  assert.ok(t.renderer.nodes.every(node => node.render !== t.renderSources.get(node)), 'selection enables Focus drawing');
+  t.click('Home');
+  unchanged();
 });
 
 test('focus fades everything but the selected tag, the tags next to it and the chosen branch', async () => {

@@ -168,7 +168,7 @@ export class MindMap {
   private transform(): void {
     if (!this.cy) return;
     const pan = this.cy.pan();
-    this.layer.setCssProps({ '--mindmap-pan-x': `${pan.x}px`, '--mindmap-pan-y': `${pan.y}px`, '--mindmap-zoom': String(this.cy.zoom()) });
+    this.layer.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${this.cy.zoom()})`;
   }
   destroy(): void { this.closed = true; this.resize.disconnect(); this.suggest.close(); this.cy?.destroy(); this.cards.clear(); this.el.remove(); }
 }

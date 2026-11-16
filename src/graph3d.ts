@@ -88,8 +88,12 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private lines?: LineSegments<BufferGeometry, LineBasicMaterial>; private dashes?: LineSegments<BufferGeometry, LineDashedMaterial>;
   private arrows?: InstancedMesh<ConeGeometry, MeshLambertMaterial>; private cone?: ConeGeometry; private arrowMaterial?: MeshLambertMaterial;
   private solid: Link3D[] = []; private related: Link3D[] = []; private pointed: Link3D[] = [];
+  private linkPositions = new Float64Array(0);
+  private linksDirty = true;
+  private arrowTransform?: Object3D; private arrowUp?: Vector3; private arrowDirection?: Vector3;
 
   private visible = false;
+  private pendingDraw?: string;
   private syncModes = () => {};
   private get app() { return this.owner.app; }
   constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
@@ -172,6 +176,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.resize = new ResizeObserver(() => {
       const width = this.stage?.clientWidth ?? 0, height = this.stage?.clientHeight ?? 0;
       if (!this.visible || !width || !height) { graph.pauseAnimation(); return; }
+      this.flushDraw();
       graph.width(width).height(height).resumeAnimation();
     });
     this.resize.observe(this.stage);
@@ -192,12 +197,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   setVisible(visible: boolean) {
     this.visible = visible;
+    this.flushDraw();
     if (visible && this.stage?.clientWidth && this.stage.clientHeight) this.graph?.width(this.stage.clientWidth).height(this.stage.clientHeight).resumeAnimation();
     else this.graph?.pauseAnimation();
     this.syncModes();
   }
 
   isVisible() { return this.visible && this.contentEl.isShown(); }
+
+  private flushDraw() {
+    if (!this.pendingDraw || !this.isVisible()) return;
+    const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
+  }
 
   // The WebGL context and GPU resources go with the graph tab.
   onunload(): void {
@@ -223,6 +234,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   draw(operation: string) {
     this.syncModes();
+    if (!this.isVisible()) { this.pendingDraw = this.pendingDraw === 'refresh' || operation === 'refresh' ? 'refresh' : operation; return; }
     const graph = this.graph, model = this.owner.model, settings = this.owner.settings;
     if (!graph || !this.status) return;
     if (this.legend) renderDepthLegend(this.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
@@ -389,6 +401,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.arrows = new three.InstancedMesh(this.cone, this.arrowMaterial, Math.max(1, this.pointed.length));
     this.arrows.count = this.pointed.length; this.arrows.frustumCulled = false;
     scene.add(this.arrows);
+    this.linksDirty = true;
     this.placeLinks();
   }
 
@@ -396,17 +409,30 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private placeLinks() {
     const three = this.three, arrows = this.arrows;
     if (!three || !arrows) return;
+    let changed = this.linksDirty;
+    if (this.linkPositions.length !== this.nodes.size * 3) { this.linkPositions = new Float64Array(this.nodes.size * 3); changed = true; }
+    let offset = 0;
+    for (const node of this.nodes.values()) {
+      const x = node.x ?? 0, y = node.y ?? 0, z = node.z ?? 0;
+      if (this.linkPositions[offset] !== x || this.linkPositions[offset + 1] !== y || this.linkPositions[offset + 2] !== z) changed = true;
+      this.linkPositions[offset++] = x; this.linkPositions[offset++] = y; this.linkPositions[offset++] = z;
+    }
+    // Orbit and zoom move the camera, not the links; reuse their GPU buffers until nodes move.
+    if (!changed) return;
+    this.linksDirty = false;
     const at = (end: string | Node3D) => (typeof end === 'string' ? this.nodes.get(end) : end) ?? { x: 0, y: 0, z: 0, radius: 0 };
     for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
       const position = object.geometry.getAttribute('position') as InstanceType<Three['BufferAttribute']>, values = position.array as Float32Array;
       list.forEach((link, index) => {
         const from = at(link.source), to = at(link.target);
-        values.set([from.x ?? 0, from.y ?? 0, from.z ?? 0, to.x ?? 0, to.y ?? 0, to.z ?? 0], index * 6);
+        const offset = index * 6;
+        values[offset] = from.x ?? 0; values[offset + 1] = from.y ?? 0; values[offset + 2] = from.z ?? 0;
+        values[offset + 3] = to.x ?? 0; values[offset + 4] = to.y ?? 0; values[offset + 5] = to.z ?? 0;
       });
       position.needsUpdate = true;
     }
     if (this.related.length) this.dashes!.computeLineDistances();
-    const placed = new three.Object3D(), up = new three.Vector3(0, 1, 0), direction = new three.Vector3();
+    const placed = this.arrowTransform ??= new three.Object3D(), up = this.arrowUp ??= new three.Vector3(0, 1, 0), direction = this.arrowDirection ??= new three.Vector3();
     this.pointed.forEach((link, index) => {
       const from = at(link.source), to = at(link.target);
       const arrow = arrowAt({ x: from.x ?? 0, y: from.y ?? 0, z: from.z ?? 0 }, { x: to.x ?? 0, y: to.y ?? 0, z: to.z ?? 0 }, to.radius, ARROW);
