@@ -1,7 +1,7 @@
 import { MindMap, type MindMapData } from './mindmap.ts';
 import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
-import { graphModeBar, type GraphMode } from './graph-modes.ts';
+import { graphModeBar, modeEnabled, type GraphMode } from './graph-modes.ts';
 import { Graph3DCanvas } from './graph3d.ts';
 import { ExplorerCanvas } from './explorer.ts';
 import { ItemView, Modal, Notice, TFile, setIcon, setTooltip, type App, type WorkspaceLeaf } from 'obsidian';
@@ -298,6 +298,8 @@ export class NativeGraphs {
         entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
         if (session.mode === mode) session.mode = '2d';
       }
+      // A tab showing a turned-off tree goes to force, whatever layout another tab picked last.
+      if (!modeEnabled(settings, session.choice)) { session.choice = 'force'; if (session.mode === '2d') this.render(session, 'layout'); }
       this.showMode(session);
     }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
@@ -330,7 +332,7 @@ export class NativeGraphs {
       return;
     }
     if (mode === '2d') mode = session.choice;
-    if (mode === '3d' && !this.owner.settings.enable3d || mode === 'explorer' && !this.owner.settings.enableExplorer) return;
+    if (!modeEnabled(this.owner.settings, mode)) return;
     this.current = session;
     session.stopFit();
     if (mode !== '3d' && mode !== 'explorer') {

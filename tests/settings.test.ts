@@ -23,7 +23,7 @@ test('sanitizes saved settings to the supported fields', () => {
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
-    perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
+    perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
     forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 },
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
@@ -87,6 +87,14 @@ test('the explorer is on by default and only a saved false turns it off', () => 
   assert.equal(DEFAULT_SETTINGS.enableExplorer, true);
   assert.equal(sanitizeSettings({ enableExplorer: false }, '.obsidian').enableExplorer, false);
   for (const enableExplorer of ['no', 0, undefined]) assert.equal(sanitizeSettings({ enableExplorer }, '.obsidian').enableExplorer, true);
+});
+
+test('tree modes are on by default and a turned-off tree layout falls back to force', () => {
+  assert.equal(DEFAULT_SETTINGS.enableTree, true); assert.equal(DEFAULT_SETTINGS.enableTreeHorizontal, true);
+  assert.equal(sanitizeSettings({ enableTree: false, layout: 'tree' }, '.obsidian').layout, 'force');
+  assert.equal(sanitizeSettings({ enableTree: false, layout: 'radial' }, '.obsidian').layout, 'force');
+  assert.equal(sanitizeSettings({ enableTreeHorizontal: false, layout: 'tree-horizontal' }, '.obsidian').layout, 'force');
+  assert.equal(sanitizeSettings({ enableTreeHorizontal: false, layout: 'tree' }, '.obsidian').layout, 'tree');
 });
 
 test('the 3D view is on by default and only a saved false turns it off', () => {
