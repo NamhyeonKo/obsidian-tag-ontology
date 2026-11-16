@@ -1051,6 +1051,13 @@ test('the sidebar lists the root tags, then every tag in order under its first l
   assert.deepEqual(letters, [...new Set(all.map(tag => tag[0].toUpperCase()))]);
 });
 
+test('an empty tag name in the dictionary does not break the all-tags list', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology({ '': { description: '' }, cs: { description: '', broader: [] } }, []);
+  assert.doesNotThrow(() => t.controller.refresh());
+  assert.deepEqual(tagLinks(t.sidebar).slice(-2), ['#', '#cs']);
+});
+
 test('the tag list style setting shows every tag list as chips or one tag per line', async () => {
   const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.classes.has('tag-ontology-tag-row')).length;
   const chips = await setup();

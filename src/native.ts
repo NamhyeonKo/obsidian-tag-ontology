@@ -857,7 +857,8 @@ export class NativeGraphs {
     // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
     const groups = new Map<string, string[]>();
     for (const tag of tags) {
-      const letter = /\d/.test(tag[0]) ? '0–9' : tag[0].toUpperCase();
+      // charAt, not [0]: the dictionary loads an empty name with only a warning.
+      const first = tag.charAt(0), letter = /\d/.test(first) ? '0–9' : first.toUpperCase();
       if (!groups.has(letter)) groups.set(letter, []);
       groups.get(letter)!.push(tag);
     }
