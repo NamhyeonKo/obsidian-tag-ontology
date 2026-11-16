@@ -1043,9 +1043,12 @@ test('a sidebar mounted before the first dictionary load does not claim the dict
   assert.equal(navButton(t, 'New tag').disabled, false);
 });
 
-test('the sidebar lists the root tags until a tag is chosen', async () => {
+test('the sidebar lists the root tags, then every tag in order under its first letter, until a tag is chosen', async () => {
   const t = await setup();
-  assert.deepEqual(tagLinks(t.sidebar), model.roots.map(tag => '#' + tag));
+  const all = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(tagLinks(t.sidebar), [...model.roots, ...all].map(tag => '#' + tag));
+  const letters = t.sidebar.all().filter(el => el.classes.has('tag-ontology-all-letter')).map(el => el.text);
+  assert.deepEqual(letters, [...new Set(all.map(tag => tag[0].toUpperCase()))]);
 });
 
 test('attaching to a graph never creates the sidebar tab on its own', async () => {

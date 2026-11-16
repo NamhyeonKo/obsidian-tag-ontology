@@ -34,6 +34,13 @@
 .tag-ontology-panel.tag-ontology-tinted { --tag-ontology-tags: var(--tag-ontology-color); }
 .tag-ontology-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tag-ontology-panel p { line-height: 1.6; }
+.tag-ontology-all { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 12px; }
+.tag-ontology-all-row { display: flex; align-items: baseline; gap: 6px; }
+/* A long name stays one pill on one line; the full name shows on hover. */
+.tag-ontology-all-row .tag { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag-ontology-all-row::before { content: '•'; color: var(--text-faint); }
+.tag-ontology-all-letter { margin: 10px 0 2px; font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); }
+.tag-ontology-all-letter:first-child { margin-top: 0; }
 .tag-ontology-panel h4 { margin: 18px 0 12px; font-size: var(--font-ui-small); }
 .tag-ontology-panel summary { cursor: pointer; padding: 7px 0; }
 .tag-ontology-panel hr { margin: 12px 0; }
