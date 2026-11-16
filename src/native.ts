@@ -98,10 +98,20 @@ export const DOUBLE_CLICK_MS = 200;
 const FADED = { id: '\0focus' };
 
 // How far in from each side of a graph view the controls drawn over it reach, in CSS pixels plus a gap: the toolbar column on
-// the left with the legend under it, the view actions row and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
+// the left (a row along the top in a short pane) with the legend under it, the view actions row and status line at the bottom,
+// and the settings buttons or panel on the right. Fits use the rest.
 export function coveredEdges(view: HTMLElement) {
-  const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *, .tag-ontology-legend'))) {
+  const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, top: 0, bottom: 0 };
+  for (const tools of Array.from(view.querySelectorAll('.tag-ontology-tools'))) {
+    const row = getComputedStyle(tools).flexDirection === 'row';
+    for (const el of Array.from(tools.children)) {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width) continue;
+      if (row) edge.top = Math.max(edge.top, rect.bottom - box.top + gap);
+      else edge.left = Math.max(edge.left, rect.right - box.left + gap);
+    }
+  }
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-legend'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
   }
@@ -1320,10 +1330,10 @@ export class NativeGraphs {
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
     // The graph fits in the space the toolbar, legend, status line and the core settings buttons leave uncovered.
-    const edge = coveredEdges(session.view.contentEl), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.bottom);
+    const edge = coveredEdges(session.view.contentEl), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.top - edge.bottom);
     const scale = Math.min(1.4, width * devicePixelRatio / (right - left + 220), height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
-    r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, height / 2 * devicePixelRatio - (top + bottom) / 2 * scale);
+    r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, (edge.top + height / 2) * devicePixelRatio - (top + bottom) / 2 * scale);
     r.changed();
   }
 
