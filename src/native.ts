@@ -720,10 +720,10 @@ export class NativeGraphs {
       // Either click brings the tag to the middle of the graph it was clicked in. Like a single tap that requires a double
       // tap to fail (UIKit's require(toFail:)), a single click waits to see whether a second click follows, so the node
       // stays under the pointer for it; a double click moves at once.
+      // Only 2D graph tabs have a session to move; the sidebar comes forward from any graph.
       const session = leaf && this.sessions.get(leaf);
-      if (!session) return;
-      if (double) this.centerOn(session, tag);
-      else this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
+      if (session && double) this.centerOn(session, tag);
+      else if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
     });
   }
