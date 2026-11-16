@@ -503,6 +503,8 @@ const FOCUS_SCOPE = [
 ] as const;
 const COLOR_MODE = { name: 'Color mode', desc: 'Choose how tags are colored.' };
 const TAG_COLOR = { name: 'Tag color', desc: 'Uses the accent color until you pick one.' };
+const TAG_LIST_STYLE = { name: 'Tag lists', desc: 'Show tags in the sidebar as chips or one per line.' };
+const TAG_LIST_OPTIONS = { chips: 'Chips', list: 'List' };
 const TITLE = { name: 'Colored sidebar titles', desc: 'Use the selected tag’s color for its title.' };
 
 class PaletteNameModal extends Modal {
@@ -582,6 +584,9 @@ class OntologySettingsTab extends PluginSettingTab {
         // A plain color control has no way back to following the accent, so this row is drawn by hand.
         { ...TAG_COLOR, name: this.tagColorName(), visible: custom, render: setting => { this.tagColor(setting); } },
         { ...TITLE, visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
+      ] },
+      { type: 'group', heading: 'Sidebar', items: [
+        { ...TAG_LIST_STYLE, control: { type: 'dropdown', key: 'tagListStyle', defaultValue: DEFAULT_SETTINGS.tagListStyle, options: TAG_LIST_OPTIONS } },
       ] },
       { type: 'group', heading: 'Focus', items: [
         { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
@@ -780,6 +785,10 @@ class OntologySettingsTab extends PluginSettingTab {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));
     for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
+    new Setting(containerEl).setName('Sidebar').setHeading();
+    new Setting(containerEl).setName(TAG_LIST_STYLE.name).setDesc(TAG_LIST_STYLE.desc).addDropdown((dropdown) => {
+      dropdown.addOption('chips', TAG_LIST_OPTIONS.chips).addOption('list', TAG_LIST_OPTIONS.list).setValue(this.owner.settings.tagListStyle).onChange(value => this.setControlValue('tagListStyle', value));
+    });
     new Setting(containerEl).setName('Focus').setHeading();
     const scope: Setting[] = [];
     new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {

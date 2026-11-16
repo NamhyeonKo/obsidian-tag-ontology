@@ -22,7 +22,7 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.deepEqual(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', layout: 'tree', expanded: ['a', 'a', 3, 'b'],
     showNotes: false, showRelated: 'x', notes: ['private'] }, '.obsidian'), {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
-    customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+    customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, tagListStyle: 'chips', focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
     forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 },
   });
@@ -35,6 +35,8 @@ test('sanitizes saved settings to the supported fields', () => {
   assert.equal(sanitizeSettings({ dictionaryPath: 'Tag-Dictionary.json' }, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: false }, '.obsidian').dictionaryPathExplicit, false);
   assert.equal(sanitizeSettings({ titleAccent: false }, '.obsidian').titleAccent, false);
+  assert.equal(sanitizeSettings({ tagListStyle: 'list' }, '.obsidian').tagListStyle, 'list');
+  assert.equal(sanitizeSettings({ tagListStyle: 'grid' }, '.obsidian').tagListStyle, 'chips');
   assert.equal(sanitizeSettings({ focus: true }, '.obsidian').focus, true);
   assert.deepEqual(sanitizeSettings({ focusDescendants: false, focusNotes: 'x', focusAncestors: true }, '.obsidian'), { ...DEFAULT_SETTINGS, focusDescendants: false });
   assert.deepEqual(sanitizeSettings({ customColors: true, tagColor: '#12AB3c' }, '.obsidian'), { ...DEFAULT_SETTINGS, customColors: true, tagColor: '#12AB3c' });

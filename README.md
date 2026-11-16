@@ -133,9 +133,9 @@ Then try the sidebar tab: press **+** to add a tag of your own under `machine-le
 
 **Open tag ontology** (the book ribbon icon or the **Open graph** command) opens the graph and brings a **Tag dictionary** tab forward in the left sidebar, next to Files and Search. Clicking a tag in the graph or **Dictionary check** brings it forward too. You can drag the tab to the right sidebar.
 
-- **The bar at the top** has back, forward and home (the root tags) on the left, and **New tag**, **Edit tag** and a button that expands or collapses the tag in the graph on the right.
+- **The bar at the top** has back, forward and home (the root tags and every tag) on the left, and **New tag**, **Edit tag** and a button that expands or collapses the tag in the graph on the right.
 - **Search tags or aliases**: type part of a tag name or alias and choose a suggestion with a click or Enter. An alias match shows the alias under the tag, so `convolution` or `합성곱` can find `cnn`. The graph expands down to the chosen tag and centers it.
-- With no tag chosen, the tab lists the root tags.
+- With no tag chosen, the tab lists the root tags, then every tag in alphabetical order under its first letter. The bar and search box stay in place while the list scrolls.
 - A tag shows its description, aliases, note counts (direct and including descendants), its parents, children and related tags as `#tag` links, and its notes. Click a `#tag` to move to it.
 
 ### Editing the dictionary
@@ -218,6 +218,8 @@ Settings use the same section and item order on Obsidian 1.13+ and earlier versi
 | &nbsp;&nbsp;My palettes | Save as… opens a name field; Manage… lists palettes for confirmed deletion. Deleting the active palette switches to Default and preserves the working copy. Duplicate names are rejected. |
 | &nbsp;&nbsp;Tag color / Color for tags outside the hierarchy | Base color in Single color mode, or fallback for tags outside the hierarchy in Hierarchy depth mode. Follows the accent until picked; reset returns to the accent. |
 | &nbsp;&nbsp;Colored sidebar titles | Use the selected tag's color for its sidebar title. |
+| **Sidebar** | |
+| Tag lists | Show tags in the sidebar (root tags, all tags, parents, children and related tags) as wrapped chips or one per line. Chips by default. |
 | **Focus** | |
 | Keep the selected tag focused | Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest. The selected tag and its links look hovered. Off by default. Turn it on to show the options below. |
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |

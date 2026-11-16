@@ -1051,6 +1051,15 @@ test('the sidebar lists the root tags, then every tag in order under its first l
   assert.deepEqual(letters, [...new Set(all.map(tag => tag[0].toUpperCase()))]);
 });
 
+test('the tag list style setting shows every tag list as chips or one tag per line', async () => {
+  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.classes.has('tag-ontology-tag-row')).length;
+  const chips = await setup();
+  assert.equal(rows(chips), 0);
+  const list = await setup({ tagListStyle: 'list' });
+  assert.equal(rows(list), tagLinks(list.sidebar).length);
+  assert.deepEqual(tagLinks(list.sidebar), tagLinks(chips.sidebar));
+});
+
 test('attaching to a graph never creates the sidebar tab on its own', async () => {
   // After a plugin reload Obsidian restores the tab late; creating one here would duplicate it.
   const t = await setup();

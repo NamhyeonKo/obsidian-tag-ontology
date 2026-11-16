@@ -854,19 +854,17 @@ export class NativeGraphs {
     panel.createEl('hr');
     const tags = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
     panel.createEl('h4', { text: `All tags (${tags.length})` });
-    const list = panel.createDiv('tag-ontology-all');
-    let group = '';
+    // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
+    const groups = new Map<string, string[]>();
     for (const tag of tags) {
-      // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
-      const first = /\d/.test(tag[0]) ? '0–9' : tag[0].toUpperCase();
-      if (first !== group) {
-        group = first;
-        list.createDiv({ text: first, cls: 'tag-ontology-all-letter' });
-      }
-      const row = list.createDiv('tag-ontology-all-row');
-      const link = row.createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
-      if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
-      link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
+      const letter = /\d/.test(tag[0]) ? '0–9' : tag[0].toUpperCase();
+      if (!groups.has(letter)) groups.set(letter, []);
+      groups.get(letter)!.push(tag);
+    }
+    const all = panel.createDiv('tag-ontology-all');
+    for (const [letter, group] of groups) {
+      all.createDiv({ text: letter, cls: 'tag-ontology-all-letter' });
+      this.tagLinks(all, group);
     }
   }
 
@@ -987,9 +985,10 @@ export class NativeGraphs {
 
   // Obsidian's own tag style tells tags apart from buttons and note links.
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
-    const list = parent.createDiv('tag-ontology-tags');
+    const asList = this.owner.settings.tagListStyle === 'list';
+    const list = parent.createDiv(asList ? 'tag-ontology-tag-list' : 'tag-ontology-tags');
     for (const tag of tags) {
-      const link = list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' });
+      const link = (asList ? list.createDiv('tag-ontology-tag-row') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
       link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }
