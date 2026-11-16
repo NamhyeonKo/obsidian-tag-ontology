@@ -29,7 +29,7 @@ interface NativeRenderer {
   getHighlightNode: () => unknown;
   worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void }[];
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void; getSize?: () => number }[];
   links: NativeLink[];
 }
 type RendererNode = NativeRenderer['nodes'][number];
@@ -139,8 +139,9 @@ class ChoiceModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-// About the scale Obsidian's local graph opens at.
-const REVEAL_SCALE = 1;
+// Screen radius a revealed tag is zoomed to: a small child tag zooms in further than a large parent.
+// A smallest node (8) lands at scale 2, a root with 16 children at about 1.3.
+const REVEAL_SIZE = 16;
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -739,11 +740,12 @@ export class NativeGraphs {
       const id = session.resolved?.idOf.get(tag), r = session.renderer;
       if (!id) continue;
       if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); continue; }
-      // Zoom in to about the local graph's scale; the core renderer eases toward targetScale and center() follows it each frame.
-      // A view already closer stays as it is.
-      if (r.targetScale < REVEAL_SCALE) r.targetScale = REVEAL_SCALE;
+      // Zoom in until the node is REVEAL_SIZE on screen; the core renderer eases toward targetScale. A node's size follows
+      // its links, so it shrinks when it is expanded: center() reads it again each frame. A view already closer stays as it is.
+      const start = r.targetScale;
       const center = () => {
-        const node = r.nodes.find(n => n.id === id);
+        const node = r.nodes.find(n => n.id === id), size = node?.getSize?.();
+        if (size) r.targetScale = Math.max(start, REVEAL_SIZE / size);
         if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
       };
       center(); this.follow(session, center);

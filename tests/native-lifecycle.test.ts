@@ -179,7 +179,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
-    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, sizes: {} as Record<string, number>, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
@@ -190,6 +190,8 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       this.nodes = Object.keys(data.nodes).map(id => {
         const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
         renderSources.set(node, node.render!);
+        // Like the core graph, size comes from the node's weight; tests set it per id.
+        (node as Node & { getSize(): number }).getSize = () => renderer.sizes[id] ?? 12;
         return node;
       });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
@@ -546,14 +548,28 @@ test('choosing a suggestion reveals the tag', async () => {
   assert.ok(t.ids().includes('#DL'));
 });
 
-test('revealing a tag zooms a far-out graph in to the local graph scale but never zooms out', async () => {
+test('revealing a tag zooms in further for a smaller node but never zooms out', async () => {
   const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#DL': 8, '#ml': 10 };
   t.renderer.scale = t.renderer.targetScale = 0.2;
   t.suggests[0]!.onChoose('dl');
-  assert.equal(t.renderer.targetScale, 1);
+  assert.equal(t.renderer.targetScale, 2);
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('ml');
+  assert.equal(t.renderer.targetScale, 1.6);
   t.renderer.scale = t.renderer.targetScale = 3;
   t.suggests[0]!.onChoose('ml');
   assert.equal(t.renderer.targetScale, 3);
+});
+
+test('the reveal zoom follows a node that shrinks once it is expanded', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#cs': 16 };
+  t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.suggests[0]!.onChoose('cs');
+  assert.equal(t.renderer.targetScale, 1);
+  t.renderer.sizes = { '#cs': 8 }; t.tick(16);
+  assert.equal(t.renderer.targetScale, 2);
 });
 
 test('the suggestion source is the model', async () => {
