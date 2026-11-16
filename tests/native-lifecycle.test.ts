@@ -140,12 +140,18 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   // Animation frames wait until a test advances the fake clock with tick().
   const frames = new Map<number, () => void>();
   let frameId = 0, clock = 0;
-  const tick = (ms: number) => { clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame(); };
+  // Timers run on the same clock when tick() passes their time.
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  const tick = (ms: number) => {
+    clock += ms; const due = [...frames.values()]; frames.clear(); for (const frame of due) frame();
+    for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.fn(); }
+  };
   const suggests: { input: Element; source: (query: string) => { tag: string }[]; onChoose: (tag: string) => void }[] = [];
   const errors: unknown[][] = [];
   const context = createContext({
     performance: { now: () => clock }, devicePixelRatio: 1, structuredClone, console: { error: (...args: unknown[]) => errors.push(args) },
-    window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); } },
+    window: { requestAnimationFrame: (frame: () => void) => { frames.set(++frameId, frame); return frameId; }, cancelAnimationFrame: (id: number) => { frames.delete(id); },
+      setTimeout: (fn: () => void, ms: number) => { timers.set(++frameId, { at: clock + ms, fn }); return frameId; }, clearTimeout: (id?: number) => { if (id !== undefined) timers.delete(id); } },
     document: { visibilityState: 'visible' }, createEl: () => ({ getContext: () => ({ fillRect() {} }) }),
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
@@ -291,6 +297,19 @@ test('hierarchy links always show arrows, related links are dashed, other links 
 
 // A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
 const nodeClick = (t: { renderer: { onNodeClick: unknown } }, id: string) => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, id, 'tag');
+
+test('a single click on a tag node centers it after the double-click window; a double click does not', async () => {
+  const t = await setup(); t.controller.attach();
+  // The first fit runs for two seconds; let it finish so it doesn't set the zoom.
+  t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeClick(t, '#cs'); t.tick(100);
+  assert.equal(t.renderer.targetScale, 0.2);
+  t.tick(150);
+  assert.equal(t.renderer.targetScale, 2);
+  t.tick(2500); t.renderer.scale = t.renderer.targetScale = 0.2;
+  nodeClick(t, '#ml'); t.tick(100); nodeClick(t, '#ml'); t.tick(500);
+  assert.equal(t.renderer.targetScale, 0.2);
+});
 
 test('a click selects a dictionary tag without expanding it', async () => {
   const t = await setup(); t.controller.attach();

@@ -90,7 +90,7 @@ export interface LinkedGraph {
   renamed?(from: string, to: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
-export const DOUBLE_CLICK_MS = 350;
+export const DOUBLE_CLICK_MS = 200;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
 
@@ -147,6 +147,7 @@ export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
   // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
   private destroyed = false;
+  private centerTimer?: number;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -686,10 +687,17 @@ export class NativeGraphs {
   // A click on a dictionary tag in any graph: select it, and on a double click expand or collapse it.
   clickTag(tag: string, double: boolean, leaf?: WorkspaceLeaf) {
     this.activeSession(leaf);
+    window.clearTimeout(this.centerTimer);
     this.leave(() => {
       this.go({ kind: 'tag', tag });
       if (double) this.toggleExpanded(tag, leaf);
-      else this.showSelection();
+      else {
+        this.showSelection();
+        // A single click also brings the tag to the middle of the graph it was clicked in, once the double-click window
+        // has passed: moving the node at once would put the second click of a double click off it.
+        const session = leaf && this.sessions.get(leaf);
+        if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, DOUBLE_CLICK_MS);
+      }
       this.showPanel(true);
     });
   }
@@ -735,22 +743,25 @@ export class NativeGraphs {
     }
     this.update({ expanded: [...expanded] }, 'reveal');
     // Center the chosen tag in every open graph; with no graph open there is nothing to move.
-    for (const session of this.sessions.values()) {
-      if (session.mode !== '2d') continue;
-      const id = session.resolved?.idOf.get(tag), r = session.renderer;
-      if (!id) continue;
-      if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); continue; }
-      // Zoom in until the node is REVEAL_SIZE on screen; the core renderer eases toward targetScale. A node's size follows
-      // its links, so it shrinks when it is expanded: center() reads it again each frame. A view already closer stays as it is.
-      const start = r.targetScale;
-      const center = () => {
-        const node = r.nodes.find(n => n.id === id), size = node?.getSize?.();
-        if (size) r.targetScale = Math.max(start, REVEAL_SIZE / size);
-        if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
-      };
-      center(); this.follow(session, center);
-    }
+    for (const session of this.sessions.values()) this.centerOn(session, tag);
     for (const view of this.linked) if (view.isVisible?.() !== false) view.focusOn(tag);
+  }
+
+  // Moves a tag to the middle of a 2D graph, zoomed in by its node's size.
+  private centerOn(session: Session, tag: string) {
+    if (session.mode !== '2d') return;
+    const id = session.resolved?.idOf.get(tag), r = session.renderer;
+    if (!id) return;
+    if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
+    // Zoom in until the node is REVEAL_SIZE on screen; the core renderer eases toward targetScale. A node's size follows
+    // its links, so it shrinks when it is expanded: center() reads it again each frame. A view already closer stays as it is.
+    const start = r.targetScale;
+    const center = () => {
+      const node = r.nodes.find(n => n.id === id), size = node?.getSize?.();
+      if (size) r.targetScale = Math.max(start, REVEAL_SIZE / size);
+      if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
+    };
+    center(); this.follow(session, center);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -1272,5 +1283,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { this.destroyed = true; for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; window.clearTimeout(this.centerTimer); for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }
