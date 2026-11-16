@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { choosePalette, editPalette, paletteGroups, paletteSelection, savePalette } from '../src/palettes.ts';
+import { choosePalette, deletePalette, editPalette, paletteGroups, paletteSelection, savePalette } from '../src/palettes.ts';
 import { sanitizeSettings } from '../src/settings.ts';
 import { PALETTE, PALETTE_PRESETS, paletteFor } from '../src/colors.ts';
 
@@ -44,6 +44,23 @@ test('saved names are validated and never overwrite an existing palette', () => 
   assert.deepEqual(initial.savedHierarchyPalettes, []);
   assert.notEqual(settings.savedHierarchyPalettes[0].colors, initial.hierarchyPalette);
   assert.ok(paletteGroups(settings).some(group => group.options.some(option => option.value === 'saved:研究: "Blue"')));
+});
+
+test('deleting named palettes preserves the working copy and safely replaces the active palette', () => {
+  let settings = sanitizeSettings({}, '.obsidian');
+  settings = { ...settings, ...savePalette(settings, 'Study') };
+  settings = { ...settings, ...editPalette(settings, ['#123456']) };
+  const working = [...settings.customHierarchyPalette];
+  settings = { ...settings, ...choosePalette(settings, 'saved:Study') };
+  const count = settings.hierarchyPalette.length;
+  const deleted = { ...settings, ...deletePalette(settings, 'Study') };
+  assert.deepEqual(deleted.savedHierarchyPalettes, []);
+  assert.equal(paletteSelection(deleted), 'default'); assert.equal(deleted.hierarchyPalette.length, count);
+  assert.deepEqual(deleted.customHierarchyPalette, working);
+  assert.equal(settings.savedHierarchyPalettes.length, 1, 'pure deletion does not mutate its input');
+  assert.equal(deletePalette(settings, 'missing'), undefined);
+  const inactive = { ...settings, ...choosePalette(settings, 'pastel') };
+  assert.equal(paletteSelection({ ...inactive, ...deletePalette(inactive, 'Study') }), 'pastel');
 });
 
 test('migration retains previous active colors and the previous Custom slot independently', () => {

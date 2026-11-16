@@ -43,6 +43,7 @@ class NativeGraphs {
 }
 
 interface Main {
+  deletePalette(name: string): Promise<void>; managePalettes(): void;
   native: NativeGraphs; tagColor(tag?: string): string; model?: Ontology; settings: settings.Settings; raw?: RawDictionary; error?: string;
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
@@ -115,7 +116,7 @@ async function setup(saved?: Promise<unknown>) {
   class TestModal {
     closed = false; errorText = ''; title = '';
     titleEl = { setText: (text: string) => { this.title = text; } };
-    contentEl = { createDiv: () => ({ setAttribute() {}, setText: (text: string) => { this.errorText = text; } }) };
+    contentEl = { empty() {}, createDiv: () => ({ setAttribute() {}, setText: (text: string) => { this.errorText = text; } }) };
     onOpen() {} open() { modals.push(this); this.onOpen(); } close() { this.closed = true; }
   }
   class TestPluginSettingTab {
@@ -1326,6 +1327,41 @@ test('a failed named save restores the working copy and can retry the same name'
   assert.equal(t.plugin.settings.savedHierarchyPalettes[0].name, 'Study');
 });
 
+test('palette deletion confirms the selected name, preserves working colors and survives restart', async () => {
+  const t = await setup(); await t.loaded;
+  await t.plugin.savePaletteAs('Study');
+  await t.plugin.setPaletteColor(0, '#123456');
+  const working = [...t.plugin.settings.customHierarchyPalette];
+  await t.plugin.choosePalette('saved:Study');
+  t.plugin.managePalettes();
+  const row = t.settingRows.at(-1)!;
+  assert.equal(row.name, 'Study'); row.buttons[0]();
+  assert.equal(t.modals.at(-1)!.title, 'Delete Study?');
+  assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 1, 'opening confirmation does not delete');
+  const confirm = t.settingRows.at(-1)!;
+  confirm.buttons[confirm.buttonNames.indexOf('Delete palette')](); await settle();
+  assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 0);
+  assert.equal(t.plugin.settings.hierarchyPalettePreset, 'default');
+  assert.deepEqual([...t.plugin.settings.customHierarchyPalette], working);
+  const restored = await setup(Promise.resolve(structuredClone(t.savedWrites.at(-1)))); await restored.loaded;
+  assert.equal(restored.plugin.settings.savedHierarchyPalettes.length, 0);
+  assert.deepEqual([...restored.plugin.settings.customHierarchyPalette], working);
+});
+
+test('a failed palette deletion restores the snapshot and active colors', async () => {
+  const t = await setup(); await t.loaded;
+  await t.plugin.setPaletteColor(0, '#123456'); await t.plugin.savePaletteAs('Study');
+  const colors = [...t.plugin.settings.hierarchyPalette];
+  const save = t.plugin.saveData.bind(t.plugin);
+  t.plugin.saveData = async () => { throw new Error('disk unavailable'); };
+  await assert.rejects(t.plugin.deletePalette('Study'), /disk unavailable/);
+  assert.equal(t.plugin.settings.savedHierarchyPalettes[0].name, 'Study');
+  assert.equal(t.plugin.settings.hierarchyPalettePreset, 'saved:Study');
+  assert.deepEqual([...t.plugin.settings.hierarchyPalette], colors);
+  t.plugin.saveData = save; await t.plugin.deletePalette('Study');
+  assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 0);
+});
+
 test('IME confirmation Enter does not submit a palette name', async () => {
   const t = await setup(); await t.loaded;
   t.plugin.promptSavePalette();
@@ -1336,4 +1372,23 @@ test('IME confirmation Enter does not submit a palette name', async () => {
   assert.equal(modal.closed, false); assert.equal(t.plugin.settings.savedHierarchyPalettes.length, 0);
   input.keyDown!({ key: 'Enter', isComposing: false, preventDefault() {} }); await settle();
   assert.equal(modal.closed, true); assert.equal(t.plugin.settings.savedHierarchyPalettes[0].name, '연구 팔레트');
+});
+
+test('review: failed deletion must preserve a concurrently saved case-variant snapshot', async () => {
+  const t = await setup(); await t.loaded;
+  await t.plugin.savePaletteAs('Study');
+  const save = t.plugin.saveData.bind(t.plugin);
+  let rejectDelete!: (error: Error) => void;
+  let first = true;
+  t.plugin.saveData = async data => {
+    if (first) { first = false; await new Promise<void>((_resolve, reject) => { rejectDelete = reject; }); }
+    else await save(data);
+  };
+  const pending = t.plugin.deletePalette('Study');
+  const failed = assert.rejects(pending, /disk unavailable/);
+  await t.plugin.setPaletteColor(0, '#123456');
+  await t.plugin.savePaletteAs('study');
+  rejectDelete(new Error('disk unavailable')); await failed;
+  await t.plugin.saveSettings();
+  assert.ok(t.plugin.settings.savedHierarchyPalettes.some(p => p.name === 'study' && p.colors[0] === '#123456'), 'new successful snapshot must survive rollback');
 });

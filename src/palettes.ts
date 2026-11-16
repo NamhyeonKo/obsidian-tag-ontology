@@ -57,3 +57,9 @@ export function savePalette(settings: Settings, input: string): Pick<Settings, '
     hierarchyPalettePreset: 'saved:' + name, customHierarchyPalette: working ? [] : [...settings.customHierarchyPalette],
     workingPaletteSource: working ? '' : settings.workingPaletteSource };
 }
+
+export function deletePalette(settings: Settings, name: string) {
+  if (!settings.savedHierarchyPalettes.some(palette => palette.name === name)) return;
+  return { savedHierarchyPalettes: settings.savedHierarchyPalettes.filter(palette => palette.name !== name),
+    ...(paletteSelection(settings) === 'saved:' + name ? choosePalette(settings, 'default') : {}) };
+}

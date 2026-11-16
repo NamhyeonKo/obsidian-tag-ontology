@@ -1,7 +1,7 @@
 import { ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
-import { hierarchyColor } from './colors.ts';
-import { choosePalette as paletteChoice, editPalette, fillPaletteSelect, paletteSelection, resizePalette as resizedPalette, savePalette as namedPalette } from './palettes.ts';
+import { hierarchyColor, samePalette } from './colors.ts';
+import { choosePalette as paletteChoice, deletePalette as deletedPalette, editPalette, fillPaletteSelect, paletteSelection, resizePalette as resizedPalette, savePalette as namedPalette } from './palettes.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Change, type Note, type RawDictionary, type Usage } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -369,6 +369,30 @@ export default class TagOntologyPlugin extends Plugin {
 
   promptSavePalette(): void { new PaletteNameModal(this.app, this).open(); }
 
+  async deletePalette(name: string): Promise<void> {
+    const index = this.settings.savedHierarchyPalettes.findIndex(palette => palette.name === name), removed = this.settings.savedHierarchyPalettes[index];
+    const change = deletedPalette(this.settings, name);
+    if (!change) return;
+    Object.assign(this.settings, change);
+    try { await this.saveSettings(); }
+    catch (error) {
+      const replaced = this.settings.savedHierarchyPalettes.some(palette => palette.name.toLowerCase() === name.toLowerCase());
+      if (!replaced) {
+        this.settings.savedHierarchyPalettes = [...this.settings.savedHierarchyPalettes];
+        this.settings.savedHierarchyPalettes.splice(index, 0, removed);
+      }
+      if (!replaced && change.hierarchyPalettePreset && this.settings.hierarchyPalettePreset === change.hierarchyPalettePreset
+        && change.hierarchyPalette && samePalette(this.settings.hierarchyPalette, change.hierarchyPalette)) {
+        this.settings.hierarchyPalettePreset = 'saved:' + name;
+        this.settings.hierarchyPalette = [...removed.colors];
+      }
+      this.settingsTab?.syncPaletteControls();
+      throw error;
+    }
+  }
+
+  managePalettes(): void { new PaletteManagerModal(this.app, this).open(); }
+
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveState();
@@ -499,6 +523,35 @@ class PaletteNameModal extends Modal {
       text.inputEl.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); void save(); } });
     });
     new Setting(this.contentEl).addButton(button => button.setButtonText('Save palette').onClick(() => { void save(); }));
+  }
+}
+
+class PaletteManagerModal extends Modal {
+  constructor(app: App, private owner: TagOntologyPlugin) { super(app); }
+  onOpen() { this.render(); }
+  private render() {
+    this.titleEl.setText('My palettes'); this.contentEl.empty();
+    if (!this.owner.settings.savedHierarchyPalettes.length) new Setting(this.contentEl).setName('No saved palettes yet');
+    for (const palette of this.owner.settings.savedHierarchyPalettes) {
+      new Setting(this.contentEl).setName(palette.name).setDesc(`${palette.colors.length} color levels`)
+        .addExtraButton(button => button.setIcon('trash-2').setTooltip(`Delete ${palette.name}`).onClick(() => this.confirm(palette.name)));
+    }
+  }
+  private confirm(name: string) {
+    this.contentEl.empty(); this.titleEl.setText(`Delete ${name}?`);
+    const active = paletteSelection(this.owner.settings) === 'saved:' + name;
+    new Setting(this.contentEl).setDesc(active ? 'The active palette will switch to Default. Your working copy and other saved palettes are kept.' : 'Your working copy and other saved palettes are kept.');
+    let deleting = false;
+    new Setting(this.contentEl)
+      .addButton(button => button.setButtonText('Cancel').onClick(() => this.render()))
+      .addButton(button => button.setButtonText('Delete palette').onClick(() => {
+        if (deleting) return;
+        deleting = true; button.buttonEl.disabled = true;
+        void this.owner.deletePalette(name).then(() => this.render()).catch(error => {
+          new Notice(`Could not delete the palette: ${reason(error)}`);
+          deleting = false; button.buttonEl.disabled = false;
+        });
+      }));
   }
 }
 
@@ -655,7 +708,8 @@ class OntologySettingsTab extends PluginSettingTab {
   private paletteSave(setting: Setting): Setting {
     this.paletteSaveSetting = setting;
     return setting.setName('My palettes').setDesc(this.paletteStatus())
-      .addButton(button => button.setButtonText('Save as…').onClick(() => this.owner.promptSavePalette()));
+      .addButton(button => button.setButtonText('Save as…').onClick(() => this.owner.promptSavePalette()))
+      .addButton(button => button.setButtonText('Manage…').onClick(() => this.owner.managePalettes()));
   }
 
   private paletteStatus(): string {
