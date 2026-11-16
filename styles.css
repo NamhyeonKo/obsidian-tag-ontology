@@ -18,7 +18,10 @@
 .tag-ontology-nav .clickable-icon.is-active { color: var(--interactive-accent); box-shadow: inset 0 0 0 1.5px var(--interactive-accent); }
 .tag-ontology-sidebar input[type="search"] { width: 100%; margin-bottom: 12px; }
 .tag-ontology-sidebar input[type="search"][hidden] { display: none; }
-.tag-ontology-panel { font-size: var(--font-ui-small); }
+.tag-ontology-sidebar { display: flex; flex-direction: column; overflow: hidden; }
+.tag-ontology-nav, .tag-ontology-sidebar input[type="search"] { flex: none; }
+/* Only the panel scrolls, so the nav bar and search box stay put. */
+.tag-ontology-panel { font-size: var(--font-ui-small); flex: 1; min-height: 0; overflow-y: auto; }
 .tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }
 .tag-ontology-header h3.tag-ontology-accent { color: var(--tag-ontology-color); }
