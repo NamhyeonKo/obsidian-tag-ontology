@@ -350,6 +350,15 @@ test('a double click keeps moving the tag to the middle after the second press s
   assert.ok(t.owner.settings.expanded.includes('cs')); assert.equal(t.renderer.scale, 2);
 });
 
+test("a double click whose second press lands on another node expands the first tag and keeps it selected", async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
+  // The camera moved, so the second press hits #sec instead.
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); nodeClick(t, '#sec'); t.contentEl.events.get('dblclick')!({});
+  assert.ok(t.owner.settings.expanded.includes('cs')); assert.ok(!t.owner.settings.expanded.includes('sec'));
+  assert.ok(t.sidebar.all().some(el => el.tag === 'h3' && el.text === 'cs'));
+});
+
 test('a double click on empty canvas expands nothing, even right after a tag click', async () => {
   const t = await setup(); t.controller.attach();
   t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
