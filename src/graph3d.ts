@@ -103,17 +103,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
     this.legend = overlay.createDiv('tag-ontology-legend');
     renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
-    this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf));
-    this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf));
+    this.button(actions, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf), 'top');
+    this.button(actions, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf), 'top');
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
-    this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); });
-    tools.createDiv('tag-ontology-separator');
+    this.button(actions, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); }, 'top');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
       this.toggles[key].addClass('tag-ontology-toggle');
@@ -665,10 +664,10 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     close.addEventListener('click', () => panel.addClass('is-close'));
   }
 
-  private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
+  private button(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    setTooltip(button, label, { placement: 'right' });
+    setTooltip(button, label, { placement });
     button.addEventListener('click', action);
     return button;
   }
