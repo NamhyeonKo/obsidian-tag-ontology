@@ -48,6 +48,8 @@
 .tag-ontology-panel li { padding: 4px 0; overflow-wrap: anywhere; }
 /* Tags keep their tag look inside a list. */
 .tag-ontology-panel li .tag { display: inline-block; vertical-align: middle; }
+/* Tags sit closer than notes, so a long tag list stays compact. */
+.tag-ontology-panel li:has(> .tag) { padding: 1px 0; }
 .tag-ontology-panel li a:not(.tag) { cursor: pointer; text-decoration: none; color: var(--text-normal); }
 .tag-ontology-panel li a:not(.tag):hover { color: var(--text-accent); text-decoration: underline; }
 /* The 3D view: the WebGL canvas fills the tab under the same toolbar and status line as 2D. */
