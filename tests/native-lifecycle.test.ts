@@ -1124,6 +1124,15 @@ test('the expand button in the bar shows the state with waypoints or circle-smal
   assert.deepEqual([...t.owner.settings.expanded], []);
 });
 
+test('unloading while Open graph is still opening reveals nothing', async () => {
+  const t = await setup(); t.controller.attach();
+  t.contentEl.shown = false; t.controller.activate(null);
+  t.click('#cs'); t.click('#ml'); const saves = t.owner.saves, expanded = [...t.owner.settings.expanded];
+  t.click('Open graph'); t.controller.destroy();
+  await Promise.resolve();
+  assert.deepEqual([...t.owner.settings.expanded], expanded); assert.equal(t.owner.saves, saves);
+});
+
 test('a tag without child tags shows as expanded and the button is off', async () => {
   const t = await setup(); t.controller.attach();
   t.click('#cs'); t.click('#ml'); t.click('#dl');

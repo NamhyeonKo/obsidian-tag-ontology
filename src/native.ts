@@ -141,6 +141,8 @@ class ChoiceModal extends Modal {
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
+  // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
+  private destroyed = false;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -408,7 +410,7 @@ export class NativeGraphs {
     // With no graph on screen, expanding would change a graph nobody sees, so the button opens one instead.
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
       const tag = this.selected;
-      if (!this.graphShown()) { void this.owner.openView().then(() => { if (tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
+      if (!this.graphShown()) { void this.owner.openView().then(() => { if (!this.destroyed && tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
       if (tag) this.toggleExpanded(tag);
     });
     this.nav.expand.addClass('tag-ontology-expand');
@@ -1260,5 +1262,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }
