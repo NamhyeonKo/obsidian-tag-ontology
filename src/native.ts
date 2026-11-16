@@ -98,14 +98,14 @@ export const DOUBLE_CLICK_MS = 200;
 const FADED = { id: '\0focus' };
 
 // How far in from each side of a graph view the controls drawn over it reach, in CSS pixels plus a gap: the toolbar column on
-// the left, the legend and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
+// the left with the legend, the view actions row and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
 export function coveredEdges(view: HTMLElement) {
   const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
   for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
   }
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-legend, .tag-ontology-status'))) {
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-actions, .tag-ontology-status'))) {
     const rect = el.getBoundingClientRect();
     if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
   }
@@ -214,9 +214,10 @@ export class NativeGraphs {
         this.failed.add(leaf);
         continue;
       }
-      // The toolbar and the status line share one column, so a status line that wraps pushes the buttons up instead of covering them.
+      // The toolbar, the view actions row and the status line share one column, so a status line that wraps pushes the rest up
+      // instead of covering it. The legend stands at the end of the toolbar.
       const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
-      const legend = overlay.createDiv('tag-ontology-legend');
+      const actions = overlay.createDiv('tag-ontology-actions'), legend = tools.createDiv('tag-ontology-legend');
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),
@@ -283,11 +284,10 @@ export class NativeGraphs {
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (!session.focusIds ? null : session.drawing === undefined ? FADED : session.drawing);
-      // A column of round icon buttons keeps the core graph settings on the right uncovered.
-      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf));
-      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf));
-      this.iconButton(tools, 'scan', 'Fit', () => this.fit(session));
-      tools.createDiv('tag-ontology-separator');
+      // A column of round icon buttons keeps the core graph settings on the right uncovered; the view actions sit in a row at the bottom.
+      this.iconButton(actions, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf), 'top');
+      this.iconButton(actions, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf), 'top');
+      this.iconButton(actions, 'scan', 'Fit', () => this.fit(session), 'top');
       for (const [key, icon, name] of TOGGLES) {
         session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && session.choice !== 'force') return;
@@ -1259,16 +1259,16 @@ export class NativeGraphs {
     setIcon(expand, !shown ? 'git-fork' : expanded || leaf ? 'waypoints' : 'circle-small');
     setTooltip(expand, !shown ? 'Open graph' : leaf ? 'No child tags' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
-  private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
+  private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    this.label(button, label);
+    this.label(button, label, placement);
     button.addEventListener('click', action);
     return button;
   }
   // setTooltip also sets aria-label, which screen readers and the tests use.
-  private label(button: HTMLElement, text: string) {
-    setTooltip(button, text, { placement: 'right' });
+  private label(button: HTMLElement, text: string, placement: 'right' | 'top' = 'right') {
+    setTooltip(button, text, { placement });
   }
   // Toolbar state lives in the shared settings so every graph tab shows the same values.
   private syncToolbar(session: Session) {

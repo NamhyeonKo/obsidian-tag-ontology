@@ -55,15 +55,14 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.stage = root.createDiv('tag-ontology-explorer-stage');
     // The canvas has its own right-click menu.
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
-    this.legend = overlay.createDiv('tag-ontology-legend');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
+    this.legend = tools.createDiv('tag-ontology-legend');
     renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
-    this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
+    this.button(actions, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
     // A group the sidebar shows goes with the canvas, so the sidebar draws again.
-    this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); });
-    tools.createDiv('tag-ontology-separator');
+    this.button(actions, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.buildStart(root);
     this.measurer = createEl('canvas').getContext('2d') ?? undefined;
@@ -457,10 +456,10 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     ];
   }
 
-  private button(parent: HTMLElement, icon: string, label: string, action: () => void) {
+  private button(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    setTooltip(button, label, { placement: 'right' });
+    setTooltip(button, label, { placement });
     button.addEventListener('click', action);
     return button;
   }

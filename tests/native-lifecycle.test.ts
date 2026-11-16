@@ -699,9 +699,12 @@ test('Enter with no matches shows a notice', async () => {
 test('toolbar uses the agreed icons and tooltips', async () => {
   const t = await setup();
   t.controller.attach();
-  const icons = t.contentEl.all().filter(el => el.attrs.icon);
-  assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer']);
+  const icons = (cls: string) => t.contentEl.all().find(el => el.classes.has(cls))!.all().filter(el => el.attrs.icon);
+  // The view actions sit in their own row at the bottom; the rest stays in the toolbar column.
+  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan']);
+  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit']);
+  assert.deepEqual(icons('tag-ontology-tools').map(el => el.attrs.icon), ['file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
+  assert.deepEqual(icons('tag-ontology-tools').map(el => el.attrs.tooltip), ['Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer']);
 });
 
 test('the 3D mode reuses the graph tab and unloads when disabled', async () => {
