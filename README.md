@@ -223,6 +223,8 @@ Settings use the same section and item order on Obsidian 1.13+ and earlier versi
 | &nbsp;&nbsp;Its descendants | Also keep every tag under it bright, as far as they are expanded. On by default. |
 | &nbsp;&nbsp;Include notes | Also keep the notes on the selected tag bright, and on its descendants when those are on. The notes on the tags next to it still fade. On by default. |
 | **Additional views** | |
+| Enable vertical tree | Show the vertical tree mode button on the graph toolbar. Turning it off moves a tab in that mode back to force. On by default. |
+| Enable horizontal tree | The same for the horizontal tree mode button. On by default. |
 | Enable 3D view (beta) | Show the 3D mode button on the graph toolbar and the Open 3D graph command. Turning it off releases the 3D view; a tab showing it returns to 2D. On by default. |
 | Enable ontology explorer (beta) | Show the explorer mode button on the graph toolbar and the Open ontology explorer command. Turning it off clears the explorer canvas; a tab showing it returns to 2D. On by default. |
 

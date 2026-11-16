@@ -492,6 +492,8 @@ const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dic
 const OPEN_3D = 'Open 3D graph';
 const OPEN_EXPLORER = 'Open ontology explorer';
 const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Explore the ontology in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the explorer canvases.' };
+const ENABLE_TREE = { name: 'Enable vertical tree', desc: 'Show the vertical tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
+const ENABLE_TREE_HORIZONTAL = { name: 'Enable horizontal tree', desc: 'Show the horizontal tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
 const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases.' };
 const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
@@ -587,6 +589,8 @@ class OntologySettingsTab extends PluginSettingTab {
           control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
       ] },
       { type: 'group', heading: 'Additional views', items: [
+        { ...ENABLE_TREE, control: { type: 'toggle', key: 'enableTree', defaultValue: DEFAULT_SETTINGS.enableTree } },
+        { ...ENABLE_TREE_HORIZONTAL, control: { type: 'toggle', key: 'enableTreeHorizontal', defaultValue: DEFAULT_SETTINGS.enableTreeHorizontal } },
         { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
         { ...ENABLE_EXPLORER, control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
       ] },
@@ -789,6 +793,9 @@ class OntologySettingsTab extends PluginSettingTab {
     }));
     for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
     new Setting(containerEl).setName('Additional views').setHeading();
+    for (const [key, text] of [['enableTree', ENABLE_TREE], ['enableTreeHorizontal', ENABLE_TREE_HORIZONTAL]] as const) {
+      new Setting(containerEl).setName(text.name).setDesc(text.desc).addToggle(toggle => toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value)));
+    }
     new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
     });

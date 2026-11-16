@@ -580,6 +580,19 @@ test('the 3D mode reuses the graph tab and unloads when disabled', async () => {
   assert.equal(button.hidden, false);
 });
 
+test('turning a tree mode off hides its button and moves a tab in it back to force', async () => {
+  const t = await setup(); t.controller.attach();
+  const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: Vertical tree')!;
+  t.click('Layout: Vertical tree'); await settle();
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'tree');
+  t.owner.settings.enableTree = false; t.owner.settings.layout = 'force'; t.controller.refresh();
+  assert.equal(button.hidden, true); assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  t.click('Layout: Vertical tree'); await settle();
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  t.owner.settings.enableTree = true; t.controller.refresh();
+  assert.equal(button.hidden, false);
+});
+
 test('all layout buttons stay visible in order and switch directly with the active layout marked', async () => {
   const t = await setup();
   t.controller.attach();
