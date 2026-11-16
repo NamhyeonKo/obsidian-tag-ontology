@@ -37,7 +37,6 @@ export class MindMap {
 
   constructor(parent: HTMLElement, private select: (tag: string) => void, private toggle: (tag: string) => void, private startActions: MindMapStart) {
     this.el = parent.createDiv('tag-ontology-mindmap');
-    this.el.setAttribute('aria-label', 'Tag mind map');
     const stage = this.el.createDiv('tag-ontology-mindmap-stage');
     this.start = this.el.createDiv('tag-ontology-explorer-start tag-ontology-mindmap-start');
     this.start.createEl('h3', { text: 'Where do you want to start?' });
