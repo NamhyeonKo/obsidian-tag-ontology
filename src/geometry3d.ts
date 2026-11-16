@@ -41,3 +41,14 @@ export function springBack(from: Point, home: Point, progress: number): Point {
   const k = 1 + 2.2 * (progress - 1) ** 3 + 1.2 * (progress - 1) ** 2;
   return { x: from.x + (home.x - from.x) * k, y: from.y + (home.y - from.y) * k, z: from.z + (home.z - from.z) * k };
 }
+
+// Where the camera sits to frame most of the points: the ball around their middle holding `share` of them fills the shorter
+// side of the free part of the view. The few points beyond it, small clusters and stragglers, can fall outside. fov is the
+// vertical angle in degrees, aspect the view's width over its height, free the share of its width and height left uncovered.
+export function fitView(points: Point[], fov: number, aspect: number, free = { width: 1, height: 1 }, share = 0.95): { center: Point; distance: number } {
+  const n = points.length || 1, center = { x: 0, y: 0, z: 0 };
+  for (const p of points) { center.x += p.x / n; center.y += p.y / n; center.z += p.z / n; }
+  const reach = points.map(p => Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z)).sort((a, b) => a - b);
+  const radius = reach[Math.floor((reach.length - 1) * share)] ?? 0;
+  return { center, distance: Math.max(1, radius * 1.05 / (Math.tan(fov * Math.PI / 360) * Math.min(free.height, aspect * free.width))) };
+}

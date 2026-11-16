@@ -1,5 +1,6 @@
 import { renderDepthLegend } from './legend.ts';
-import { ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { Component, ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
+import { graphModeBar } from './graph-modes.ts';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
 import type TagOntologyPlugin from './main.ts';
 import type { ExplorerPanel, LinkedGraph } from './native.ts';
@@ -10,6 +11,21 @@ import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, pl
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
+// Keep previously saved workspace tabs readable; new mode switches stay inside the core graph tab.
+export class ExplorerView extends ItemView {
+  private canvas?: ExplorerCanvas;
+  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
+  getViewType() { return VIEW_EXPLORER; }
+  getDisplayText() { return 'Ontology explorer'; }
+  getIcon() { return 'waypoints'; }
+  async onOpen() {
+    if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
+    this.canvas = this.addChild(new ExplorerCanvas(this.contentEl, this.owner, this.leaf));
+    this.canvas.setVisible(true); await this.canvas.open();
+  }
+  onClose() { if (this.canvas) this.removeChild(this.canvas); return Promise.resolve(); }
+}
+
 // Used when a theme leaves a color unset or in a format cssColorToHex can't read.
 const FALLBACK = { tag: '#55c26a', muted: '#9a9a9a', line: '#5a5a5a', card: '#262626', border: '#3a3a3a', text: '#dadada', accent: '#8b6cef' };
 const WIDTH = { tag: 230, note: 210, group: 220 };
@@ -19,7 +35,7 @@ const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 
 // Palantir-style exploration: start from an empty canvas and bring tags, notes and note groups out one relation at a time.
 // It shares the sidebar with the other graphs through NativeGraphs, but not their expansion or focus.
-export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel {
+export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
@@ -28,19 +44,12 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
   private pending?: string;
 
-  constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
-  getViewType(): string { return VIEW_EXPLORER; }
-  getDisplayText(): string { return 'Ontology explorer'; }
-  getIcon(): string { return 'waypoints'; }
+  private syncModes = () => {};
+  private visible = false;
+  private get app() { return this.owner.app; }
+  constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
 
-  async onOpen(): Promise<void> {
-    // With the explorer off, a tab the workspace brings back closes before it loads Cytoscape.
-    if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
-    // One explorer: the sidebar's group view and reveal talk to it, so a second one from Split or a restored workspace closes.
-    // The first claims the place before it awaits Cytoscape, so two opening at once can't both stay.
-    const native = this.owner.native;
-    if (native.explorer && native.explorer !== this) { this.leaf.detach(); return; }
-    native.explorer = this;
+  async open(): Promise<void> {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-explorer');
     this.stage = root.createDiv('tag-ontology-explorer-stage');
@@ -48,30 +57,31 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     this.button(tools, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); });
     // A group the sidebar shows goes with the canvas, so the sidebar draws again.
     this.button(tools, 'eraser', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); });
     tools.createDiv('tag-ontology-separator');
-    this.button(tools, 'git-fork', 'Open in 2D', () => { void this.owner.openView(); });
+    this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.buildStart(root);
     this.measurer = createEl('canvas').getContext('2d') ?? undefined;
     this.readTheme();
     const { default: cytoscape } = await import('cytoscape');
     if (this.closed) return;
-    const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, style: this.style() });
+    const cy = this.cy = cytoscape({ container: this.stage, minZoom: 0.1, maxZoom: 3, textureOnViewport: true, style: this.style() });
     // The tab can still be laying out when Cytoscape measures its container, and a resized tab needs a new measure too.
     const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
-    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false));
+    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false, this.leaf));
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
     cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
     cy.on('dbltap', 'node[type="note"]', event => this.owner.native.openNote(this.pathOf(event)));
     cy.on('cxttap', 'node[type="note"]', event => this.menu(event, [['Open note', 'file-text', () => this.owner.native.openNote(this.pathOf(event))]]));
-    cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event)));
+    cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event), this));
     cy.on('dbltap', 'node[type="group"]', event => this.takeLatest(this.tagOf(event)));
     cy.on('cxttap', 'node[type="group"]', event => this.menu(event, [[`Take out latest ${TAKE_OUT}`, 'arrow-down-to-line', () => this.takeLatest(this.tagOf(event))]]));
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
@@ -92,6 +102,7 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
 
   // Obsidian calls this when the tab changes size; the observer in onOpen covers the first layout too.
   onResize(): void {
+    if (this.isVisible()) this.owner.native.explorer = this;
     const cy = this.cy;
     if (!cy) return;
     cy.resize();
@@ -101,20 +112,31 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
     if (node.nonempty()) cy.center(node);
   }
 
-  onClose(): Promise<void> {
+  setVisible(visible: boolean) {
+    this.visible = visible;
+    if (visible) this.onResize();
+    else if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
+    this.syncModes();
+  }
+
+  isVisible() { return this.visible && this.contentEl.isShown(); }
+
+  onunload(): void {
     this.closed = true;
     this.owner.native.unlink(this);
-    if (this.owner.native.explorer === this) { this.owner.native.explorer = undefined; this.owner.native.renderPanel(); }
     this.cy?.destroy(); this.cy = undefined;
+    if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
+    this.owner.native.renderPanel();
     this.contentEl.empty();
-    return Promise.resolve();
   }
 
   // A dictionary or note edit, or a settings change such as the tag color: cards that lost their place go, groups keep the notes
   // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
+    this.syncModes();
     const cy = this.cy, model = this.owner.model;
-    if (this.legend) renderDepthLegend(this.legend, this.owner.settings, (depth, color) => { void this.owner.setPaletteColor(depth, color); });
+    if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     if (operation !== 'refresh' || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
@@ -181,7 +203,9 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   }
 
   private chip(parent: HTMLElement, text: string, tag: string) {
-    parent.createEl('a', { href: '#', text, cls: 'tag' }).addEventListener('click', event => { event.preventDefault(); this.addTag(tag); });
+    const chip = parent.createEl('a', { href: '#', text, cls: 'tag' });
+    if (this.owner.settings.customColors) chip.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
+    chip.addEventListener('click', event => { event.preventDefault(); this.addTag(tag); });
   }
 
   // Everything that changes what is on the canvas ends here.
@@ -356,9 +380,8 @@ export class ExplorerView extends ItemView implements LinkedGraph, ExplorerPanel
   private tagCard(tag: string): Card {
     const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
     const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
-    const { customColors, hierarchyColors } = this.owner.settings;
-    const color = customColors && hierarchyColors ? this.owner.tagColor(tag)
-      : entry?.facet ? facets.get(entry.facet)! : customColors ? this.owner.tagColor(tag) : this.colors.tag;
+    const color = this.owner.settings.customColors ? this.owner.tagColor(tag)
+      : entry?.facet ? facets.get(entry.facet)! : this.colors.tag;
     return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }

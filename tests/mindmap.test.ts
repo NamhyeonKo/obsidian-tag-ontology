@@ -7,6 +7,7 @@ import cytoscape from 'cytoscape';
 import type { MindMapData } from '../src/mindmap.ts';
 
 class Element {
+  style = { transform: '' };
   children: Element[] = []; parent?: Element; classes = new Set<string>(); attrs: Record<string, string> = {};
   text = ''; hidden = false; disabled = false; removed = false;
   events = new Map<string, (event?: { preventDefault(): void }) => void>(); css: Record<string, string> = {};
@@ -30,8 +31,9 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(child => child.all())]; }
 }
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
-async function setup(closeBeforeLoad = false) {
+async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
+  let pan = { x: 0, y: 0 };
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
   const node = (id: string) => ({ id: () => id, empty: () => !positions.has(id), nonempty: () => positions.has(id),
@@ -39,8 +41,15 @@ async function setup(closeBeforeLoad = false) {
     renderedPosition: () => positions.get(id), remove: () => positions.delete(id) });
   const graph = { on() {}, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
-    width: () => width, height: () => height, resize() {}, fit() { fits++; zoom = 2.5; }, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
-    pan: () => ({ x: 0, y: 0 }), animate() {}, destroy() { destroyed = true; } };
+    width: () => width, height: () => height, resize() {}, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
+    minZoom: () => 0.000001, maxZoom: () => 2.5,
+    elements: () => ({ boundingBox() {
+      const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
+      const x1 = Math.min(...xs) - 20, y1 = Math.min(...ys) - 10;
+      return { x1, y1, w: Math.max(...xs) + 20 - x1, h: Math.max(...ys) + 10 - y1 };
+    } }),
+    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = value.zoom; pan = value.pan; },
+    pan: () => pan, animate() {}, destroy() { destroyed = true; } };
   const context = createContext({ console, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
   } });
@@ -51,17 +60,25 @@ async function setup(closeBeforeLoad = false) {
   await search.link(() => { throw new Error('Unexpected import'); }); await search.evaluate();
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
   await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
-  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void }) => {
-    draw(data: MindMapData): void; fit(): void; destroy(): void;
+  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined }) => {
+    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; bottom: number }): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
-  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag) });
+  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color });
   if (closeBeforeLoad) map.destroy();
   await settle();
-  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits,
+  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan,
+    viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
 const data: MindMapData = { root: 'root', nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
+
+test('pan and zoom update only the layer transform instead of inherited CSS variables', async () => {
+  const t = await setup(); t.resize(800, 600); t.map.draw(data); t.viewport(25, -40, 1.5);
+  const layer = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-layer'))!;
+  assert.equal(layer.style.transform, 'translate(25px, -40px) scale(1.5)');
+  assert.equal(layer.css['--mindmap-pan-x'], undefined); t.map.destroy();
+});
 
 test('a hidden mind map defers Fit until its pane has a size and permits fitting large maps', async () => {
   const t = await setup(); t.map.draw(data); t.map.fit();
@@ -70,6 +87,15 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
   assert.equal(t.zoom(), 1, 'a single starting node should not zoom so far in that its children begin off-screen');
   assert.ok(t.options()!.minZoom <= 0.001);
   t.map.destroy(); assert.ok(t.disposed());
+});
+
+test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {
+  const t = await setup(); t.resize(800, 600); t.map.draw(data);
+  t.map.fit({ left: 0, right: 0, bottom: 0 }); const open = t.pan();
+  t.map.fit({ left: 100, right: 40, bottom: 80 });
+  // The free part spans x 100..760 and y 0..520, so its middle is 30 right of and 40 above the view's.
+  assert.equal(t.pan().x - open.x, 30); assert.equal(t.pan().y - open.y, -40);
+  t.map.destroy();
 });
 
 test('labels sit inside the gesture container and separate selection from branch buttons', async () => {
@@ -119,4 +145,18 @@ test('the hidden positioning nodes cannot be dragged away from the HTML labels',
   const cy = cytoscape({ headless: true, autoungrabify: t.options()!.autoungrabify, elements: [{ data: { id: 'root' } }] });
   assert.equal(cy.getElementById('root').grabbable(), false);
   cy.destroy(); t.map.destroy();
+});
+
+test('starting tags use custom colors only while enabled, including the continue tag', async () => {
+  let custom = false;
+  const t = await setup(false, tag => custom ? (tag === 'a' ? '#123456' : '#abcdef') : undefined);
+  const picker = { nodes: [], edges: [], roots: ['a'], startFrom: 'b' };
+  for (const enabled of [false, true, false]) {
+    custom = enabled; t.map.draw(picker);
+    const chips = t.root.all().filter(el => el.classes.has('tag'));
+    assert.equal(chips.length, 2);
+    assert.equal(chips.find(el => el.text === '#a')!.css['--tag-ontology-tags'], enabled ? '#123456' : undefined);
+    assert.equal(chips.find(el => el.text === 'Continue from #b')!.css['--tag-ontology-tags'], enabled ? '#abcdef' : undefined);
+  }
+  t.map.destroy();
 });

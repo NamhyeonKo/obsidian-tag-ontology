@@ -22,10 +22,10 @@
 .tag-ontology-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-ontology-header h3 { margin: 0; overflow-wrap: anywhere; }
 .tag-ontology-header h3.tag-ontology-accent { color: var(--tag-ontology-color); }
-/* Obsidian tints tags with the accent through these variables. In the sidebar they take the graph's tag color instead: the
+/* Obsidian tints tags with the accent through these variables. In tag pickers they take the graph's tag color instead: the
    theme's, as the core graph draws tag nodes, or the plugin's tag color with custom colors on. */
-.tag-ontology-panel { --tag-ontology-tags: var(--graph-node-tag); }
-.tag-ontology-panel, .tag-ontology-panel .tag {
+.tag-ontology-panel, .tag-ontology-explorer-start { --tag-ontology-tags: var(--graph-node-tag); }
+.tag-ontology-panel, .tag-ontology-panel .tag, .tag-ontology-explorer-start .tag {
   --tag-color: var(--tag-ontology-tags); --tag-color-hover: var(--tag-ontology-tags);
   --tag-background: color-mix(in oklch, var(--tag-ontology-tags) 10%, transparent);
   --tag-background-hover: color-mix(in oklch, var(--tag-ontology-tags) 20%, transparent);
@@ -80,15 +80,18 @@
 .tag-ontology-suggestion-alias { color: var(--text-muted); font-size: var(--font-ui-smaller); }
 /* The legend shares the overlay's bottom stack with status text, leaving graph gestures unobstructed. */
 .tag-ontology-legend {
-  flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  flex: none; align-self: flex-start; max-width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 5px 8px;
   border: 1px solid var(--background-modifier-border); border-radius: 12px;
   background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   backdrop-filter: blur(12px); box-shadow: 0 4px 18px #0000000a;
   color: var(--text-normal); font-size: var(--font-ui-smaller); pointer-events: auto;
 }
 .tag-ontology-legend[hidden] { display: none; }
-.tag-ontology-legend-title { flex: none; font-size: 10px; font-weight: var(--font-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.tag-ontology-legend-levels { flex: none; display: flex; gap: 12px; list-style: none; padding: 0; margin: 0; }
+.tag-ontology-legend-action { flex: none; width: 30px; height: 30px; padding: 0; }
+.tag-ontology-legend-palette { margin-right: 3px; }
+.tag-ontology-legend-save { position: relative; color: var(--interactive-accent); }
+.tag-ontology-legend-save::after { content: ''; position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--interactive-accent); }
+.tag-ontology-legend-levels { flex: 0 1 auto; min-width: 0; overflow-x: auto; display: flex; gap: 12px; list-style: none; padding: 6px; margin: 0; scrollbar-width: thin; }
 .tag-ontology-legend-levels li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tag-ontology-legend-swatch { position: relative; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 15%, transparent); }
 .tag-ontology-legend-picker { position: absolute; inset: -6px; width: 21px; height: 21px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
@@ -101,10 +104,11 @@
 .tag-ontology-palette-slot .setting-item { flex-direction: column; gap: 6px; padding: 0; border: 0; }
 .tag-ontology-palette-slot .setting-item-info { margin: 0; text-align: center; }
 .tag-ontology-palette-slot .setting-item-name { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.tag-ontology-palette-error { color: var(--text-error); }
 /* The fourth layout keeps the core graph's data and toolbar, with an accessible mind map over its canvas. */
-.tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
+.tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); container: tag-ontology-mindmap / inline-size; }
 .tag-ontology-mindmap-stage { position: absolute; inset: 0; }
-.tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; transform: translate(var(--mindmap-pan-x, 0px), var(--mindmap-pan-y, 0px)) scale(var(--mindmap-zoom, 1)); }
+.tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; }
 .tag-ontology-mindmap-lines { position: absolute; width: 1px; height: 1px; overflow: visible; }
 .tag-ontology-mindmap-lines path { fill: none; stroke: var(--text-faint); stroke-width: 1.2; opacity: 0.45; }
 .tag-ontology-mindmap-lines path.is-related { stroke-dasharray: 5 5; opacity: 0.3; }
@@ -119,6 +123,17 @@
 .tag-ontology-mindmap-node.is-faded, .tag-ontology-mindmap-lines path.is-faded { opacity: 0.2; }
 .tag-ontology-mindmap-error { position: absolute; top: 40%; left: 20%; max-width: 60%; color: var(--text-error); }
 .tag-ontology-native.is-mindmap .graph-controls { z-index: 3; }
-.tag-ontology-mindmap-change-root { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
+.tag-ontology-mode { position: absolute; inset: 0; }
+.tag-ontology-mode[hidden] { display: none; }
+.tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
+/* Bottom centre, level with the depth legend: the overlay's 12px inset, the status line and a 12px gap put the legend's middle
+   about 60px up, and the 30px button centres there. */
+.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 2; cursor: pointer; transition: color 120ms, box-shadow 120ms, background-color 120ms; }
+/* The pointer over the button, and only there, shows in the button itself. */
+.tag-ontology-mindmap-change-root:hover:not(:focus-visible) { background-color: var(--interactive-hover); color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent); }
 
 .tag-ontology-mindmap-change-root[hidden] { display: none; }
+/* Narrower than about 800px, the centred button would run into the legend; it moves to the bottom right instead. */
+@container tag-ontology-mindmap (max-width: 800px) {
+  .tag-ontology-mindmap-change-root { left: auto; right: 16px; transform: none; }
+}

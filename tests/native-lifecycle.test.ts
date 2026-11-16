@@ -5,8 +5,7 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
-import * as legend from '../src/legend.ts';
-import * as hierarchy from '../src/hierarchy.ts';
+import * as palettes from '../src/palettes.ts';
 import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
@@ -24,6 +23,8 @@ class Element {
   win?: Element;
   setText(text: string) { this.text = text; } focused = false; focus() { this.focused = true; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
+  getBoundingClientRect() { return { left: 10, bottom: 20, width: 30 }; }
+  querySelectorAll() { return []; } querySelector() { return null; }
   createDiv(options?: string | { text?: string; cls?: string }) { return this.createEl('div', typeof options === 'string' ? { cls: options } : options); }
   createSpan(options?: { text?: string; cls?: string }) { return this.createEl('span', options); }
   createEl(tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) {
@@ -44,8 +45,9 @@ class Element {
 }
 class File {}
 type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+  graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
-  showNote(path: string): void; showGroup(tag: string): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
+  showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
 // Stands in for the 3D view: it records what the sidebar state asks of it.
@@ -83,6 +85,7 @@ const layoutOutside: string[][] = [];
 let layoutFails = 0;
 
 class TestMindMap {
+  el = new Element();
   data?: MindMapData; destroyed = false; fitted = 0; focused?: string;
   start: MindMapStart;
   select: (tag: string) => void; toggle: (tag: string) => void;
@@ -98,6 +101,34 @@ const mindmaps: TestMindMap[] = [];
 
 async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firstRun = false, showTags = false, dictionaryFound: boolean | undefined | null = true) {
   const notices: string[] = [], sideCalls: object[] = [];
+  class MenuItem {
+    title = ''; checked = false; label = false; icon = ''; action = () => {};
+    setTitle(title: string) { this.title = title; return this; }
+    setChecked(checked: boolean) { this.checked = checked; return this; }
+    setIsLabel(label: boolean) { this.label = label; return this; }
+    setIcon(icon: string) { this.icon = icon; return this; }
+    onClick(action: () => void) { this.action = action; return this; }
+  }
+  const menus: Menu[] = [];
+  class Menu {
+    items: MenuItem[] = []; position?: object; onClose = () => {};
+    constructor() { menus.push(this); }
+    addItem(callback: (item: MenuItem) => void) { const item = new MenuItem(); callback(item); this.items.push(item); return this; }
+    addSeparator() { return this; }
+    onHide(callback: () => void) { this.onClose = callback; }
+    showAtPosition(position: object) { this.position = position; return this; }
+    showAtMouseEvent() { return this; }
+  }
+  const canvases: Canvas[] = [];
+  let canvasReady: Promise<void> = Promise.resolve();
+  class Canvas {
+    visible = false; unloaded = false; opened = 0; state = { zoom: 2, x: 123 };
+    root: Element;
+    constructor(root: Element) { this.root = root; canvases.push(this); }
+    load() {} async open() { this.opened++; await canvasReady; }
+    setVisible(visible: boolean) { this.visible = visible; }
+    unload() { this.unloaded = true; }
+  }
   // Stands in for Obsidian's Modal: open() draws it right away, and tests press its buttons.
   const modals: { titleEl: Element; contentEl: Element; closed: boolean }[] = [];
   class Modal {
@@ -119,13 +150,18 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   });
   const code = await transform(readFileSync(new URL('../src/native.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
-  await module.link(specifier => {
-    const exports: Record<string, unknown> = specifier === 'obsidian' ? { Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal,
+  await module.link(async specifier => {
+    if (specifier === './legend.ts' || specifier === './graph-modes.ts') {
+      const code = await transform(readFileSync(new URL('../src/' + specifier.slice(2), import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
+      return new SourceTextModule(code.code, { context });
+    }
+    const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
         setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
+      : specifier === './graph3d.ts' ? { Graph3DCanvas: Canvas }
+      : specifier === './explorer.ts' ? { ExplorerCanvas: Canvas }
       : specifier === './mindmap-layout.ts' ? { ...mindmapLayout }
-      : specifier === './hierarchy.ts' ? { ...hierarchy }
-      : specifier === './legend.ts' ? { ...legend }
+      : specifier === './palettes.ts' ? { ...palettes }
       : specifier === './layout.ts' ? { treePositions: (tags: string[], _edges: unknown, _horizontal: boolean, outside: string[] = []) => { if (layoutFails > 0) { layoutFails--; throw new Error('layout failed'); } layoutOutside.push(outside); return inRow([...tags, ...outside]); } }
       : specifier === './search.ts' ? { TagSuggest: class { constructor(_app: unknown, input: Element, source: (query: string) => { tag: string }[], onChoose: (tag: string) => void) { suggests.push({ input, source, onChoose }); } } }
       : specifier === 'tag-ontology' ? { ...coreModule }
@@ -139,24 +175,27 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   await module.evaluate();
   const NativeGraphs = (module.namespace as { NativeGraphs: new(owner: object) => Controller }).NativeGraphs;
   const forwarded: NativeData[] = [], engineClicks: unknown[][] = [];
+  const renderSources = new Map<object, () => void>();
   const dashTexture = {}, solidTexture = { constructor: { from: () => dashTexture } };
   const renderer = {
     nodes: [] as Node[], links: [] as Link[],
-    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1,
+    fShowArrow: true, worker: { messages: [] as unknown[], postMessage(message: unknown) { this.messages.push(message); } }, workerResults: null, width: 800, height: 600, targetScale: 1, scale: 1, panX: 0, panY: 0,
     pans: [] as [number, number][],
     highlightNode: null as unknown, dragNode: null as unknown,
     getHighlightNode(): unknown { return this.dragNode || this.highlightNode; },
-    changed() {}, resetPan() {}, setPan(x: number, y: number) { this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
+    changed() {}, resetPan() {}, setPan(x: number, y: number) { this.panX = x; this.panY = y; this.pans.push([x, y]); }, setScale(scale: number) { this.scale = scale; },
     onNodeClick(...args: unknown[]) { engineClicks.push(args); },
     setData(data: NativeData) {
       forwarded.push(data);
       this.nodes = Object.keys(data.nodes).map(id => {
         const node: Node = { id, x: 0, y: 0, fx: null, fy: null, color: data.nodes[id]!.color ?? null, render() { node.seen = renderer.getHighlightNode(); } };
+        renderSources.set(node, node.render!);
         return node;
       });
       this.links = Object.entries(data.nodes).flatMap(([source, node]) => Object.keys(node.links).map(target => {
         const link: Link = { source: { id: source }, target: { id: target }, line: { texture: solidTexture },
           render() { link.arrows = renderer.fShowArrow; link.seen = renderer.getHighlightNode(); } };
+        renderSources.set(link, link.render);
         return link;
       }));
     },
@@ -169,11 +208,19 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     setOptions(options: typeof graphOptions) { Object.assign(graphOptions, options); optionWrites.push(options); },
     onOptionsChange() {},
   };
-  const view = { renderer, contentEl, dataEngine, update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
+  const view = { renderer, contentEl, dataEngine, getViewType: () => 'graph', update() { if (sendOnUpdate) renderer.setData(core()); } }, leaf = { view }, leaves: object[] = [leaf];
   const owner = {
+    get native() { return controller; },
     model: model as Ontology | undefined, settings: { ...DEFAULT_SETTINGS, ...settings }, saves: 0, firstRun,
     async saveState() { owner.saves++; }, async saveSettings() {},
-    paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) { owner.paletteEdits.push([depth, color]); },
+    paletteEdits: [] as [number, string][], async setPaletteColor(depth: number, color: string) {
+      owner.paletteEdits.push([depth, color]);
+      const colors = [...owner.settings.hierarchyPalette]; colors[depth] = color;
+      Object.assign(owner.settings, palettes.editPalette(owner.settings, colors)); controller.refresh();
+    },
+    paletteChoices: [] as string[], paletteDialogs: 0,
+    async choosePalette(key: string) { owner.paletteChoices.push(key); Object.assign(owner.settings, palettes.choosePalette(owner.settings, key)); controller.refresh(); },
+    promptSavePalette() { owner.paletteDialogs++; },
     opened: [] as string[], async openView(graph = '2d') { owner.opened.push(graph); },
     // The plugin reads the accent color from the theme; an empty tag color follows it.
     accent: '#8b6cef', tagColor() { return owner.settings.tagColor || owner.accent; },
@@ -185,6 +232,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
     async saveChange(change: Change, _base?: RawDictionary): Promise<boolean> { owner.changes.push(change); owner.raw = apply(owner.raw, change); return true; },
     async reload() { owner.reloads++; owner.model = new Ontology(owner.raw, []); controller.refresh(false); },
     app: { workspace: {
+      getActiveViewOfType: () => undefined,
       getLeavesOfType: () => leaves,
       ensureSideLeaf: (type: string, side: string, options: object) => { sideCalls.push({ type, side, ...options }); return Promise.resolve(); },
     }, vault: { getAbstractFileByPath: (path: string) => path === owner.dictionaryPath && owner.dictionaryFound ? new File() : null } },
@@ -205,10 +253,10 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
   const addTab = () => {
     const tab = { ...renderer, nodes: [] as typeof renderer.nodes, links: [] as Link[], setData(data: NativeData) { this.nodes = Object.keys(data.nodes).map(id => ({ id, x: 0, y: 0, fx: null, fy: null, color: null })); } };
     const tabEl = new Element(); tabEl.win = win;
-    leaves.push({ view: { renderer: tab, contentEl: tabEl, update() { tab.setData(core()); } } });
+    leaves.push({ view: { renderer: tab, contentEl: tabEl, getViewType: () => 'graph', update() { tab.setData(core()); } } });
     return tabEl;
   };
-  return { controller, renderer, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals };
+  return { controller, renderer, renderSources, original, contentEl, win, sidebar, all, owner, forwarded, engineClicks, notices, ids, click, layout, layoutButtons, search, errors, dashTexture, addTab, graphOptions, optionWrites, suggests, sideCalls, leaves, tick, modals, menus, canvases, delayCanvas: (ready: Promise<void>) => { canvasReady = ready; } };
 }
 
 test('layers the core data and restores the renderer on destroy', async () => {
@@ -234,6 +282,9 @@ test('hierarchy links always show arrows, related links are dashed, other links 
   assert.equal(find('A.md', 'B.md').arrows, false);
   t.renderer.fShowArrow = true; find('A.md', 'B.md').render();
   assert.equal(find('A.md', 'B.md').arrows, true);
+  // Zoomed out far enough that the core graph fades arrows to almost nothing, hierarchy links skip drawing them.
+  t.renderer.fShowArrow = false; t.renderer.scale = 0.33; find('#ml', '#DL').render();
+  assert.equal(find('#ml', '#DL').arrows, false);
 });
 
 // A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
@@ -281,11 +332,29 @@ test('tree layout keeps the user zoom across native updates and refits only when
   assert.equal(t.renderer.scale, 5, 'a native graph update must not reset the zoom');
   t.controller.refresh();
   assert.equal(t.renderer.scale, 5, 'a metadata refresh must not reset the zoom');
-  t.owner.settings.layout = 'tree-horizontal'; t.controller.refresh();
+  await t.controller.switchMode(t.leaves[0], 'tree-horizontal');
   assert.equal(t.renderer.scale, fitted, 'switching layout refits the new positions');
   const shown = t.layoutButtons().filter(el => el.classes.has('is-active'));
   assert.deepEqual(shown.map(el => el.attrs['aria-label']), ['Layout: Horizontal tree'], 'the toolbar shows a layout changed in settings');
   assert.equal(shown[0]!.attrs['aria-pressed'], 'true');
+});
+
+test('unchanged static graph shapes reuse layout positions across metadata refreshes', async () => {
+  const t = await setup({ layout: 'tree' }); t.controller.attach();
+  const calls = layoutOutside.length;
+  t.controller.refresh(); t.controller.refresh();
+  assert.equal(layoutOutside.length, calls);
+  t.controller.expandAll(); assert.equal(layoutOutside.length, calls + 1);
+});
+
+test('native drawing is deferred while embedded modes are active and flushed on return', async () => {
+  const t = await setup(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  const draws = t.forwarded.length;
+  t.controller.refresh(); t.controller.refresh();
+  assert.equal(t.forwarded.length, draws);
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.equal(t.forwarded.length, draws + 1);
 });
 
 test('notes and related toggles start from settings and persist', async () => {
@@ -495,28 +564,27 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   t.controller.attach();
   const icons = t.contentEl.all().filter(el => el.attrs.icon);
   assert.deepEqual(icons.map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
-  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Open in 3D (beta)', 'Open ontology explorer (beta)']);
+  assert.deepEqual(icons.map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer']);
 });
 
-test('the 3D button near the bottom of the toolbar opens the 3D view, and hides with its separator while the 3D view is off', async () => {
-  const t = await setup();
-  t.controller.attach();
-  const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!, last = tools.children.slice(-3, -1);
-  assert.ok(last[0]!.classes.has('tag-ontology-separator')); assert.equal(last[1]!.attrs['aria-label'], 'Open in 3D (beta)');
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
-  t.click('Open in 3D (beta)');
-  assert.deepEqual(t.owner.opened, ['3d']);
+test('the 3D mode reuses the graph tab and unloads when disabled', async () => {
+  const t = await setup(); t.controller.attach();
+  const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: 3D')!;
+  t.click('Layout: 3D'); await settle();
+  assert.deepEqual(t.owner.opened, []);
+  assert.equal(t.canvases.length, 1); assert.equal(t.canvases[0].visible, true);
   t.owner.settings.enable3d = false; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [true, true]);
+  assert.equal(button.hidden, true); assert.equal(t.canvases[0].unloaded, true);
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
   t.owner.settings.enable3d = true; t.controller.refresh();
-  assert.deepEqual(last.map(el => el.hidden), [false, false]);
+  assert.equal(button.hidden, false);
 });
 
 test('all layout buttons stay visible in order and switch directly with the active layout marked', async () => {
   const t = await setup();
   t.controller.attach();
   const shown = () => t.layoutButtons().filter(el => !el.hidden).map(el => el.attrs['aria-label']);
-  const order = ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree'];
+  const order = ['Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer'];
   const active = () => t.layoutButtons().filter(el => el.classes.has('is-active')).map(el => el.attrs['aria-label']);
   assert.deepEqual(shown(), order);
   const sent = t.forwarded.length;
@@ -536,12 +604,13 @@ test('the explorer follows 3D without a separator and keeps its own enabled sett
   const t = await setup();
   t.controller.attach();
   const tools = t.contentEl.all().find(el => el.classes.has('tag-ontology-tools'))!;
-  const [three, explorer] = tools.children.slice(-2);
-  assert.equal(three.attrs['aria-label'], 'Open in 3D (beta)');
-  assert.equal(explorer.attrs['aria-label'], 'Open ontology explorer (beta)');
+  const [three, explorer] = tools.all().filter(el => el.attrs['aria-label'] === 'Layout: 3D' || el.attrs['aria-label'] === 'Layout: Ontology explorer');
+  assert.equal(three.attrs['aria-label'], 'Layout: 3D');
+  assert.equal(explorer.attrs['aria-label'], 'Layout: Ontology explorer');
   assert.equal(explorer.hidden, false);
-  t.click('Open ontology explorer (beta)');
-  assert.deepEqual(t.owner.opened, ['explorer']);
+  t.click('Layout: Ontology explorer'); await settle();
+  assert.deepEqual(t.owner.opened, []);
+  assert.equal(t.canvases.length, 1);
   t.owner.settings.enableExplorer = false; t.controller.refresh();
   assert.equal(explorer.hidden, true);
   assert.equal(three.hidden, false);
@@ -554,8 +623,69 @@ test('tree hides notes without changing the saved setting', async () => {
   t.controller.attach();
   assert.ok(Object.values(t.forwarded.at(-1)!.nodes).every(n => n.type === 'tag'));
   assert.equal(t.owner.settings.showNotes, true);
-  t.owner.settings.layout = 'force'; t.controller.refresh();
+  await t.controller.switchMode(t.leaves[0], 'force');
   assert.ok(t.ids().includes('A.md'), 'Force shows notes again');
+});
+
+test('embedded modes reuse their canvases and preserve the underlying map and zoom', async () => {
+  const t = await setup({ layout: 'mindmap' }); t.controller.attach();
+  const leaf = t.leaves[0], map = mindmaps.at(-1)!;
+  map.chooseRoot('cs'); map.toggle('cs');
+  t.renderer.scale = t.renderer.targetScale = 3;
+  await t.controller.switchMode(leaf, 'explorer');
+  const explorer = t.canvases[0]; explorer.state.x = 456;
+  await t.controller.switchMode(leaf, '3d');
+  const three = t.canvases[1]; three.state.zoom = 4;
+  assert.equal(explorer.visible, false); assert.equal(three.visible, true);
+  await t.controller.switchMode(leaf, 'explorer');
+  assert.equal(t.canvases.length, 2); assert.equal(explorer.opened, 1);
+  assert.equal(explorer.state.x, 456); assert.equal(three.visible, false);
+  await t.controller.switchMode(leaf, 'mindmap');
+  assert.equal(t.renderer.scale, 3); assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+  assert.equal(explorer.visible, false); assert.equal(t.contentEl.classes.has('has-embedded-graph'), false);
+  t.controller.destroy();
+  assert.ok(t.canvases.every(canvas => canvas.unloaded && canvas.root.removed));
+});
+
+test('a late mode load cannot replace the latest mode or resurrect a closed tab', async () => {
+  const t = await setup(); t.controller.attach();
+  let finish!: () => void;
+  t.delayCanvas(new Promise<void>(resolve => { finish = resolve; }));
+  const pending = t.controller.switchMode(t.leaves[0], '3d');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  finish(); await pending;
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.canvases[0].visible, false);
+  assert.ok(t.renderer.worker.messages.some(message => (message as { run?: boolean }).run === true));
+  let close!: () => void;
+  t.delayCanvas(new Promise<void>(resolve => { close = resolve; }));
+  const closing = t.controller.switchMode(t.leaves[0], 'explorer');
+  t.controller.destroy(); close(); await closing;
+  assert.ok(t.canvases.every(canvas => canvas.unloaded));
+  assert.equal(t.contentEl.classes.has('has-embedded-graph'), false);
+});
+
+test('a failed canvas load returns to the native graph and can be retried', async () => {
+  const t = await setup(); t.controller.attach();
+  t.delayCanvas(Promise.reject(new Error('load failed')));
+  await t.controller.switchMode(t.leaves[0], '3d');
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.canvases[0].unloaded, true);
+  assert.match(t.notices[0], /load failed/);
+  t.delayCanvas(Promise.resolve());
+  await t.controller.switchMode(t.leaves[0], '3d');
+  assert.equal(t.canvases.length, 2); assert.equal(t.canvases[1].visible, true);
+});
+
+test('mode context menus offer an explicit new tab without changing the current mode', async () => {
+  const t = await setup(); t.controller.attach();
+  const button = t.layoutButtons().find(el => el.attrs['aria-label'] === 'Layout: Ontology explorer')!;
+  button.events.get('contextmenu')!({ preventDefault() {} });
+  assert.equal(t.menus.at(-1)!.items[0].title, 'Open in new tab');
+  t.menus.at(-1)!.items[0].action();
+  assert.deepEqual(t.owner.opened, ['explorer']);
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
 });
 
 test('tree pins every node and hands the tags outside the hierarchy to the layout for its corner', async () => {
@@ -663,6 +793,7 @@ for (const [name, trigger] of [
     keepNodes(t.renderer);
     const coreSetData = t.renderer.setData;
     t.controller.attach();
+    t.owner.model = new Ontology({ ...raw, cs: { description: '', broader: ['sec'] } }, []);
     layoutFails = 1;
     try { assert.doesNotThrow(() => trigger(t)); } finally { layoutFails = 0; }
     assert.equal(t.renderer.setData, coreSetData);
@@ -899,6 +1030,20 @@ test('with custom colors the sidebar tags take the tag color, and the sidebar ti
   assert.ok(panel.classes.has('tag-ontology-tinted'), 'the tags keep matching the graph');
   Object.assign(t.owner.settings, { titleAccent: true, customColors: false }); t.controller.refresh();
   assert.ok(!title().classes.has('tag-ontology-accent')); assert.ok(!panel.classes.has('tag-ontology-tinted'));
+});
+
+test('Force leaves native node and note-link renderers untouched until Focus has a selection', async () => {
+  const t = await setup({ focus: true, expanded: ['cs', 'ml'] }); t.controller.attach();
+  const unchanged = () => {
+    for (const node of t.renderer.nodes) assert.equal(node.render, t.renderSources.get(node));
+    const note = t.renderer.links.find(l => l.source.id === 'A.md' && l.target.id === 'B.md')!;
+    assert.equal(note.render, t.renderSources.get(note));
+  };
+  unchanged();
+  nodeClick(t, '#cs');
+  assert.ok(t.renderer.nodes.every(node => node.render !== t.renderSources.get(node)), 'selection enables Focus drawing');
+  t.click('Home');
+  unchanged();
 });
 
 test('focus fades everything but the selected tag, the tags next to it and the chosen branch', async () => {
@@ -1568,13 +1713,13 @@ test('depth colors reach the native renderer and remain stable across expansion 
   const t = await setup({ customColors: true, hierarchyColors: true });
   t.controller.attach();
   const rootColor = t.forwarded.at(-1)!.nodes['#cs'].color as { rgb: number };
-  assert.equal(rootColor.rgb, 0x4ea1ff);
+  assert.equal(rootColor.rgb, 0xef4444);
   t.owner.settings.expanded = ['cs', 'ml'];
   t.controller.refresh();
   const expanded = t.forwarded.at(-1)!.nodes;
   assert.equal(expanded['#cs'].color, rootColor);
-  assert.equal((expanded['#ml'].color as { rgb: number }).rgb, 0xf0a33c);
-  assert.equal((expanded['#DL'].color as { rgb: number }).rgb, 0xe5484d);
+  assert.equal((expanded['#ml'].color as { rgb: number }).rgb, 0xf97316);
+  assert.equal((expanded['#DL'].color as { rgb: number }).rgb, 0xeab308);
   t.owner.settings.hierarchyColors = false;
   t.controller.refresh();
   assert.equal((t.forwarded.at(-1)!.nodes['#DL'].color as { rgb: number }).rgb, parseInt(t.owner.tagColor().slice(1), 16));
@@ -1588,12 +1733,14 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
-  assert.equal(swatches()[0].css['--legend-color'], '#4ea1ff');
+  assert.equal(swatches()[0].css['--legend-color'], '#ef4444');
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')));
   const picker = swatches()[0].children[0];
   assert.equal(picker.attrs.type, 'color');
   assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
   picker.value = '#112233'; picker.events.get('change')!();
   assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'editing a swatch reveals the save action');
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
   assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
   t.owner.settings.expanded = [];
@@ -1622,6 +1769,17 @@ test('the depth legend expands to match a longer palette', async () => {
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });
 
+test('mind map starting-tag colors follow the custom color toggle', async () => {
+  const t = await setup({ layout: 'mindmap', customColors: false, tagColor: '#123456' });
+  t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  assert.equal(map.start.color('cs'), undefined);
+  t.owner.settings.customColors = true;
+  assert.equal(map.start.color('cs'), '#123456');
+  t.owner.settings.customColors = false;
+  assert.equal(map.start.color('cs'), undefined);
+});
+
 test('mind map is the second layout and shares filtering, expansion, palette and sidebar selection', async () => {
   const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true, expanded: ['cs', 'sec'] });
   t.owner.model = new Ontology({ ...raw, hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] }, sec: { description: '', broader: ['hub'] } }, []);
@@ -1634,7 +1792,7 @@ test('mind map is the second layout and shares filtering, expansion, palette and
   assert.ok(map.data!.nodes.every(node => node.id.startsWith('#')), 'notes remain hidden without changing the saved toggle');
   assert.equal(t.owner.settings.showNotes, true);
   const root = map.data!.nodes.find(node => node.tag === 'cs')!;
-  assert.equal(root.color, '#f0a33c');
+  assert.equal(root.color, '#f97316');
   assert.equal(root.expanded, true); assert.equal(root.expandable, true);
   assert.equal(new Set(map.data!.nodes.map(node => node.id)).size, map.data!.nodes.length);
   map.select('cs');
@@ -1646,7 +1804,8 @@ test('mind map is the second layout and shares filtering, expansion, palette and
   assert.ok(!map.data!.nodes.some(node => node.tag === 'crypto'));
   t.click('Fit'); assert.ok(map.fitted > 0);
   t.layout('Force');
-  assert.equal(map.destroyed, true);
+  assert.equal(map.destroyed, false);
+  assert.equal(map.el.hidden, true);
   assert.equal(t.contentEl.classes.has('is-mindmap'), false);
   assert.ok(t.renderer.nodes.every(node => node.fx === null && node.fy === null));
 });
@@ -1697,7 +1856,8 @@ test('mind map enters collapsed, keeps interaction during refresh, and restores 
   t.layout('Force');
   assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml']);
   t.layout('Mind map'); map = mindmaps.at(-1)!;
-  assert.equal(map.data!.nodes.length, 0, 'show the starting-tag picker rather than every root');
+  assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'dl'), 'returning preserves the previous branch');
 });
 
 test('restoring a saved mind map layout starts with roots even when saved branches were expanded', async () => {
@@ -1740,9 +1900,138 @@ test('saved non-mindmap expansion survives restarting while mind map is active',
   t.layout('Mind map');
   const map = mindmaps.at(-1)!;
   map.chooseRoot('sec'); map.toggle('sec'); await settle();
-  assert.deepEqual([...t.owner.settings.expanded], ['sec']);
+  assert.deepEqual([...t.owner.settings.expanded], ['cs', 'ml'], 'mind map keeps the saved non-mindmap expansion intact');
   const saved = { ...t.owner.settings, expanded: [...t.controller.savedExpanded] };
   const restored = await setup(saved); restored.controller.attach();
   restored.layout('Force');
   assert.deepEqual([...restored.owner.settings.expanded], ['cs', 'ml']);
+});
+
+test('mind map lays out the chosen root and open paths without changing full-dictionary colors', async () => {
+  const t = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true });
+  t.owner.model = new Ontology({
+    hub: { description: '', broader: [] }, cs: { description: '', broader: ['hub'] },
+    ml: { description: '', broader: ['cs'] }, dl: { description: '', broader: ['cs', 'ml'] },
+  }, []);
+  t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  map.chooseRoot('cs'); map.toggle('cs'); await settle();
+  const node = (tag: string) => map.data!.nodes.find(node => node.tag === tag)!;
+  assert.equal(node('dl').x, node('ml').x, 'direct children share the next column while the long path is closed');
+  assert.equal(node('cs').x, 0.01, 'the chosen root starts at layout depth zero');
+  assert.equal(node('dl').color, '#22c55e', 'color retains full dictionary depth three');
+  const color = node('dl').color;
+  map.toggle('ml'); await settle();
+  assert.equal(node('dl').x - node('ml').x, 260, 'the opened longer path adds one column');
+  assert.equal(node('dl').color, color);
+  map.toggle('ml'); await settle();
+  assert.equal(node('dl').x, node('ml').x, 'a closed parent contributes no distance even while both tags remain visible');
+  assert.ok(!map.data!.edges.some(edge => edge.source === '#ml' && edge.target === '#DL'));
+  assert.equal(node('dl').color, color);
+});
+
+test('comparison tabs keep different 2D layouts and independent mind map branches', async () => {
+  const t = await setup(); t.controller.attach(); t.addTab(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[1], 'mindmap');
+  const map = mindmaps.at(-1)!; map.chooseRoot('cs'); map.toggle('cs');
+  assert.equal(t.controller.graphMode(t.leaves[0]), 'force');
+  assert.equal(t.controller.graphMode(t.leaves[1]), 'mindmap');
+  await t.controller.switchMode(t.leaves[0], 'tree');
+  assert.equal(t.controller.graphMode(t.leaves[1]), 'mindmap');
+  assert.equal(map.data!.root, 'cs');
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+  t.controller.activate(t.leaves[0]); t.controller.activate(null);
+  t.controller.collapseAll();
+  assert.ok(map.data!.nodes.some(node => node.tag === 'ml'), 'sidebar actions follow the last activated graph, not the last switched mode');
+});
+
+test('returning to 2D layouts restores zoom, pan and the same mind map instance', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.scale = t.renderer.targetScale = 3; t.renderer.setPan(120, 240);
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  const map = mindmaps.at(-1)!; map.chooseRoot('cs'); map.toggle('cs');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.equal(t.renderer.scale, 3); assert.equal(t.renderer.panX, 120); assert.equal(t.renderer.panY, 240);
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.equal(mindmaps.at(-1), map); assert.equal(map.destroyed, false); assert.equal(map.el.hidden, false);
+  assert.equal(map.data!.root, 'cs'); assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
+});
+
+test('mode switches update the sidebar expansion label for the selected tag', async () => {
+  const t = await setup({ expanded: ['cs'] }); t.controller.attach();
+  t.controller.clickTag('cs', false);
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'));
+  await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Expand in graph'));
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.ok(t.sidebar.all().some(el => el.attrs['aria-label'] === 'Collapse in graph'));
+});
+
+test('tree pins are released when returning from an embedded canvas to Force', async () => {
+  const t = await setup({ layout: 'tree' });
+  const send = t.renderer.setData;
+  t.renderer.setData = function(data) {
+    const previous = new Map(this.nodes.map(node => [node.id, node])); send.call(this, data);
+    for (const node of this.nodes) {
+      const old = previous.get(node.id);
+      if (old) { node.x = old.x; node.y = old.y; node.fx = old.fx; node.fy = old.fy; }
+    }
+  };
+  t.controller.attach(); t.addTab(); t.controller.attach();
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  await t.controller.switchMode(t.leaves[1], 'force');
+  await t.controller.switchMode(t.leaves[0], 'force');
+  assert.ok(t.renderer.nodes.every(node => node.fx === null && node.fy === null));
+});
+
+test('group actions and history retain the source explorer in split views', async () => {
+  const t = await setup(); t.controller.attach();
+  const aTaken: string[][] = [], bTaken: string[][] = [];
+  const a = { groupNotes: () => [{ path: 'A.md', mtime: 1 }], takeOut: (_tag: string, paths: string[]) => aTaken.push(paths) };
+  const b = { groupNotes: () => [{ path: 'B.md', mtime: 1 }], takeOut: (_tag: string, paths: string[]) => bTaken.push(paths) };
+  t.controller.explorer = b; t.controller.showGroup('ml', a); t.click('Take out latest 10');
+  assert.deepEqual(aTaken, [['A.md']]); assert.deepEqual(bTaken, []);
+  t.controller.showGroup('ml', b); t.click('Take out latest 10');
+  assert.deepEqual(bTaken, [['B.md']]);
+  t.click('Back'); t.click('Take out latest 10');
+  assert.deepEqual(aTaken, [['A.md'], ['A.md']]);
+});
+
+test('graph palette picker lists named snapshots and working copy, and save opens the shared dialog', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true,
+    savedHierarchyPalettes: [{ name: 'Study', colors: ['#112233'] }], customHierarchyPalette: ['#654321'], workingPaletteSource: 'Pastel' });
+  t.controller.attach();
+  const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+  const picker = () => legend().all().find(el => el.classes.has('tag-ontology-legend-palette'))!;
+  assert.ok(picker());
+  assert.equal(picker().attrs.icon, 'palette');
+  assert.equal(picker().text, '');
+  assert.equal(picker().attrs['aria-haspopup'], 'menu');
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'presets hide the save icon');
+  picker().events.get('click')!();
+  assert.equal(picker().attrs['aria-expanded'], 'true');
+  const menu = t.menus.at(-1)!;
+  assert.ok(menu.items.some(item => item.title === 'Study'));
+  assert.ok(menu.items.some(item => item.title === 'Working copy · Pastel'));
+  assert.equal(menu.items.filter(item => item.checked).length, 1);
+  assert.equal(menu.items.find(item => item.checked)!.title, 'Default');
+  assert.ok(menu.position);
+  menu.onClose(); assert.equal(picker().attrs['aria-expanded'], 'false');
+  menu.items.find(item => item.title === 'Save a copy…')!.action();
+  assert.equal(t.owner.paletteDialogs, 1, 'an unmodified preset can still be saved from the menu');
+  const before = picker(); t.controller.refresh();
+  assert.equal(picker(), before, 'an unrelated graph redraw keeps the picker and its focus intact');
+  menu.items.find(item => item.title === 'Study')!.action();
+  assert.deepEqual(t.owner.paletteChoices, ['saved:Study']);
+  assert.equal(t.owner.settings.hierarchyPalette[0], '#112233');
+  assert.equal(legend().all().find(el => el.classes.has('tag-ontology-legend-swatch'))!.css['--legend-color'], '#112233');
+  assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'saved palettes hide the save icon');
+  picker().events.get('click')!();
+  t.menus.at(-1)!.items.find(item => item.title === 'Working copy · Pastel')!.action();
+  assert.equal(t.owner.settings.hierarchyPalette[0], '#654321');
+  const save = legend().all().find(el => el.classes.has('tag-ontology-legend-save'))!;
+  assert.equal(save.attrs.icon, 'bookmark-plus');
+  assert.equal(save.text, '');
+  assert.match(picker().attrs['aria-label'], /unsaved/);
+  t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
 });

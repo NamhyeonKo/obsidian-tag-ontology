@@ -1,12 +1,22 @@
-// Mind maps keep full dictionary depths; the regular trees use their original visible-tree layout.
-export function mindmapPositions(tags: string[], edges: [string, string][], depths: ReadonlyMap<string, number>, outside: string[]) {
+// Mind map distance follows the longest currently open parent path; colors keep full dictionary depths.
+export function mindmapPositions(tags: string[], edges: [string, string][], outside: string[]) {
   const parents = new Map(tags.map(tag => [tag, [] as string[]]));
   for (const [parent, child] of edges) parents.get(child)?.push(parent);
-  const children = new Map(tags.map(tag => [tag, [] as string[]])), roots: string[] = [];
+  const followers = new Map(tags.map(tag => [tag, [] as string[]]));
+  for (const [tag, above] of parents) for (const parent of above) followers.get(parent)!.push(tag);
+  const remaining = new Map(tags.map(tag => [tag, parents.get(tag)!.length]));
+  const roots = tags.filter(tag => remaining.get(tag) === 0), queue = [...roots];
+  const depths = new Map(roots.map(tag => [tag, 0]));
+  // Process parents first without recursion or depending on the incoming node order.
+  for (let i = 0; i < queue.length; i++) for (const child of followers.get(queue[i])!) {
+    depths.set(child, Math.max(depths.get(child) ?? 0, depths.get(queue[i])! + 1));
+    remaining.set(child, remaining.get(child)! - 1);
+    if (remaining.get(child) === 0) queue.push(child);
+  }
+  const children = new Map(tags.map(tag => [tag, [] as string[]]));
   for (const tag of tags) {
     const above = parents.get(tag)!;
     if (above.length) children.get(above.reduce((a, b) => depths.get(b)! > depths.get(a)! ? b : a))!.push(tag);
-    else roots.push(tag);
   }
   const positions = new Map<string, { x: number; y: number }>();
   let offset = 0;

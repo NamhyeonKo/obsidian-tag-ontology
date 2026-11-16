@@ -1,20 +1,22 @@
 import { DICTIONARY_LOCATIONS } from 'tag-ontology';
-import { PALETTE, PALETTE_PRESETS } from './colors.ts';
+import { PALETTE, PALETTE_PRESETS, paletteFor, samePalette } from './colors.ts';
+
+export interface SavedPalette { name: string; colors: string[] }
 
 export interface Settings {
   dictionaryPath: string; dictionaryPathExplicit: boolean; layout: 'force' | 'tree' | 'tree-horizontal' | 'mindmap';
   expanded: string[]; showNotes: boolean; showRelated: boolean;
   // Custom colors use the hierarchy palette when enabled, otherwise tagColor (or the theme accent).
   customColors: boolean; hierarchyColors: boolean; hierarchyPalette: string[]; customHierarchyPalette: string[]; hierarchyPalettePreset: string; tagColor: string;
+  savedHierarchyPalettes: SavedPalette[]; workingPaletteSource: string;
   // With customColors on, the selected tag's title in the sidebar takes the tag color too.
   titleAccent: boolean;
   // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
   // it and the notes on the selected tag (and on its descendants, with those on).
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
-  // With the 3D view on, the 2D graph toolbar and the Open 3D graph command open it; the ribbon icon and Open graph always
-  // open the 2D graph.
+  // Enables the 3D mode button and command; modes share a graph tab by default.
   enable3d: boolean;
-  // With the explorer on, the 2D graph toolbar and the Open ontology explorer command open it.
+  // Enables the ontology explorer mode button and command.
   enableExplorer: boolean;
   // With kebabNames on, the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens,
   // the rule TOW checks with --names kebab. Existing names are kept.
@@ -22,8 +24,17 @@ export interface Settings {
   // 3D labels: with perspective they grow as the camera comes closer, between 12 and 24 px times labelSize; without, they
   // stay 12 px times labelSize.
   perspectiveLabels: boolean; labelSize: number; locationNoticeShown: boolean;
+  // 3D forces, in the units and ranges of the 2D graph's Forces sliders; the 3D view scales them to its own space.
+  forces3d: Forces;
 }
+export interface Forces { center: number; repel: number; link: number; distance: number }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
+export const FORCES: Record<keyof Forces, { name: string; min: number; max: number; step: number; value: number }> = {
+  center: { name: 'Center force', min: 0, max: 1, step: 0.01, value: 0.52 },
+  repel: { name: 'Repel force', min: 0, max: 20, step: 0.1, value: 10 },
+  link: { name: 'Link force', min: 0, max: 1, step: 0.01, value: 1 },
+  distance: { name: 'Link distance', min: 30, max: 500, step: 1, value: 250 },
+};
 export const TOW_FOLDER_DICTIONARY = DICTIONARY_LOCATIONS[0];
 export const TOW_DICTIONARY = DICTIONARY_LOCATIONS[1];
 export const LEGACY_DICTIONARY = DICTIONARY_LOCATIONS[2];
@@ -34,7 +45,9 @@ export function isHiddenPath(path: string): boolean {
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: TOW_FOLDER_DICTIONARY, dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
   customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+  savedHierarchyPalettes: [], workingPaletteSource: '',
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
+  forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -50,6 +63,20 @@ function paletteOr(value: unknown, fallback: readonly string[]): string[] {
   return colors.length > 0 && colors.every((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) ? colors : [...fallback];
 }
 
+export function isPaletteName(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 80 && [...value].every(char => char.charCodeAt(0) >= 0x20 && char.charCodeAt(0) !== 0x7f);
+}
+
+function forces(raw: unknown): Forces {
+  const value = (typeof raw === 'object' && raw ? raw : {}) as Record<string, unknown>;
+  const out = { ...DEFAULT_SETTINGS.forces3d };
+  for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
+    const n = value[key], { min, max } = FORCES[key];
+    if (typeof n === 'number' && n >= min && n <= max) out[key] = n;
+  }
+  return out;
+}
+
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
@@ -58,6 +85,31 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
   const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
   const tagColor = typeof value.tagColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.tagColor) && !legacy ? value.tagColor : '';
+  const savedHierarchyPalettes: SavedPalette[] = [];
+  const names = new Set<string>();
+  if (Array.isArray(value.savedHierarchyPalettes)) for (const entry of value.savedHierarchyPalettes as unknown[]) {
+    if (!entry || typeof entry !== 'object' || !('name' in entry) || !('colors' in entry) || !isPaletteName(entry.name)) continue;
+    const name = entry.name.trim(), colors = paletteOr(entry.colors, []), key = name.toLowerCase();
+    if (!colors.length || names.has(key)) continue;
+    names.add(key); savedHierarchyPalettes.push({ name, colors });
+  }
+  let customHierarchyPalette = paletteOr(value.customHierarchyPalette, []);
+  // Keep the old Custom slot before an old Default/Pastel becomes a working copy.
+  if (!Object.hasOwn(value, 'savedHierarchyPalettes') && customHierarchyPalette.length) savedHierarchyPalettes.push({ name: 'My colors', colors: [...customHierarchyPalette] });
+  let hierarchyPalettePreset = typeof value.hierarchyPalettePreset === 'string' && (value.hierarchyPalettePreset === 'custom'
+    || Object.hasOwn(PALETTE_PRESETS, value.hierarchyPalettePreset) || savedHierarchyPalettes.some(palette => 'saved:' + palette.name === value.hierarchyPalettePreset)) ? value.hierarchyPalettePreset : '';
+  const supplied = paletteOr(value.hierarchyPalette, []);
+  const preset = PALETTE_PRESETS[hierarchyPalettePreset];
+  const hierarchyPalette = supplied.length ? supplied : preset ? paletteFor(preset, PALETTE.length) : [...PALETTE];
+  let workingPaletteSource = isPaletteName(value.workingPaletteSource) ? value.workingPaletteSource.trim() : '';
+  const snapshot = savedHierarchyPalettes.find(palette => 'saved:' + palette.name === hierarchyPalettePreset);
+  const expected = preset ? paletteFor(preset, hierarchyPalette.length) : snapshot?.colors;
+  if ((expected && !samePalette(hierarchyPalette, expected)) || (!hierarchyPalettePreset && supplied.length
+    && !Object.values(PALETTE_PRESETS).some(example => samePalette(hierarchyPalette, paletteFor(example, hierarchyPalette.length))))) {
+    workingPaletteSource = preset?.name ?? snapshot?.name ?? 'Previous colors';
+    hierarchyPalettePreset = 'custom'; customHierarchyPalette = [...hierarchyPalette];
+  }
+  if (hierarchyPalettePreset === 'custom') customHierarchyPalette = [...hierarchyPalette];
   return {
     dictionaryPath: typeof value.dictionaryPath === 'string' && isValidDictionaryPath(value.dictionaryPath, configDir)
       ? value.dictionaryPath : DEFAULT_SETTINGS.dictionaryPath,
@@ -69,9 +121,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), hierarchyColors: flag('hierarchyColors'),
-    hierarchyPalette: paletteOr(value.hierarchyPalette, PALETTE),
-    customHierarchyPalette: paletteOr(value.customHierarchyPalette, []),
-    hierarchyPalettePreset: typeof value.hierarchyPalettePreset === 'string' && (value.hierarchyPalettePreset === 'custom' || Object.hasOwn(PALETTE_PRESETS, value.hierarchyPalettePreset)) ? value.hierarchyPalettePreset : '',
+    hierarchyPalette, customHierarchyPalette, hierarchyPalettePreset, savedHierarchyPalettes, workingPaletteSource,
     tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
     enable3d: flag('enable3d'),
@@ -80,6 +130,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     perspectiveLabels: flag('perspectiveLabels'),
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
     locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
+    forces3d: forces(value.forces3d),
   };
 }
 
