@@ -298,17 +298,14 @@ test('hierarchy links always show arrows, related links are dashed, other links 
 // A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
 const nodeClick = (t: { renderer: { onNodeClick: unknown } }, id: string) => (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, id, 'tag');
 
-test('a single click on a tag node centers it after the double-click window; a double click does not', async () => {
+test('a single click on a tag node centers it right away', async () => {
   const t = await setup(); t.controller.attach();
   // The first fit runs for two seconds; let it finish so it doesn't set the zoom.
   t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
-  nodeClick(t, '#cs'); t.tick(100);
-  assert.equal(t.renderer.targetScale, 0.2);
-  t.tick(150); t.tick(400);
+  nodeClick(t, '#cs'); t.tick(16);
+  assert.ok(t.renderer.scale > 0.2);
+  t.tick(400);
   assert.equal(t.renderer.scale, 2);
-  t.tick(2500); t.renderer.scale = t.renderer.targetScale = 0.2;
-  nodeClick(t, '#ml'); t.tick(100); nodeClick(t, '#ml'); t.tick(500);
-  assert.equal(t.renderer.targetScale, 0.2);
 });
 
 test('a click selects a dictionary tag without expanding it', async () => {
@@ -1039,14 +1036,6 @@ test('choosing a tag in the sidebar centers it in the open graph', async () => {
   t.suggests[0]!.onChoose('dl'); t.tick(400);
   const node = t.renderer.nodes.find(n => n.id === '#DL')!;
   assert.deepEqual(t.renderer.pans.at(-1), [400 - node.x * t.renderer.scale, 300 - node.y * t.renderer.scale]);
-});
-
-test('clicking a node in the graph keeps the camera where it is', async () => {
-  const t = await setup({ layout: 'tree' });
-  t.controller.attach();
-  const pans = t.renderer.pans.length;
-  (t.renderer.onNodeClick as (...args: unknown[]) => void)({}, '#cs', 'tag');
-  assert.equal(t.renderer.pans.length, pans);
 });
 
 test('custom colors give every tag node the tag color and turning them off gives the core colors back', async () => {
