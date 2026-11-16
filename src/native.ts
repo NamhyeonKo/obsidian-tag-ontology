@@ -142,6 +142,9 @@ class ChoiceModal extends Modal {
 // Screen radius a revealed tag is zoomed to: a small child tag zooms in further than a large parent.
 // A smallest node (8) lands at scale 2, a root with 16 children at about 1.3.
 const REVEAL_SIZE = 16;
+// How long the camera takes to glide to a revealed tag.
+const REVEAL_MS = 350;
+const FOLLOW_MS = 2000;
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -753,15 +756,24 @@ export class NativeGraphs {
     const id = session.resolved?.idOf.get(tag), r = session.renderer;
     if (!id) return;
     if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
-    // Zoom in until the node is REVEAL_SIZE on screen; the core renderer eases toward targetScale. A node's size follows
-    // its links, so it shrinks when it is expanded: center() reads it again each frame. A view already closer stays as it is.
-    const start = r.targetScale;
-    const center = () => {
-      const node = r.nodes.find(n => n.id === id), size = node?.getSize?.();
-      if (size) r.targetScale = Math.max(start, REVEAL_SIZE / size);
-      if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
+    // One eased camera move: the node glides from where it is to the middle while the zoom goes to where the node is
+    // REVEAL_SIZE on screen. Scale and pan are both set here every frame, so the core graph's own zoom easing never pulls
+    // the other way (after a pinch its targetScale can still hold an older, smaller zoom). It starts from the zoom on screen
+    // and never zooms out. After the move the node stays centered while the force layout settles, and the zoom follows
+    // its size, which changes when expanding changes its links.
+    const ratio = devicePixelRatio, from = r.scale, node0 = r.nodes.find(n => n.id === id);
+    if (!node0) return;
+    const startX = node0.x * from + (r.panX ?? 0), startY = node0.y * from + (r.panY ?? 0);
+    const center = (progress: number) => {
+      const node = r.nodes.find(n => n.id === id);
+      if (!node) return;
+      const size = node.getSize?.(), to = Math.max(from, size ? REVEAL_SIZE / size : from);
+      const t = 1 - (1 - Math.min(1, progress * FOLLOW_MS / REVEAL_MS)) ** 3, scale = from + (to - from) * t;
+      const x = startX + (r.width * ratio / 2 - startX) * t, y = startY + (r.height * ratio / 2 - startY) * t;
+      r.targetScale = scale; r.setScale(scale);
+      r.setPan(x - node.x * scale, y - node.y * scale); r.changed();
     };
-    center(); this.follow(session, center);
+    this.follow(session, center);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -1229,7 +1241,7 @@ export class NativeGraphs {
 
   // Repeats a move every frame for a while (two seconds while the force layout settles) and passes how far along it is,
   // ending on 1; any user input stops it.
-  private follow(session: Session, move: (progress: number) => void, ms = 2000) {
+  private follow(session: Session, move: (progress: number) => void, ms = FOLLOW_MS) {
     session.stopFit();
     const started = performance.now();
     const frame = () => {

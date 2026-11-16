@@ -304,8 +304,8 @@ test('a single click on a tag node centers it after the double-click window; a d
   t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
   nodeClick(t, '#cs'); t.tick(100);
   assert.equal(t.renderer.targetScale, 0.2);
-  t.tick(150);
-  assert.equal(t.renderer.targetScale, 2);
+  t.tick(150); t.tick(400);
+  assert.equal(t.renderer.scale, 2);
   t.tick(2500); t.renderer.scale = t.renderer.targetScale = 0.2;
   nodeClick(t, '#ml'); t.tick(100); nodeClick(t, '#ml'); t.tick(500);
   assert.equal(t.renderer.targetScale, 0.2);
@@ -571,24 +571,46 @@ test('revealing a tag zooms in further for a smaller node but never zooms out', 
   const t = await setup(); t.controller.attach();
   t.renderer.sizes = { '#DL': 8, '#ml': 10 };
   t.renderer.scale = t.renderer.targetScale = 0.2;
-  t.suggests[0]!.onChoose('dl');
-  assert.equal(t.renderer.targetScale, 2);
+  t.suggests[0]!.onChoose('dl'); t.tick(400);
+  assert.equal(t.renderer.scale, 2);
   t.renderer.scale = t.renderer.targetScale = 0.2;
-  t.suggests[0]!.onChoose('ml');
-  assert.equal(t.renderer.targetScale, 1.6);
+  t.suggests[0]!.onChoose('ml'); t.tick(400);
+  assert.equal(t.renderer.scale, 1.6);
   t.renderer.scale = t.renderer.targetScale = 3;
-  t.suggests[0]!.onChoose('ml');
-  assert.equal(t.renderer.targetScale, 3);
+  t.suggests[0]!.onChoose('ml'); t.tick(400);
+  assert.equal(t.renderer.scale, 3);
+});
+
+test('the reveal glides from the zoom on screen, not an older target left by a pinch', async () => {
+  const t = await setup(); t.controller.attach();
+  t.renderer.sizes = { '#DL': 8 };
+  // A pinch leaves targetScale behind; the zoom on screen is 3.
+  t.renderer.scale = 3; t.renderer.targetScale = 0.5;
+  t.suggests[0]!.onChoose('dl');
+  const scales: number[] = [];
+  for (let i = 0; i < 30; i++) { t.tick(16); scales.push(t.renderer.scale); }
+  assert.ok(scales.every(scale => scale >= 3), String(scales));
+});
+
+test('the reveal eases in over several frames instead of jumping', async () => {
+  const t = await setup(); t.controller.attach(); t.tick(2500);
+  t.renderer.sizes = { '#DL': 8 }; t.renderer.scale = t.renderer.targetScale = 0.5;
+  t.suggests[0]!.onChoose('dl');
+  const scales: number[] = [];
+  for (let i = 0; i < 30; i++) { t.tick(16); scales.push(t.renderer.scale); }
+  assert.ok(scales[0]! > 0.5 && scales[0]! < 1.2, String(scales));
+  assert.ok(scales.every((scale, i) => i === 0 || scale >= scales[i - 1]!), String(scales));
+  assert.equal(scales.at(-1), 2);
 });
 
 test('the reveal zoom follows a node that shrinks once it is expanded', async () => {
   const t = await setup(); t.controller.attach();
   t.renderer.sizes = { '#cs': 16 };
   t.renderer.scale = t.renderer.targetScale = 0.2;
-  t.suggests[0]!.onChoose('cs');
-  assert.equal(t.renderer.targetScale, 1);
+  t.suggests[0]!.onChoose('cs'); t.tick(400);
+  assert.equal(t.renderer.scale, 1);
   t.renderer.sizes = { '#cs': 8 }; t.tick(16);
-  assert.equal(t.renderer.targetScale, 2);
+  assert.equal(t.renderer.scale, 2);
 });
 
 test('the suggestion source is the model', async () => {
@@ -1014,7 +1036,7 @@ test('parent, child and related lists start open', async () => {
 test('choosing a tag in the sidebar centers it in the open graph', async () => {
   const t = await setup({ layout: 'tree' });
   t.controller.attach();
-  t.suggests[0]!.onChoose('dl');
+  t.suggests[0]!.onChoose('dl'); t.tick(400);
   const node = t.renderer.nodes.find(n => n.id === '#DL')!;
   assert.deepEqual(t.renderer.pans.at(-1), [400 - node.x * t.renderer.scale, 300 - node.y * t.renderer.scale]);
 });
