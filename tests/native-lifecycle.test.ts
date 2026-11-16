@@ -281,6 +281,9 @@ test('hierarchy links always show arrows, related links are dashed, other links 
   assert.equal(find('A.md', 'B.md').arrows, false);
   t.renderer.fShowArrow = true; find('A.md', 'B.md').render();
   assert.equal(find('A.md', 'B.md').arrows, true);
+  // Zoomed out far enough that the core graph fades arrows to almost nothing, hierarchy links skip drawing them.
+  t.renderer.fShowArrow = false; t.renderer.scale = 0.33; find('#ml', '#DL').render();
+  assert.equal(find('#ml', '#DL').arrows, false);
 });
 
 // A click on a graph node, as the core graph reports it. Named apart from the harness's click(), which presses DOM buttons.
