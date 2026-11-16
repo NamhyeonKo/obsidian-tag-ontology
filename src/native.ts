@@ -706,12 +706,11 @@ export class NativeGraphs {
     this.leave(() => {
       this.go({ kind: 'tag', tag });
       if (double) this.toggleExpanded(tag, leaf);
-      else {
-        this.showSelection();
-        // A single click also brings the tag to the middle of the graph it was clicked in, right away.
-        const session = leaf && this.sessions.get(leaf);
-        if (session) this.centerOn(session, tag);
-      }
+      else this.showSelection();
+      // Either click brings the tag to the middle of the graph it was clicked in, right away. The second press of a double
+      // click stops the move the first one started (any press does), so the double click starts it again from where it is.
+      const session = leaf && this.sessions.get(leaf);
+      if (session) this.centerOn(session, tag);
       this.showPanel(true);
     });
   }

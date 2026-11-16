@@ -339,6 +339,17 @@ test('a double click whose second click misses the moved node still expands the 
   assert.ok(t.owner.settings.expanded.includes('cs'));
 });
 
+test('a double click keeps moving the tag to the middle after the second press stopped the first move', async () => {
+  const t = await setup(); t.controller.attach(); t.tick(2500);
+  t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;
+  t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs'); t.tick(16);
+  // The second press stops the camera move, as any press does.
+  t.contentEl.events.get('pointerdown')!({});
+  t.contentEl.events.get('mousedown')!({ detail: 2 }); t.contentEl.events.get('dblclick')!({});
+  t.tick(400);
+  assert.ok(t.owner.settings.expanded.includes('cs')); assert.equal(t.renderer.scale, 2);
+});
+
 test('a double click on empty canvas expands nothing, even right after a tag click', async () => {
   const t = await setup(); t.controller.attach();
   t.contentEl.events.get('mousedown')!({ detail: 1 }); nodeClick(t, '#cs');
