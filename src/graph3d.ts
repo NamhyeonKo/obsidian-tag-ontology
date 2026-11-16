@@ -111,7 +111,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.button(tools, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf));
     this.button(tools, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf));
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
-    this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.graph?.zoomToFit(600, 40); });
+    this.button(tools, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); });
     tools.createDiv('tag-ontology-separator');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
@@ -288,7 +288,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // The layout needs a moment to spread before it can be fitted.
     if (first || operation === 'roots' || operation === 'expand-all') {
       window.clearTimeout(this.fitTimer);
-      this.fitTimer = window.setTimeout(() => this.graph?.zoomToFit(600, 40), first ? 1500 : 900);
+      this.fitTimer = window.setTimeout(() => this.fit(), first ? 1500 : 900);
     }
   }
 
@@ -485,6 +485,12 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   }
 
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
+
+  // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
+  private fit() {
+    const linked = [...this.nodes.values()].some(node => node.degree > 0);
+    this.graph?.zoomToFit(600, 40, node => !linked || node.degree > 0);
+  }
 
   // The 2D graph pulls every node toward the middle; this does the same on all three axes.
   private gravity() {
