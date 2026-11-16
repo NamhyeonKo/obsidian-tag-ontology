@@ -8,7 +8,7 @@ import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import { DOUBLE_CLICK_MS, type LinkedGraph } from './native.ts';
 import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
-import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
+import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -484,9 +484,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
   // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
+  // The library's own zoomToFit frames every last node from a box corner, which left the graph small in the middle.
   private fit() {
-    const linked = [...this.nodes.values()].some(node => node.degree > 0);
-    this.graph?.zoomToFit(600, 40, node => !linked || node.degree > 0);
+    const graph = this.graph;
+    if (!graph) return;
+    const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
+    const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
+    if (!points.length) return;
+    const camera = graph.camera() as PerspectiveCamera, { center, distance } = fitView(points, camera.fov, camera.aspect);
+    // The camera keeps the direction it looks from.
+    const target = (graph.controls() as { target: Point }).target, from = camera.position;
+    const dx = from.x - target.x, dy = from.y - target.y, dz = from.z - target.z, length = Math.hypot(dx, dy, dz) || 1;
+    graph.cameraPosition({ x: center.x + dx / length * distance, y: center.y + dy / length * distance, z: center.z + dz / length * distance }, center, 600);
   }
 
   // The charge and link forces read the settings when set; the center pull reads them every tick (see gravity).

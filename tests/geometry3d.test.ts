@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrowAt, cameraDepth, fogRange, labelBounds, labelScale, springBack } from '../src/geometry3d.ts';
+import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack } from '../src/geometry3d.ts';
 
 const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≈ ${expected}`);
 
@@ -68,4 +68,15 @@ test('a node let go eases from where it was dropped back home, overshooting a li
   const past = springBack(from, home, 0.6), back = springBack(from, home, 0.9);
   assert.ok(past.x < -0.4 && past.x > -0.6, `x ${past.x}`); assert.ok(past.y > 0.16 && past.y < 0.24, `y ${past.y}`);
   assert.ok(back.x < 0 && back.x > past.x, `x ${back.x}`);
+});
+
+test('the view frames the ball holding most points, leaving a far straggler out', () => {
+  const points = [...Array(100)].map((_, i) => ({ x: Math.cos(i * Math.PI / 50) * 10, y: Math.sin(i * Math.PI / 50) * 10, z: 0 })), straggler = { x: 1000, y: 0, z: 0 };
+  const near = fitView(points, 90, 2), wide = fitView([...points, straggler], 90, 2);
+  // tan(45°) = 1, so the distance is the radius plus a 5% margin.
+  close(near.distance, 10.5);
+  // The straggler pulls the middle about 10 toward it, but the view stays near the ball, not 1000 out.
+  assert.ok(wide.distance < 25, `${wide.distance}`);
+  // A tall view fits the width instead, which is the narrower side.
+  close(fitView(points, 90, 0.5).distance, 21);
 });
