@@ -24,6 +24,7 @@ test('sanitizes saved settings to the supported fields', () => {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
+    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 },
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -100,6 +101,12 @@ test('kebab-case names are off by default and only a saved true turns them on', 
   assert.equal(DEFAULT_SETTINGS.kebabNames, false);
   assert.equal(sanitizeSettings({ kebabNames: true }, '.obsidian').kebabNames, true);
   for (const kebabNames of ['yes', 1, undefined]) assert.equal(sanitizeSettings({ kebabNames }, '.obsidian').kebabNames, false);
+});
+
+test('3D forces keep each valid value and fall back per field', () => {
+  assert.deepEqual(sanitizeSettings({ forces3d: { center: 0.1, repel: 25, link: 'x', distance: 80 } }, '.obsidian').forces3d,
+    { center: 0.1, repel: 10, link: 1, distance: 80 });
+  assert.deepEqual(sanitizeSettings({ forces3d: 'strong' }, '.obsidian').forces3d, DEFAULT_SETTINGS.forces3d);
 });
 
 test('label settings default to perspective on and size 0.8, and keep only valid values', () => {
