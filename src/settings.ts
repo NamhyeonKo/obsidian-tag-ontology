@@ -24,8 +24,17 @@ export interface Settings {
   // 3D labels: with perspective they grow as the camera comes closer, between 12 and 24 px times labelSize; without, they
   // stay 12 px times labelSize.
   perspectiveLabels: boolean; labelSize: number; locationNoticeShown: boolean;
+  // 3D forces, in the units and ranges of the 2D graph's Forces sliders; the 3D view scales them to its own space.
+  forces3d: Forces;
 }
+export interface Forces { center: number; repel: number; link: number; distance: number }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
+export const FORCES: Record<keyof Forces, { name: string; min: number; max: number; step: number; value: number }> = {
+  center: { name: 'Center force', min: 0, max: 1, step: 0.01, value: 0.52 },
+  repel: { name: 'Repel force', min: 0, max: 20, step: 0.1, value: 10 },
+  link: { name: 'Link force', min: 0, max: 1, step: 0.01, value: 1 },
+  distance: { name: 'Link distance', min: 30, max: 500, step: 1, value: 250 },
+};
 export const TOW_FOLDER_DICTIONARY = DICTIONARY_LOCATIONS[0];
 export const TOW_DICTIONARY = DICTIONARY_LOCATIONS[1];
 export const LEGACY_DICTIONARY = DICTIONARY_LOCATIONS[2];
@@ -38,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
   savedHierarchyPalettes: [], workingPaletteSource: '',
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
+  forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -55,6 +65,16 @@ function paletteOr(value: unknown, fallback: readonly string[]): string[] {
 
 export function isPaletteName(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 80 && [...value].every(char => char.charCodeAt(0) >= 0x20 && char.charCodeAt(0) !== 0x7f);
+}
+
+function forces(raw: unknown): Forces {
+  const value = (typeof raw === 'object' && raw ? raw : {}) as Record<string, unknown>;
+  const out = { ...DEFAULT_SETTINGS.forces3d };
+  for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
+    const n = value[key], { min, max } = FORCES[key];
+    if (typeof n === 'number' && n >= min && n <= max) out[key] = n;
+  }
+  return out;
 }
 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
@@ -110,6 +130,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     perspectiveLabels: flag('perspectiveLabels'),
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
     locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
+    forces3d: forces(value.forces3d),
   };
 }
 

@@ -18,6 +18,8 @@ interface Card { el: HTMLElement; name: HTMLButtonElement; toggle: HTMLButtonEle
 
 // Cytoscape supplies pan, zoom and fit; real DOM buttons keep labels and branch controls keyboard accessible.
 export class MindMap {
+  // How far the view's own controls reach in from its sides, kept for fits after a resize.
+  private covered = { left: 0, right: 0, bottom: 0 };
   private cy?: Core;
   private data?: MindMapData;
   private closed = false;
@@ -156,11 +158,16 @@ export class MindMap {
 
   private fitWhenReady(): void {
     if (!this.pendingFit || !this.cy || !this.cy.width() || !this.cy.height() || !this.data?.nodes.length) return;
-    this.cy.fit(undefined, 64);
-    if (this.data.nodes.length === 1 && this.cy.zoom() > 1) this.cy.zoom({ level: 1, renderedPosition: { x: this.cy.width() / 2, y: this.cy.height() / 2 } });
+    // Like cy.fit(undefined, 64), but in the part of the view the toolbar, legend and settings buttons leave uncovered.
+    const { left, right, bottom } = this.covered, pad = 64, box = this.cy.elements().boundingBox();
+    const width = Math.max(1, this.cy.width() - left - right), height = Math.max(1, this.cy.height() - bottom);
+    let zoom = Math.min(this.cy.maxZoom(), (width - 2 * pad) / Math.max(1, box.w), (height - 2 * pad) / Math.max(1, box.h));
+    if (this.data.nodes.length === 1) zoom = Math.min(zoom, 1);
+    zoom = Math.max(this.cy.minZoom(), zoom);
+    this.cy.viewport({ zoom, pan: { x: left + width / 2 - (box.x1 + box.w / 2) * zoom, y: height / 2 - (box.y1 + box.h / 2) * zoom } });
     this.pendingFit = false;
   }
-  fit(): void { this.pendingFit = true; this.fitWhenReady(); }
+  fit(covered = this.covered): void { this.covered = covered; this.pendingFit = true; this.fitWhenReady(); }
   focusOn(id: string): void {
     const node = this.cy?.getElementById(id);
     if (node?.nonempty()) this.cy?.animate({ center: { eles: node } }, { duration: 200 });
