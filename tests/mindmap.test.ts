@@ -61,7 +61,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
   await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
   const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined }) => {
-    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; bottom: number }): void; destroy(): void;
+    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; top: number; bottom: number }): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
   const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color });
@@ -91,10 +91,13 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
 
 test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {
   const t = await setup(); t.resize(800, 600); t.map.draw(data);
-  t.map.fit({ left: 0, right: 0, bottom: 0 }); const open = t.pan();
-  t.map.fit({ left: 100, right: 40, bottom: 80 });
+  t.map.fit({ left: 0, right: 0, top: 0, bottom: 0 }); const open = t.pan();
+  t.map.fit({ left: 100, right: 40, top: 0, bottom: 80 });
   // The free part spans x 100..760 and y 0..520, so its middle is 30 right of and 40 above the view's.
   assert.equal(t.pan().x - open.x, 30); assert.equal(t.pan().y - open.y, -40);
+  // A toolbar along the top in a short pane: y 60..520, whose middle is 10 above the view's.
+  t.map.fit({ left: 0, right: 0, top: 60, bottom: 80 });
+  assert.equal(t.pan().y - open.y, -10);
   t.map.destroy();
 });
 
@@ -121,21 +124,18 @@ test('switching layouts before the renderer import completes leaves no observer 
 });
 
 
-test('the initial mind map shows a starting-tag picker and a change-start button after selection', async () => {
+test('the initial mind map shows a starting-tag picker until a starting tag is chosen', async () => {
   const t = await setup();
   t.map.draw({ nodes: [], edges: [], roots: ['a', 'b'] });
   const start = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-start'))!;
-  const change = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-change-root'))!;
-  assert.equal(start.hidden, false); assert.equal(change.hidden, true);
+  assert.equal(start.hidden, false);
   assert.ok(start.classes.has('tag-ontology-explorer-start'), 'reuse the explorer start screen styling');
   assert.ok(t.root.all().some(el => el.text === 'Root tags'));
   assert.ok(t.root.all().find(el => el.text === '#a')!.classes.has('tag'));
   t.root.all().find(el => el.text === '#a')!.events.get('click')!({ preventDefault() {} });
   assert.deepEqual(t.chosen, ['a']);
   t.map.draw(data);
-  assert.equal(start.hidden, true); assert.equal(change.hidden, false);
-  change.events.get('click')!();
-  assert.deepEqual(t.chosen, ['a', undefined]);
+  assert.equal(start.hidden, true);
   t.map.destroy();
 });
 

@@ -1,7 +1,7 @@
 import { MindMap, type MindMapData } from './mindmap.ts';
 import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
-import { graphModeBar, type GraphMode } from './graph-modes.ts';
+import { graphModeBar, modeEnabled, type GraphMode } from './graph-modes.ts';
 import { Graph3DCanvas } from './graph3d.ts';
 import { ExplorerCanvas } from './explorer.ts';
 import { ItemView, Modal, Notice, TFile, setIcon, setTooltip, type App, type WorkspaceLeaf } from 'obsidian';
@@ -29,7 +29,7 @@ interface NativeRenderer {
   getHighlightNode: () => unknown;
   worker: { postMessage: (message: Record<string, unknown>) => void };
   workerResults: unknown;
-  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void }[];
+  nodes: { id: string; x: number; y: number; fx: number | null; fy: number | null; color: unknown; render?: () => void; getSize?: () => number }[];
   links: NativeLink[];
 }
 type RendererNode = NativeRenderer['nodes'][number];
@@ -42,7 +42,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
   focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
-  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string; mindmapRoot?: string;
+  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; changeRoot?: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string; mindmapRoot?: string;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -58,7 +58,10 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>;
   mode: '2d' | '3d' | 'explorer'; nativePaused?: boolean; syncModes(): void;
   canvases: Map<'3d' | 'explorer', { root: HTMLElement; graph: Graph3DCanvas | ExplorerCanvas; ready: Promise<void> }>;
-  fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
+  // The tag the last click picked, and when the first press of the current click sequence began.
+  lastTag?: { tag: string; at: number }; firstDown?: number; pressCount: number;
+  press: (event: MouseEvent) => void; double: () => void;
+  fitFrame?: number; stopFit: () => void; stopInput: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -90,19 +93,29 @@ export interface LinkedGraph {
   renamed?(from: string, to: string): void;
 }
 // Two clicks on the same tag within this many milliseconds make a double click.
-export const DOUBLE_CLICK_MS = 350;
+export const DOUBLE_CLICK_MS = 200;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
 
 // How far in from each side of a graph view the controls drawn over it reach, in CSS pixels plus a gap: the toolbar column on
-// the left, the legend and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
+// the left (a row along the top in a short pane) with the legend under it, the view actions row and status line at the bottom,
+// and the settings buttons or panel on the right. Fits use the rest.
 export function coveredEdges(view: HTMLElement) {
-  const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *'))) {
+  const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, top: 0, bottom: 0 };
+  for (const tools of Array.from(view.querySelectorAll('.tag-ontology-tools'))) {
+    const row = getComputedStyle(tools).flexDirection === 'row';
+    for (const el of Array.from(tools.children)) {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width) continue;
+      if (row) edge.top = Math.max(edge.top, rect.bottom - box.top + gap);
+      else edge.left = Math.max(edge.left, rect.right - box.left + gap);
+    }
+  }
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-legend'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
   }
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-legend, .tag-ontology-status'))) {
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-actions, .tag-ontology-status'))) {
     const rect = el.getBoundingClientRect();
     if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
   }
@@ -139,8 +152,20 @@ class ChoiceModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
+// Screen radius a revealed tag is zoomed to: a small child tag zooms in further than a large parent.
+// A smallest node (8) lands at scale 2, a root with 16 children at about 1.3.
+const REVEAL_SIZE = 16;
+// How long the camera takes to glide to a revealed tag.
+const REVEAL_MS = 350;
+// How long a single click on a 2D node waits for a second click before it moves the camera (Cytoscape's default).
+const SINGLE_CLICK_WAIT_MS = 250;
+const FOLLOW_MS = 2000;
+
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
+  // Set on unload, so a graph still opening doesn't reveal a tag and save settings afterwards.
+  private destroyed = false;
+  private centerTimer?: number;
   private current?: Session;
   private linked = new Set<LinkedGraph>();
   private failed = new WeakSet<WorkspaceLeaf>();
@@ -199,16 +224,19 @@ export class NativeGraphs {
         this.failed.add(leaf);
         continue;
       }
-      // The toolbar and the status line share one column, so a status line that wraps pushes the buttons up instead of covering them.
+      // The toolbar, the legend and view actions row, and the status line stack in the overlay's grid, so a status line that
+      // wraps pushes the rest up instead of covering it.
       const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
-      const legend = overlay.createDiv('tag-ontology-legend');
+      const actions = overlay.createDiv('tag-ontology-actions'), legend = overlay.createDiv('tag-ontology-legend');
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, repin: () => {}, grab: () => {}, home: new Map(),
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, press: () => {}, double: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
-      for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopFit, { capture: true });
+      // User input stops a camera move, and a single click's move still waiting to start: it must not override a pan or zoom.
+      session.stopInput = () => { session.stopFit(); window.clearTimeout(this.centerTimer); };
+      for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopInput, { capture: true });
       // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
       // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
       // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
@@ -237,20 +265,45 @@ export class NativeGraphs {
         return this.render(session, first ? 'initial' : 'update');
       };
       r.setData = session.wrapped;
+      // A click acts at once and moves the camera, so the second click of a double click can land off the node. The
+      // browser's dblclick follows the system's double-click time and distance around the first click (like Windows'
+      // double-click rectangle), not what is under the pointer, so it decides the double click here.
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        this.clickTag(tag, this.isDouble(id), leaf);
+        // The second press of a double click belongs to the tag the first one picked; the camera has moved, so it may be on
+        // another node, which must not take the selection. The dblclick that follows handles it.
+        if (session.pressCount >= 2) return;
+        session.lastTag = { tag, at: performance.now() };
+        this.clickTag(tag, false, leaf);
       };
+      session.press = event => {
+        session.pressCount = event.detail;
+        if (event.detail === 1) session.firstDown = performance.now();
+      };
+      view.contentEl.addEventListener('mousedown', session.press, { capture: true });
+      session.double = () => {
+        const last = session.lastTag;
+        // Only a double click whose first click picked a tag.
+        if (!session.active || !last || session.firstDown === undefined || last.at < session.firstDown) return;
+        session.lastTag = undefined;
+        this.clickTag(last.tag, true, leaf);
+      };
+      view.contentEl.addEventListener('dblclick', session.double);
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
       session.ownHighlight = r.getHighlightNode = () => session.hovered.call(r) || (!session.focusIds ? null : session.drawing === undefined ? FADED : session.drawing);
-      // A column of round icon buttons keeps the core graph settings on the right uncovered.
-      this.iconButton(tools, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf));
-      this.iconButton(tools, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf));
-      this.iconButton(tools, 'scan', 'Fit', () => this.fit(session));
-      tools.createDiv('tag-ontology-separator');
+      // A column of round icon buttons keeps the core graph settings on the right uncovered; the view actions sit in a row at the bottom.
+      this.iconButton(actions, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf), 'top');
+      this.iconButton(actions, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf), 'top');
+      this.iconButton(actions, 'scan', 'Fit', () => this.fit(session), 'top');
+      // The mind map's way back to its starting-tag picker sits with the view actions, shown only while a branch is open.
+      session.changeRoot = this.iconButton(actions, 'home', 'Change starting tag', () => {
+        session.mindmapRoot = undefined;
+        this.update({ expanded: [] }, 'mindmap-root', session);
+      }, 'top');
+      session.changeRoot.addClass('tag-ontology-after-divider');
       for (const [key, icon, name] of TOGGLES) {
         session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && session.choice !== 'force') return;
@@ -276,6 +329,7 @@ export class NativeGraphs {
       try { view.update(); }
       catch (error) { this.fail(leaf, error); }
     }
+    this.syncNav();
   }
 
   // The tab goes back to the core graph and stays with it until the plugin loads again.
@@ -295,6 +349,8 @@ export class NativeGraphs {
         entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
         if (session.mode === mode) session.mode = '2d';
       }
+      // A tab showing a turned-off tree goes to force, whatever layout another tab picked last.
+      if (!modeEnabled(settings, session.choice)) { session.choice = 'force'; if (session.mode === '2d') this.render(session, 'layout'); }
       this.showMode(session);
     }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
@@ -307,7 +363,9 @@ export class NativeGraphs {
 
   activate(leaf: WorkspaceLeaf | null) {
     const session = leaf ? this.sessions.get(leaf) : undefined;
-    if (session) { this.current = session; this.syncNav(); }
+    if (session) this.current = session;
+    // Switching tabs can hide or show the graph, which the panel's graph button follows.
+    this.syncNav();
   }
 
   graphMode(leaf: WorkspaceLeaf): GraphMode {
@@ -325,7 +383,7 @@ export class NativeGraphs {
       return;
     }
     if (mode === '2d') mode = session.choice;
-    if (mode === '3d' && !this.owner.settings.enable3d || mode === 'explorer' && !this.owner.settings.enableExplorer) return;
+    if (!modeEnabled(this.owner.settings, mode)) return;
     this.current = session;
     session.stopFit();
     if (mode !== '3d' && mode !== 'explorer') {
@@ -402,8 +460,11 @@ export class NativeGraphs {
     bar.createDiv('tag-ontology-spacer');
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
+    // With no graph on screen, expanding would change a graph nobody sees, so the button opens one instead.
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
-      if (this.selected) this.toggleExpanded(this.selected);
+      const tag = this.selected;
+      if (!this.graphShown()) { void this.owner.openView().then(() => { if (!this.destroyed && tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
+      if (tag) this.toggleExpanded(tag);
     });
     this.nav.expand.addClass('tag-ontology-expand');
     const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
@@ -430,6 +491,10 @@ export class NativeGraphs {
   }
 
   get savedExpanded(): string[] { return this.owner.settings.expanded; }
+
+  private graphShown() {
+    return [...this.sessions.values()].some(session => session.view.contentEl.isShown()) || [...this.linked].some(view => view.isVisible?.());
+  }
 
   private activeSession(leaf?: WorkspaceLeaf) {
     const active = leaf ?? this.owner.app.workspace.getActiveViewOfType(ItemView)?.leaf;
@@ -513,6 +578,7 @@ export class NativeGraphs {
     session.view.contentEl.toggleClass('is-mindmap', settings.layout === 'mindmap');
     if (settings.layout === 'mindmap') this.syncMindMap(session);
     if (session.mindmap) session.mindmap.el.hidden = settings.layout !== 'mindmap';
+    if (session.changeRoot) session.changeRoot.hidden = settings.layout !== 'mindmap' || !session.mindmapRoot;
     this.syncToolbar(session);
     const viewport = layoutChanged ? session.viewports.get(settings.layout) : undefined;
     if (viewport) {
@@ -668,10 +734,18 @@ export class NativeGraphs {
   // A click on a dictionary tag in any graph: select it, and on a double click expand or collapse it.
   clickTag(tag: string, double: boolean, leaf?: WorkspaceLeaf) {
     this.activeSession(leaf);
+    window.clearTimeout(this.centerTimer);
     this.leave(() => {
       this.go({ kind: 'tag', tag });
       if (double) this.toggleExpanded(tag, leaf);
       else this.showSelection();
+      // Either click brings the tag to the middle of the graph it was clicked in. Like a single tap that requires a double
+      // tap to fail (UIKit's require(toFail:)), a single click waits to see whether a second click follows, so the node
+      // stays under the pointer for it; a double click moves at once.
+      // Only 2D graph tabs have a session to move; the sidebar comes forward from any graph.
+      const session = leaf && this.sessions.get(leaf);
+      if (session && double) this.centerOn(session, tag);
+      else if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
     });
   }
@@ -717,18 +791,34 @@ export class NativeGraphs {
     }
     this.update({ expanded: [...expanded] }, 'reveal');
     // Center the chosen tag in every open graph; with no graph open there is nothing to move.
-    for (const session of this.sessions.values()) {
-      if (session.mode !== '2d') continue;
-      const id = session.resolved?.idOf.get(tag), r = session.renderer;
-      if (!id) continue;
-      if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); continue; }
-      const center = () => {
-        const node = r.nodes.find(n => n.id === id);
-        if (node) { r.setPan(r.width * devicePixelRatio / 2 - node.x * r.scale, r.height * devicePixelRatio / 2 - node.y * r.scale); r.changed(); }
-      };
-      center(); this.follow(session, center);
-    }
+    for (const session of this.sessions.values()) this.centerOn(session, tag);
     for (const view of this.linked) if (view.isVisible?.() !== false) view.focusOn(tag);
+  }
+
+  // Moves a tag to the middle of a 2D graph, zoomed in by its node's size.
+  private centerOn(session: Session, tag: string) {
+    if (session.mode !== '2d') return;
+    const id = session.resolved?.idOf.get(tag), r = session.renderer;
+    if (!id) return;
+    if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
+    // One eased camera move: the node glides from where it is to the middle while the zoom goes to where the node is
+    // REVEAL_SIZE on screen. Scale and pan are both set here every frame, so the core graph's own zoom easing never pulls
+    // the other way (after a pinch its targetScale can still hold an older, smaller zoom). It starts from the zoom on screen
+    // and never zooms out. After the move the node stays centered while the force layout settles, and the zoom follows
+    // its size, which changes when expanding changes its links.
+    const ratio = devicePixelRatio, from = r.scale, node0 = r.nodes.find(n => n.id === id);
+    if (!node0) return;
+    const startX = node0.x * from + (r.panX ?? 0), startY = node0.y * from + (r.panY ?? 0);
+    const center = (progress: number) => {
+      const node = r.nodes.find(n => n.id === id);
+      if (!node) return;
+      const size = node.getSize?.(), to = Math.max(from, size ? REVEAL_SIZE / size : from);
+      const t = 1 - (1 - Math.min(1, progress * FOLLOW_MS / REVEAL_MS)) ** 3, scale = from + (to - from) * t;
+      const x = startX + (r.width * ratio / 2 - startX) * t, y = startY + (r.height * ratio / 2 - startY) * t;
+      r.targetScale = scale; r.setScale(scale);
+      r.setPan(x - node.x * scale, y - node.y * scale); r.changed();
+    };
+    this.follow(session, center);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -772,7 +862,28 @@ export class NativeGraphs {
       const source = (view.source ?? this.explorer)!;
       this.groupView(panel, view.tag, source.groupNotes(view.tag)!, source);
     }
-    else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
+    else this.home(panel, model);
+  }
+
+  private home(panel: HTMLElement, model: Ontology) {
+    panel.createEl('h4', { text: `Root tags (${model.roots.length})` });
+    this.tagLinks(panel, model.roots);
+    panel.createEl('hr');
+    const tags = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
+    panel.createEl('h4', { text: `All tags (${tags.length})` });
+    // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
+    const groups = new Map<string, string[]>();
+    for (const tag of tags) {
+      // charAt, not [0]: the dictionary loads an empty name with only a warning.
+      const first = tag.charAt(0), letter = /\d/.test(first) ? '0–9' : first.toUpperCase();
+      if (!groups.has(letter)) groups.set(letter, []);
+      groups.get(letter)!.push(tag);
+    }
+    const all = panel.createDiv('tag-ontology-all');
+    for (const [letter, group] of groups) {
+      all.createDiv({ text: letter, cls: 'tag-ontology-all-letter' });
+      this.tagLinks(all, group);
+    }
   }
 
   private missing() {
@@ -812,7 +923,7 @@ export class NativeGraphs {
     }
     panel.createEl('hr');
     for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
-      const details = panel.createEl('details'); details.open = !rollup;
+      const details = panel.createEl('details'); details.open = true;
       const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
       this.noteLinks(details, paths);
     }
@@ -858,7 +969,7 @@ export class NativeGraphs {
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
       const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
       if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
@@ -866,35 +977,37 @@ export class NativeGraphs {
     if (found) {
       const aliases = groupNonCanonical(found.nonCanonical);
       if (aliases.length) {
-        const details = panel.createEl('details'); details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
         details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
         for (const group of aliases) {
-          const nested = details.createEl('details');
+          const nested = details.createEl('details'); nested.open = true;
           nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
           this.noteLinks(nested, group.notes);
         }
       }
       const broader = groupRedundant(found.redundant);
       if (broader.length) {
-        const details = panel.createEl('details'); details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
         details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
         for (const group of broader) {
-          const nested = details.createEl('details');
+          const nested = details.createEl('details'); nested.open = true;
           nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
           this.noteLinks(nested, group.notes);
         }
       }
     }
-    const unused = panel.createEl('details'); unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    const unused = panel.createEl('details'); unused.open = true; unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
     this.tagLinks(unused, model.unused);
   }
 
   // Obsidian's own tag style tells tags apart from buttons and note links.
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
-    const list = parent.createDiv('tag-ontology-tags');
+    const asList = this.owner.settings.tagListStyle === 'list';
+    // As a list it is the same bulleted list as the note lists.
+    const list = asList ? parent.createEl('ul') : parent.createDiv('tag-ontology-tags');
     for (const tag of tags) {
-      const link = list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' });
+      const link = (asList ? list.createEl('li') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
       link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }
@@ -1152,24 +1265,27 @@ export class NativeGraphs {
     const session = this.activeSession();
     const expanded = tag !== undefined && (session?.mode === '2d' ? this.settingsFor(session).expanded : this.owner.settings.expanded).includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
-    disable(expand, !tag); expand.toggleClass('is-active', !!tag);
+    const shown = this.graphShown();
+    // Expanding only shows child tags, so a tag without any is always as open as it gets.
+    const leaf = tag !== undefined && !this.owner.model!.children.get(tag)?.length;
+    disable(expand, shown && (!tag || leaf)); expand.toggleClass('is-active', !shown || !!tag && !leaf);
     // Forms start from the last dictionary that loaded, so they wait while the file is missing or broken.
     const blocked = this.missing() || this.owner.error !== undefined;
     disable(add, !this.owner.model || blocked); add.toggleClass('is-active', this.mode?.kind === 'new');
     disable(edit, !tag || blocked); edit.toggleClass('is-active', this.mode?.kind === 'edit');
-    setIcon(expand, expanded ? 'waypoints' : 'circle-small');
-    setTooltip(expand, expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
+    setIcon(expand, !shown ? 'git-fork' : expanded || leaf ? 'waypoints' : 'circle-small');
+    setTooltip(expand, !shown ? 'Open graph' : leaf ? 'No child tags' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
-  private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
+  private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    this.label(button, label);
+    this.label(button, label, placement);
     button.addEventListener('click', action);
     return button;
   }
   // setTooltip also sets aria-label, which screen readers and the tests use.
-  private label(button: HTMLElement, text: string) {
-    setTooltip(button, text, { placement: 'right' });
+  private label(button: HTMLElement, text: string, placement: 'right' | 'top' = 'right') {
+    setTooltip(button, text, { placement });
   }
   // Toolbar state lives in the shared settings so every graph tab shows the same values.
   private syncToolbar(session: Session) {
@@ -1193,7 +1309,7 @@ export class NativeGraphs {
 
   // Repeats a move every frame for a while (two seconds while the force layout settles) and passes how far along it is,
   // ending on 1; any user input stops it.
-  private follow(session: Session, move: (progress: number) => void, ms = 2000) {
+  private follow(session: Session, move: (progress: number) => void, ms = FOLLOW_MS) {
     session.stopFit();
     const started = performance.now();
     const frame = () => {
@@ -1214,10 +1330,10 @@ export class NativeGraphs {
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
     // The graph fits in the space the toolbar, legend, status line and the core settings buttons leave uncovered.
-    const edge = coveredEdges(session.view.contentEl), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.bottom);
+    const edge = coveredEdges(session.view.contentEl), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.top - edge.bottom);
     const scale = Math.min(1.4, width * devicePixelRatio / (right - left + 220), height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
-    r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, height / 2 * devicePixelRatio - (top + bottom) / 2 * scale);
+    r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, (edge.top + height / 2) * devicePixelRatio - (top + bottom) / 2 * scale);
     r.changed();
   }
 
@@ -1227,8 +1343,10 @@ export class NativeGraphs {
     for (const { graph, root } of s.canvases.values()) { graph.unload(); root.remove(); }
     s.canvases.clear();
     s.stopFit();
-    for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopFit, { capture: true });
+    for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopInput, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    s.view.contentEl.removeEventListener('mousedown', s.press, { capture: true });
+    s.view.contentEl.removeEventListener('dblclick', s.double);
     s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
@@ -1247,5 +1365,5 @@ export class NativeGraphs {
       s.view.update();
     }
   }
-  destroy() { for (const id of [...this.sessions.keys()]) this.detach(id, true); }
+  destroy() { this.destroyed = true; window.clearTimeout(this.centerTimer); for (const id of [...this.sessions.keys()]) this.detach(id, true); }
 }

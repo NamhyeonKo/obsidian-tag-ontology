@@ -11,6 +11,8 @@ export interface Settings {
   savedHierarchyPalettes: SavedPalette[]; workingPaletteSource: string;
   // With customColors on, the selected tag's title in the sidebar takes the tag color too.
   titleAccent: boolean;
+  // How the sidebar shows lists of tags: wrapped chips or one tag per line.
+  tagListStyle: 'chips' | 'list';
   // With focus on, the selected tag and the tags next to it stay bright and the rest fades; the focus flags add every tag below
   // it and the notes on the selected tag (and on its descendants, with those on).
   focus: boolean; focusDescendants: boolean; focusNotes: boolean;
@@ -18,6 +20,8 @@ export interface Settings {
   enable3d: boolean;
   // Enables the ontology explorer mode button and command.
   enableExplorer: boolean;
+  // Enable the vertical and horizontal tree mode buttons; a graph in a turned-off tree goes back to force.
+  enableTree: boolean; enableTreeHorizontal: boolean;
   // With kebabNames on, the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens,
   // the rule TOW checks with --names kebab. Existing names are kept.
   kebabNames: boolean;
@@ -44,9 +48,9 @@ export function isHiddenPath(path: string): boolean {
 }
 export const DEFAULT_SETTINGS: Settings = {
   dictionaryPath: TOW_FOLDER_DICTIONARY, dictionaryPathExplicit: false, layout: 'force', expanded: [], showNotes: true, showRelated: true,
-  customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
+  customColors: false, hierarchyColors: false, hierarchyPalette: [...PALETTE], customHierarchyPalette: [], hierarchyPalettePreset: '', tagColor: '', titleAccent: true, tagListStyle: 'chips', focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
   savedHierarchyPalettes: [], workingPaletteSource: '',
-  perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true,
+  perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
   forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
 };
 
@@ -80,7 +84,7 @@ function forces(raw: unknown): Forces {
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
-  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'perspectiveLabels' | 'kebabNames') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
+  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'enableTree' | 'enableTreeHorizontal' | 'perspectiveLabels' | 'kebabNames') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
   const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
@@ -116,16 +120,18 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     dictionaryPathExplicit: typeof value.dictionaryPathExplicit === 'boolean' ? value.dictionaryPathExplicit
       : !Object.hasOwn(value, 'dictionaryPathExplicit') && typeof value.dictionaryPath === 'string' && value.dictionaryPath !== LEGACY_DICTIONARY
         && isValidDictionaryPath(value.dictionaryPath, configDir),
-    // Radial was removed in 0.6.0; it opens as the vertical tree.
-    layout: value.layout === 'tree' || value.layout === 'tree-horizontal' || value.layout === 'mindmap' ? value.layout : value.layout === 'radial' ? 'tree' : 'force',
+    // Radial was removed in 0.6.0; it opens as the vertical tree. A turned-off tree opens as force.
+    layout: value.layout === 'tree' && flag('enableTree') || value.layout === 'tree-horizontal' && flag('enableTreeHorizontal') || value.layout === 'mindmap' ? value.layout
+      : value.layout === 'radial' && flag('enableTree') ? 'tree' : 'force',
     expanded: Array.isArray(value.expanded) ? [...new Set(value.expanded.filter((tag): tag is string => typeof tag === 'string'))] : [],
     showNotes: flag('showNotes'), showRelated: flag('showRelated'),
     customColors: flag('customColors'), hierarchyColors: flag('hierarchyColors'),
     hierarchyPalette, customHierarchyPalette, hierarchyPalettePreset, savedHierarchyPalettes, workingPaletteSource,
     tagColor, titleAccent: flag('titleAccent'), focus: flag('focus'),
+    tagListStyle: value.tagListStyle === 'list' ? 'list' : 'chips',
     focusDescendants: flag('focusDescendants'), focusNotes: flag('focusNotes'),
     enable3d: flag('enable3d'),
-    enableExplorer: flag('enableExplorer'),
+    enableExplorer: flag('enableExplorer'), enableTree: flag('enableTree'), enableTreeHorizontal: flag('enableTreeHorizontal'),
     kebabNames: flag('kebabNames'),
     perspectiveLabels: flag('perspectiveLabels'),
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,

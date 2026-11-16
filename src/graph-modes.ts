@@ -9,6 +9,12 @@ export const GRAPH_MODES: [GraphMode, string, string][] = [
   ['3d', 'box', '3D'], ['explorer', 'waypoints', 'Ontology explorer'],
 ];
 
+const FLAGS = { '3d': 'enable3d', explorer: 'enableExplorer', tree: 'enableTree', 'tree-horizontal': 'enableTreeHorizontal' } as const;
+// Force and mind map are always on; the other modes each have a setting.
+export function modeEnabled(settings: Settings, mode: GraphMode): boolean {
+  return !(mode in FLAGS) || settings[FLAGS[mode as keyof typeof FLAGS]];
+}
+
 export function graphModeBar(parent: HTMLElement, owner: TagOntologyPlugin, leaf: WorkspaceLeaf): () => void {
   const group = parent.createDiv('tag-ontology-layouts');
   const buttons = GRAPH_MODES.map(([mode, icon, name]) => {
@@ -24,7 +30,7 @@ export function graphModeBar(parent: HTMLElement, owner: TagOntologyPlugin, leaf
   const sync = () => {
     const current = owner.native.graphMode(leaf);
     for (const { mode, button } of buttons) {
-      button.hidden = mode === '3d' && !owner.settings.enable3d || mode === 'explorer' && !owner.settings.enableExplorer;
+      button.hidden = !modeEnabled(owner.settings, mode);
       button.toggleClass('is-active', mode === current); button.setAttribute('aria-pressed', String(mode === current));
     }
   };

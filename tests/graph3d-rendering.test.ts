@@ -24,7 +24,7 @@ async function setup() {
     const exports = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Setting: class {}, debounce() {}, setIcon() {}, setTooltip() {} }
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() {} }
-      : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 350, coveredEdges: () => ({ left: 0, right: 0, bottom: 0 }) }
+      : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
       : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () { for (const [name, value] of Object.entries(exports)) this.setExport(name, value); }, { context });
   });

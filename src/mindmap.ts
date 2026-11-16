@@ -19,7 +19,7 @@ interface Card { el: HTMLElement; name: HTMLButtonElement; toggle: HTMLButtonEle
 // Cytoscape supplies pan, zoom and fit; real DOM buttons keep labels and branch controls keyboard accessible.
 export class MindMap {
   // How far the view's own controls reach in from its sides, kept for fits after a resize.
-  private covered = { left: 0, right: 0, bottom: 0 };
+  private covered = { left: 0, right: 0, top: 0, bottom: 0 };
   private cy?: Core;
   private data?: MindMapData;
   private closed = false;
@@ -32,7 +32,6 @@ export class MindMap {
   private start: HTMLElement;
   private choices: HTMLElement;
   private continueChoices: HTMLElement;
-  private changeRoot: HTMLButtonElement;
   readonly el: HTMLElement;
 
   constructor(parent: HTMLElement, private select: (tag: string) => void, private toggle: (tag: string) => void, private startActions: MindMapStart) {
@@ -46,9 +45,6 @@ export class MindMap {
     this.continueChoices = this.start.createDiv('tag-ontology-tags');
     this.start.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
     this.choices = this.start.createDiv('tag-ontology-tags');
-    this.changeRoot = this.el.createEl('button', { cls: 'tag-ontology-mindmap-change-root', text: 'Change starting tag' });
-    this.changeRoot.hidden = true;
-    this.changeRoot.addEventListener('click', () => startActions.choose());
     this.layer = this.el.createDiv('tag-ontology-mindmap-layer');
     this.lines = this.layer.createSvg('svg');
     this.lines.classList.add('tag-ontology-mindmap-lines');
@@ -74,7 +70,6 @@ export class MindMap {
   draw(data: MindMapData): void {
     this.data = data;
     this.start.hidden = !!data.root;
-    this.changeRoot.hidden = !data.root;
     this.choices.empty(); this.continueChoices.empty();
     const choice = (parent: HTMLElement, tag: string, label: string) => {
       const chip = parent.createEl('a', { href: '#', text: label, cls: 'tag' }), color = this.startActions.color(tag);
@@ -158,12 +153,12 @@ export class MindMap {
   private fitWhenReady(): void {
     if (!this.pendingFit || !this.cy || !this.cy.width() || !this.cy.height() || !this.data?.nodes.length) return;
     // Like cy.fit(undefined, 64), but in the part of the view the toolbar, legend and settings buttons leave uncovered.
-    const { left, right, bottom } = this.covered, pad = 64, box = this.cy.elements().boundingBox();
-    const width = Math.max(1, this.cy.width() - left - right), height = Math.max(1, this.cy.height() - bottom);
+    const { left, right, top, bottom } = this.covered, pad = 64, box = this.cy.elements().boundingBox();
+    const width = Math.max(1, this.cy.width() - left - right), height = Math.max(1, this.cy.height() - top - bottom);
     let zoom = Math.min(this.cy.maxZoom(), (width - 2 * pad) / Math.max(1, box.w), (height - 2 * pad) / Math.max(1, box.h));
     if (this.data.nodes.length === 1) zoom = Math.min(zoom, 1);
     zoom = Math.max(this.cy.minZoom(), zoom);
-    this.cy.viewport({ zoom, pan: { x: left + width / 2 - (box.x1 + box.w / 2) * zoom, y: height / 2 - (box.y1 + box.h / 2) * zoom } });
+    this.cy.viewport({ zoom, pan: { x: left + width / 2 - (box.x1 + box.w / 2) * zoom, y: top + height / 2 - (box.y1 + box.h / 2) * zoom } });
     this.pendingFit = false;
   }
   fit(covered = this.covered): void { this.covered = covered; this.pendingFit = true; this.fitWhenReady(); }

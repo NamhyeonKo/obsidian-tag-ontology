@@ -1253,8 +1253,9 @@ test('modern and legacy settings keep the same sections, order and conditional v
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
   const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Color mode',
     'Palette', 'Level colors', 'My palettes', 'Color for tags outside the hierarchy', 'Colored sidebar titles',
+    'Sidebar', 'Tag lists',
     'Focus', 'Keep the selected tag focused', 'Its descendants', 'Include notes',
-    'Additional views', 'Enable 3D view (beta)', 'Enable ontology explorer (beta)'];
+    'Additional views', 'Enable vertical tree', 'Enable horizontal tree', 'Enable 3D view (beta)', 'Enable ontology explorer (beta)'];
   for (const customColors of [true, false]) for (const hierarchyColors of [true, false]) for (const focus of [true, false]) {
     Object.assign(t.plugin.settings, { customColors, hierarchyColors, focus });
     const modern = Array.from(tab.getSettingDefinitions()).flatMap(def => {
@@ -1266,7 +1267,7 @@ test('modern and legacy settings keep the same sections, order and conditional v
     const legacy = t.settingRows.filter(row => !row.settingEl.hidden && !/^\d+$/.test(row.name)).map(row => row.name);
     assert.deepEqual(legacy, modern, JSON.stringify({ customColors, hierarchyColors, focus }));
     if (customColors && hierarchyColors && focus) assert.deepEqual(modern, expected);
-    assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['Dictionary', 'Colors', 'Focus', 'Additional views']);
+    assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['Dictionary', 'Colors', 'Sidebar', 'Focus', 'Additional views']);
   }
 });
 
