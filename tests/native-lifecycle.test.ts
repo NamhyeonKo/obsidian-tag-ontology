@@ -1043,9 +1043,28 @@ test('a sidebar mounted before the first dictionary load does not claim the dict
   assert.equal(navButton(t, 'New tag').disabled, false);
 });
 
-test('the sidebar lists the root tags until a tag is chosen', async () => {
+test('the sidebar lists the root tags, then every tag in order under its first letter, until a tag is chosen', async () => {
   const t = await setup();
-  assert.deepEqual(tagLinks(t.sidebar), model.roots.map(tag => '#' + tag));
+  const all = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(tagLinks(t.sidebar), [...model.roots, ...all].map(tag => '#' + tag));
+  const letters = t.sidebar.all().filter(el => el.classes.has('tag-ontology-all-letter')).map(el => el.text);
+  assert.deepEqual(letters, [...new Set(all.map(tag => tag[0].toUpperCase()))]);
+});
+
+test('an empty tag name in the dictionary does not break the all-tags list', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology({ '': { description: '' }, cs: { description: '', broader: [] } }, []);
+  assert.doesNotThrow(() => t.controller.refresh());
+  assert.deepEqual(tagLinks(t.sidebar).slice(-2), ['#', '#cs']);
+});
+
+test('the tag list style setting shows every tag list as chips or one tag per line', async () => {
+  const rows = (t: Awaited<ReturnType<typeof setup>>) => t.sidebar.all().filter(el => el.classes.has('tag-ontology-tag-row')).length;
+  const chips = await setup();
+  assert.equal(rows(chips), 0);
+  const list = await setup({ tagListStyle: 'list' });
+  assert.equal(rows(list), tagLinks(list.sidebar).length);
+  assert.deepEqual(tagLinks(list.sidebar), tagLinks(chips.sidebar));
 });
 
 test('attaching to a graph never creates the sidebar tab on its own', async () => {

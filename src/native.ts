@@ -845,7 +845,28 @@ export class NativeGraphs {
       const source = (view.source ?? this.explorer)!;
       this.groupView(panel, view.tag, source.groupNotes(view.tag)!, source);
     }
-    else { panel.createEl('h4', { text: `Root tags (${model.roots.length})` }); this.tagLinks(panel, model.roots); }
+    else this.home(panel, model);
+  }
+
+  private home(panel: HTMLElement, model: Ontology) {
+    panel.createEl('h4', { text: `Root tags (${model.roots.length})` });
+    this.tagLinks(panel, model.roots);
+    panel.createEl('hr');
+    const tags = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
+    panel.createEl('h4', { text: `All tags (${tags.length})` });
+    // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
+    const groups = new Map<string, string[]>();
+    for (const tag of tags) {
+      // charAt, not [0]: the dictionary loads an empty name with only a warning.
+      const first = tag.charAt(0), letter = /\d/.test(first) ? '0–9' : first.toUpperCase();
+      if (!groups.has(letter)) groups.set(letter, []);
+      groups.get(letter)!.push(tag);
+    }
+    const all = panel.createDiv('tag-ontology-all');
+    for (const [letter, group] of groups) {
+      all.createDiv({ text: letter, cls: 'tag-ontology-all-letter' });
+      this.tagLinks(all, group);
+    }
   }
 
   private missing() {
@@ -965,9 +986,10 @@ export class NativeGraphs {
 
   // Obsidian's own tag style tells tags apart from buttons and note links.
   private tagLinks(parent: HTMLElement, tags: readonly string[]) {
-    const list = parent.createDiv('tag-ontology-tags');
+    const asList = this.owner.settings.tagListStyle === 'list';
+    const list = parent.createDiv(asList ? 'tag-ontology-tag-list' : 'tag-ontology-tags');
     for (const tag of tags) {
-      const link = list.createEl('a', { href: '#', text: '#' + tag, cls: 'tag' });
+      const link = (asList ? list.createDiv('tag-ontology-tag-row') : list).createEl('a', { href: '#', text: '#' + tag, cls: 'tag', attr: { title: '#' + tag } });
       if (this.owner.settings.customColors) link.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(tag) });
       link.addEventListener('click', e => { e.preventDefault(); this.reveal(tag); });
     }
