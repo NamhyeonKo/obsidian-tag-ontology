@@ -540,8 +540,10 @@ export class NativeGraphs {
           link.line.texture = session.texture;
         } else if (link.line && original.texture) link.line.texture = original.texture;
         // Hierarchy direction is the meaning of the edge, so it ignores the user's arrow setting; other links follow it.
+        // The core graph fades arrows out below scale 0.3; up to 0.35 they are under 5% opacity, yet drawing a thousand of
+        // them took a fifth of each frame in a fully expanded vault.
         const arrows = r.fShowArrow, ids = session.focusIds, center = session.focusNode;
-        r.fShowArrow = kind === 'broader' ? true : kind === 'related' ? false : arrows;
+        r.fShowArrow = kind === 'broader' ? r.scale > 0.35 : kind === 'related' ? false : arrows;
         session.drawing = !ids ? undefined : center && (link.source.id === center.id || link.target.id === center.id) ? center
           : ids.has(link.source.id) && ids.has(link.target.id) ? null : FADED;
         try { original.render.call(link); } finally { r.fShowArrow = arrows; session.drawing = undefined; }
