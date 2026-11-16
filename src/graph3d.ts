@@ -6,7 +6,7 @@ import type SpriteText from 'three-spritetext';
 import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
-import { DOUBLE_CLICK_MS, type LinkedGraph } from './native.ts';
+import { DOUBLE_CLICK_MS, coveredEdges, type LinkedGraph } from './native.ts';
 import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
 import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 
@@ -491,11 +491,19 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
     const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
     if (!points.length) return;
-    const camera = graph.camera() as PerspectiveCamera, { center, distance } = fitView(points, camera.fov, camera.aspect);
-    // The camera keeps the direction it looks from.
+    // The graph fits in the part of the view the toolbar, legend, status line and settings panel leave uncovered.
+    const width = this.contentEl.clientWidth || 1, height = this.contentEl.clientHeight || 1, edge = coveredEdges(this.contentEl);
+    const free = { width: Math.max(1, width - edge.left - edge.right) / width, height: Math.max(1, height - edge.bottom) / height };
+    const camera = graph.camera() as PerspectiveCamera, { center, distance } = fitView(points, camera.fov, camera.aspect, free);
+    // The camera keeps the direction it looks from, and looks off center so the graph's middle sits in the middle of the free
+    // part: that part's middle lies (shiftX, shiftY) pixels right of and below the view's.
     const target = (graph.controls() as { target: Point }).target, from = camera.position;
     const dx = from.x - target.x, dy = from.y - target.y, dz = from.z - target.z, length = Math.hypot(dx, dy, dz) || 1;
-    graph.cameraPosition({ x: center.x + dx / length * distance, y: center.y + dy / length * distance, z: center.z + dz / length * distance }, center, 600);
+    const perPixel = 2 * distance * Math.tan(camera.fov * Math.PI / 360) / height, m = camera.matrixWorld.elements;
+    const shiftX = (edge.left + free.width * width / 2 - width / 2) * perPixel, shiftY = (free.height * height / 2 - height / 2) * perPixel;
+    // The camera's right and up directions are the first two columns of its world matrix.
+    const look = { x: center.x - m[0] * shiftX + m[4] * shiftY, y: center.y - m[1] * shiftX + m[5] * shiftY, z: center.z - m[2] * shiftX + m[6] * shiftY };
+    graph.cameraPosition({ x: look.x + dx / length * distance, y: look.y + dy / length * distance, z: look.z + dz / length * distance }, look, 600);
   }
 
   // The charge and link forces read the settings when set; the center pull reads them every tick (see gravity).

@@ -79,4 +79,6 @@ test('the view frames the ball holding most points, leaving a far straggler out'
   assert.ok(wide.distance < 25, `${wide.distance}`);
   // A tall view fits the width instead, which is the narrower side.
   close(fitView(points, 90, 0.5).distance, 21);
+  // With half the height covered, the ball has to fit in the other half.
+  close(fitView(points, 90, 2, { width: 1, height: 0.5 }).distance, 21);
 });

@@ -93,6 +93,27 @@ export interface LinkedGraph {
 export const DOUBLE_CLICK_MS = 350;
 // Stands in for the highlighted node while Focus fades something: no node links to this id.
 const FADED = { id: '\0focus' };
+
+// How far in from each side of a graph view the controls drawn over it reach, in CSS pixels plus a gap: the toolbar column on
+// the left, the legend and status line at the bottom, and the settings buttons or panel on the right. Fits use the rest.
+export function coveredEdges(view: HTMLElement) {
+  const box = view.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-tools > *'))) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
+  }
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-legend, .tag-ontology-status'))) {
+    const rect = el.getBoundingClientRect();
+    if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
+  }
+  for (const el of Array.from(view.querySelectorAll('.graph-controls'))) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width) edge.right = Math.max(edge.right, box.right - rect.left + gap);
+  }
+  return edge;
+}
+export type CoveredEdges = ReturnType<typeof coveredEdges>;
+
 const sameSet = (a?: Set<string>, b?: Set<string>) => a === b || (!!a && !!b && a.size === b.size && [...a].every(id => b.has(id)));
 // The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
 const colors = new Map<string, NodeColor>();
@@ -1186,34 +1207,18 @@ export class NativeGraphs {
 
   private fit(session: Session) {
     if (session.mode !== '2d') return;
-    if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.fit(); return; }
+    if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.fit(coveredEdges(session.view.contentEl)); return; }
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
     // One pass rather than Math.min(...xs): spreading a graph of about 125,000 nodes into one call overflows the stack.
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     for (const { x, y } of r.nodes) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
     // The graph fits in the space the toolbar, legend, status line and the core settings buttons leave uncovered.
-    const edge = this.covered(session), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.bottom);
+    const edge = coveredEdges(session.view.contentEl), width = Math.max(1, r.width - edge.left - edge.right), height = Math.max(1, r.height - edge.bottom);
     const scale = Math.min(1.4, width * devicePixelRatio / (right - left + 220), height * devicePixelRatio / (bottom - top + 220));
     r.targetScale = scale; r.setScale(scale);
     r.setPan((edge.left + width / 2) * devicePixelRatio - (left + right) / 2 * scale, height / 2 * devicePixelRatio - (top + bottom) / 2 * scale);
     r.changed();
-  }
-
-  // How far in from each side of the canvas the controls drawn over it reach, in CSS pixels, plus a gap.
-  private covered(session: Session) {
-    const box = session.view.contentEl.getBoundingClientRect(), gap = 12, edge = { left: 0, right: 0, bottom: 0 };
-    for (const el of Array.from(session.overlay.querySelectorAll('.tag-ontology-tools > *'))) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
-    }
-    for (const el of [session.legend, session.status]) {
-      const rect = el.getBoundingClientRect();
-      if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
-    }
-    const controls = session.view.contentEl.querySelector('.graph-controls')?.getBoundingClientRect();
-    if (controls?.width) edge.right = Math.max(0, box.right - controls.left + gap);
-    return edge;
   }
 
   private detach(id: WorkspaceLeaf, redraw: boolean) {

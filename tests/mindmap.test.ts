@@ -41,7 +41,14 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
     renderedPosition: () => positions.get(id), remove: () => positions.delete(id) });
   const graph = { on() {}, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
-    width: () => width, height: () => height, resize() {}, fit() { fits++; zoom = 2.5; }, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
+    width: () => width, height: () => height, resize() {}, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
+    minZoom: () => 0.000001, maxZoom: () => 2.5,
+    elements: () => ({ boundingBox() {
+      const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
+      const x1 = Math.min(...xs) - 20, y1 = Math.min(...ys) - 10;
+      return { x1, y1, w: Math.max(...xs) + 20 - x1, h: Math.max(...ys) + 10 - y1 };
+    } }),
+    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = value.zoom; pan = value.pan; },
     pan: () => pan, animate() {}, destroy() { destroyed = true; } };
   const context = createContext({ console, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
@@ -54,13 +61,13 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
   await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
   const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined }) => {
-    draw(data: MindMapData): void; fit(): void; destroy(): void;
+    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; bottom: number }): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
   const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color });
   if (closeBeforeLoad) map.destroy();
   await settle();
-  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits,
+  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan,
     viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
@@ -80,6 +87,15 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
   assert.equal(t.zoom(), 1, 'a single starting node should not zoom so far in that its children begin off-screen');
   assert.ok(t.options()!.minZoom <= 0.001);
   t.map.destroy(); assert.ok(t.disposed());
+});
+
+test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {
+  const t = await setup(); t.resize(800, 600); t.map.draw(data);
+  t.map.fit({ left: 0, right: 0, bottom: 0 }); const open = t.pan();
+  t.map.fit({ left: 100, right: 40, bottom: 80 });
+  // The free part spans x 100..760 and y 0..520, so its middle is 30 right of and 40 above the view's.
+  assert.equal(t.pan().x - open.x, 30); assert.equal(t.pan().y - open.y, -40);
+  t.map.destroy();
 });
 
 test('labels sit inside the gesture container and separate selection from branch buttons', async () => {
