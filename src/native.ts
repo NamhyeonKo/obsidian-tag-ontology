@@ -58,6 +58,8 @@ interface Session {
   toggles: Partial<Record<ToggleKey, HTMLElement>>;
   mode: '2d' | '3d' | 'explorer'; nativePaused?: boolean; syncModes(): void;
   canvases: Map<'3d' | 'explorer', { root: HTMLElement; graph: Graph3DCanvas | ExplorerCanvas; ready: Promise<void> }>;
+  // The tag the last click picked, and when the first press of the current click sequence began.
+  lastTag?: { tag: string; at: number }; firstDown?: number;
   fitFrame?: number; stopFit: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
@@ -246,11 +248,23 @@ export class NativeGraphs {
         return this.render(session, first ? 'initial' : 'update');
       };
       r.setData = session.wrapped;
+      // A click acts at once and moves the camera, so the second click of a double click can land off the node. The
+      // browser's dblclick follows the system's double-click time and distance around the first click (like Windows'
+      // double-click rectangle), not what is under the pointer, so it decides the double click here.
       session.ownClick = r.onNodeClick = (event, id, type) => {
         const tag = session.active ? session.resolved?.tagOf.get(id) : undefined;
         if (!tag) { session.click.call(r, event, id, type); return; }
-        this.clickTag(tag, this.isDouble(id), leaf);
+        session.lastTag = { tag, at: performance.now() };
+        this.clickTag(tag, false, leaf);
       };
+      view.contentEl.addEventListener('mousedown', event => { if (event.detail === 1) session.firstDown = performance.now(); }, { capture: true });
+      view.contentEl.addEventListener('dblclick', () => {
+        const last = session.lastTag;
+        // Only a double click whose first click picked a tag.
+        if (!session.active || !last || session.firstDown === undefined || last.at < session.firstDown) return;
+        session.lastTag = undefined;
+        this.clickTag(last.tag, true, leaf);
+      });
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
