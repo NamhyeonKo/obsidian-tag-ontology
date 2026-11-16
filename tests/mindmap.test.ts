@@ -121,21 +121,18 @@ test('switching layouts before the renderer import completes leaves no observer 
 });
 
 
-test('the initial mind map shows a starting-tag picker and a change-start button after selection', async () => {
+test('the initial mind map shows a starting-tag picker until a starting tag is chosen', async () => {
   const t = await setup();
   t.map.draw({ nodes: [], edges: [], roots: ['a', 'b'] });
   const start = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-start'))!;
-  const change = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-change-root'))!;
-  assert.equal(start.hidden, false); assert.equal(change.hidden, true);
+  assert.equal(start.hidden, false);
   assert.ok(start.classes.has('tag-ontology-explorer-start'), 'reuse the explorer start screen styling');
   assert.ok(t.root.all().some(el => el.text === 'Root tags'));
   assert.ok(t.root.all().find(el => el.text === '#a')!.classes.has('tag'));
   t.root.all().find(el => el.text === '#a')!.events.get('click')!({ preventDefault() {} });
   assert.deepEqual(t.chosen, ['a']);
   t.map.draw(data);
-  assert.equal(start.hidden, true); assert.equal(change.hidden, false);
-  change.events.get('click')!();
-  assert.deepEqual(t.chosen, ['a', undefined]);
+  assert.equal(start.hidden, true);
   t.map.destroy();
 });
 

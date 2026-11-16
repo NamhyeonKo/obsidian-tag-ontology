@@ -701,8 +701,8 @@ test('toolbar uses the agreed icons and tooltips', async () => {
   t.controller.attach();
   const icons = (cls: string) => t.contentEl.all().find(el => el.classes.has(cls))!.all().filter(el => el.attrs.icon);
   // The view actions sit in their own row at the bottom; the rest stays in the toolbar column.
-  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan']);
-  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit']);
+  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.icon), ['chevrons-down-up', 'chevrons-up-down', 'scan', 'home']);
+  assert.deepEqual(icons('tag-ontology-actions').map(el => el.attrs.tooltip), ['Collapse all', 'Expand all', 'Fit', 'Change starting tag']);
   assert.deepEqual(icons('tag-ontology-tools').map(el => el.attrs.icon), ['file-text', 'link', 'book-open-check', 'share-2', 'brain-circuit', 'network', 'list-tree', 'box', 'waypoints']);
   assert.deepEqual(icons('tag-ontology-tools').map(el => el.attrs.tooltip), ['Notes: shown', 'Related: shown', 'Dictionary check', 'Layout: Force', 'Layout: Mind map', 'Layout: Vertical tree', 'Layout: Horizontal tree', 'Layout: 3D', 'Layout: Ontology explorer']);
 });
@@ -2005,6 +2005,19 @@ test('mind map is the second layout and shares filtering, expansion, palette and
   assert.equal(map.el.hidden, true);
   assert.equal(t.contentEl.classes.has('is-mindmap'), false);
   assert.ok(t.renderer.nodes.every(node => node.fx === null && node.fy === null));
+});
+
+test('the view actions row offers Change starting tag only while a mind map branch is open', async () => {
+  const t = await setup({ layout: 'mindmap' });
+  t.controller.attach();
+  const map = mindmaps.at(-1)!;
+  const change = t.contentEl.all().find(el => el.classes.has('tag-ontology-actions'))!.all().find(el => el.attrs.tooltip === 'Change starting tag')!;
+  assert.equal(change.attrs.icon, 'home');
+  assert.equal(change.hidden, true);
+  map.chooseRoot('cs'); await settle();
+  assert.equal(map.data!.root, 'cs'); assert.equal(change.hidden, false);
+  change.events.get('click')!(); await settle();
+  assert.equal(map.data!.root, undefined); assert.equal(change.hidden, true);
 });
 
 test('mind map retains deeper expansion when a parent is closed and is disposed on detach', async () => {

@@ -42,7 +42,7 @@ interface Session {
   hovered: NativeRenderer['getHighlightNode']; ownHighlight?: NativeRenderer['getHighlightNode'];
   // What Focus keeps bright, the selected tag's node, and what getHighlightNode() answers for the node or link drawing now.
   focusIds?: Set<string>; focusNode?: RendererNode; drawing?: unknown;
-  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string; mindmapRoot?: string;
+  overlay: HTMLElement; status: HTMLElement; legend: HTMLElement; changeRoot?: HTMLElement; mindmap?: MindMap; mindmapAnchor?: string; mindmapRoot?: string;
   // The engine's latest data, already filtered by the core graph; every render layers it again.
   base?: NativeData; resolved?: Resolved;
   // The layered data last sent to the renderer, with the colors it gave each node.
@@ -288,6 +288,12 @@ export class NativeGraphs {
       this.iconButton(actions, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf), 'top');
       this.iconButton(actions, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf), 'top');
       this.iconButton(actions, 'scan', 'Fit', () => this.fit(session), 'top');
+      // The mind map's way back to its starting-tag picker sits with the view actions, shown only while a branch is open.
+      session.changeRoot = this.iconButton(actions, 'home', 'Change starting tag', () => {
+        session.mindmapRoot = undefined;
+        this.update({ expanded: [] }, 'mindmap-root', session);
+      }, 'top');
+      session.changeRoot.addClass('tag-ontology-change-root');
       for (const [key, icon, name] of TOGGLES) {
         session.toggles[key] = this.iconButton(tools, icon, name, () => {
           if (key === 'showNotes' && session.choice !== 'force') return;
@@ -562,6 +568,7 @@ export class NativeGraphs {
     session.view.contentEl.toggleClass('is-mindmap', settings.layout === 'mindmap');
     if (settings.layout === 'mindmap') this.syncMindMap(session);
     if (session.mindmap) session.mindmap.el.hidden = settings.layout !== 'mindmap';
+    if (session.changeRoot) session.changeRoot.hidden = settings.layout !== 'mindmap' || !session.mindmapRoot;
     this.syncToolbar(session);
     const viewport = layoutChanged ? session.viewports.get(settings.layout) : undefined;
     if (viewport) {

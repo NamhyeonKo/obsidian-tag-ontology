@@ -129,7 +129,7 @@
 .tag-ontology-palette-slot .setting-item-name { font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .tag-ontology-palette-error { color: var(--text-error); }
 /* The fourth layout keeps the core graph's data and toolbar, with an accessible mind map over its canvas. */
-.tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); container: tag-ontology-mindmap / inline-size; }
+.tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
 .tag-ontology-mindmap-stage { position: absolute; inset: 0; }
 .tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; }
 .tag-ontology-mindmap-lines { position: absolute; width: 1px; height: 1px; overflow: visible; }
@@ -149,14 +149,6 @@
 .tag-ontology-mode { position: absolute; inset: 0; }
 .tag-ontology-mode[hidden] { display: none; }
 .tag-ontology-native.has-embedded-graph > :not(.tag-ontology-mode) { visibility: hidden; pointer-events: none; }
-/* Bottom right, level with the view actions row: the overlay's 12px inset, the status line and a 12px gap put the row's middle
-   about 60px up, and the 30px button centres there. */
-.tag-ontology-mindmap-change-root { position: absolute; bottom: 46px; right: 16px; z-index: 2; cursor: pointer; transition: color 120ms, box-shadow 120ms, background-color 120ms; }
-/* The pointer over the button, and only there, shows in the button itself. */
-.tag-ontology-mindmap-change-root:hover:not(:focus-visible) { background-color: var(--interactive-hover); color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent); }
-
-.tag-ontology-mindmap-change-root[hidden] { display: none; }
-/* Narrower than about 500px, the button would run into the centred row; it moves up above it instead. */
-@container tag-ontology-mindmap (max-width: 500px) {
-  .tag-ontology-mindmap-change-root { bottom: 100px; }
-}
+/* The mind map's Change starting tag joins the view actions row after a divider. */
+.tag-ontology-change-root { position: relative; margin-left: 8px; }
+.tag-ontology-change-root::before { content: ''; position: absolute; left: -9px; top: 7px; bottom: 7px; width: 1px; background: var(--background-modifier-border); }

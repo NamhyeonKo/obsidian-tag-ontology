@@ -32,7 +32,6 @@ export class MindMap {
   private start: HTMLElement;
   private choices: HTMLElement;
   private continueChoices: HTMLElement;
-  private changeRoot: HTMLButtonElement;
   readonly el: HTMLElement;
 
   constructor(parent: HTMLElement, private select: (tag: string) => void, private toggle: (tag: string) => void, private startActions: MindMapStart) {
@@ -46,9 +45,6 @@ export class MindMap {
     this.continueChoices = this.start.createDiv('tag-ontology-tags');
     this.start.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
     this.choices = this.start.createDiv('tag-ontology-tags');
-    this.changeRoot = this.el.createEl('button', { cls: 'tag-ontology-mindmap-change-root', text: 'Change starting tag' });
-    this.changeRoot.hidden = true;
-    this.changeRoot.addEventListener('click', () => startActions.choose());
     this.layer = this.el.createDiv('tag-ontology-mindmap-layer');
     this.lines = this.layer.createSvg('svg');
     this.lines.classList.add('tag-ontology-mindmap-lines');
@@ -74,7 +70,6 @@ export class MindMap {
   draw(data: MindMapData): void {
     this.data = data;
     this.start.hidden = !!data.root;
-    this.changeRoot.hidden = !data.root;
     this.choices.empty(); this.continueChoices.empty();
     const choice = (parent: HTMLElement, tag: string, label: string) => {
       const chip = parent.createEl('a', { href: '#', text: label, cls: 'tag' }), color = this.startActions.color(tag);
