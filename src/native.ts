@@ -1163,13 +1163,15 @@ export class NativeGraphs {
     const expanded = tag !== undefined && (session?.mode === '2d' ? this.settingsFor(session).expanded : this.owner.settings.expanded).includes(tag);
     // The icon shows the tag's state in the graph; the button keeps the accent color whenever it can be used.
     const shown = this.graphShown();
-    disable(expand, shown && !tag); expand.toggleClass('is-active', !shown || !!tag);
+    // Expanding only shows child tags, so a tag without any is always as open as it gets.
+    const leaf = tag !== undefined && !this.owner.model!.children.get(tag)?.length;
+    disable(expand, shown && (!tag || leaf)); expand.toggleClass('is-active', !shown || !!tag && !leaf);
     // Forms start from the last dictionary that loaded, so they wait while the file is missing or broken.
     const blocked = this.missing() || this.owner.error !== undefined;
     disable(add, !this.owner.model || blocked); add.toggleClass('is-active', this.mode?.kind === 'new');
     disable(edit, !tag || blocked); edit.toggleClass('is-active', this.mode?.kind === 'edit');
-    setIcon(expand, !shown ? 'git-fork' : expanded ? 'waypoints' : 'circle-small');
-    setTooltip(expand, !shown ? 'Open graph' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
+    setIcon(expand, !shown ? 'git-fork' : expanded || leaf ? 'waypoints' : 'circle-small');
+    setTooltip(expand, !shown ? 'Open graph' : leaf ? 'No child tags' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
   }
   private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void) {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });

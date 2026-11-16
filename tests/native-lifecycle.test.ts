@@ -1124,6 +1124,13 @@ test('the expand button in the bar shows the state with waypoints or circle-smal
   assert.deepEqual([...t.owner.settings.expanded], []);
 });
 
+test('a tag without child tags shows as expanded and the button is off', async () => {
+  const t = await setup(); t.controller.attach();
+  t.click('#cs'); t.click('#ml'); t.click('#dl');
+  assert.equal(expandButton(t).attrs.icon, 'waypoints'); assert.equal(expandButton(t).attrs['aria-label'], 'No child tags');
+  assert.equal(expandButton(t).attrs['aria-disabled'], 'true'); assert.ok(!expandButton(t).classes.has('is-active'));
+});
+
 test('with the graph tab hidden the expand button opens the graph instead', async () => {
   const t = await setup(); t.controller.attach();
   t.contentEl.shown = false; t.controller.activate(null);
