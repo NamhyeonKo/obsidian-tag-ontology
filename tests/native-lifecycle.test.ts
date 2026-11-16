@@ -331,6 +331,13 @@ test('scrolling before a single click starts its move cancels the move', async (
   assert.equal(t.renderer.scale, 0.2);
 });
 
+test('detaching a graph removes its double-click listeners', async () => {
+  const t = await setup(); t.controller.attach();
+  assert.ok(t.contentEl.events.has('dblclick') && t.contentEl.events.has('mousedown'));
+  t.controller.destroy();
+  assert.ok(!t.contentEl.events.has('dblclick')); assert.ok(!t.contentEl.events.has('mousedown'));
+});
+
 test('a double click moves at once and the single-click move never runs', async () => {
   const t = await setup(); t.controller.attach();
   t.tick(2500); t.renderer.sizes = { '#cs': 8 }; t.renderer.scale = t.renderer.targetScale = 0.2;

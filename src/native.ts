@@ -60,6 +60,7 @@ interface Session {
   canvases: Map<'3d' | 'explorer', { root: HTMLElement; graph: Graph3DCanvas | ExplorerCanvas; ready: Promise<void> }>;
   // The tag the last click picked, and when the first press of the current click sequence began.
   lastTag?: { tag: string; at: number }; firstDown?: number; pressCount: number;
+  press: (event: MouseEvent) => void; double: () => void;
   fitFrame?: number; stopFit: () => void; stopInput: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
@@ -219,7 +220,7 @@ export class NativeGraphs {
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, press: () => {}, double: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
       };
       session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
       // User input stops a camera move, and a single click's move still waiting to start: it must not override a pan or zoom.
@@ -265,17 +266,19 @@ export class NativeGraphs {
         session.lastTag = { tag, at: performance.now() };
         this.clickTag(tag, false, leaf);
       };
-      view.contentEl.addEventListener('mousedown', event => {
+      session.press = event => {
         session.pressCount = event.detail;
         if (event.detail === 1) session.firstDown = performance.now();
-      }, { capture: true });
-      view.contentEl.addEventListener('dblclick', () => {
+      };
+      view.contentEl.addEventListener('mousedown', session.press, { capture: true });
+      session.double = () => {
         const last = session.lastTag;
         // Only a double click whose first click picked a tag.
         if (!session.active || !last || session.firstDown === undefined || last.at < session.firstDown) return;
         session.lastTag = undefined;
         this.clickTag(last.tag, true, leaf);
-      });
+      };
+      view.contentEl.addEventListener('dblclick', session.double);
       // Node and link drawing fade everything not linked to the node this returns. With focus on and nothing hovered or dragged,
       // the selected tag and its own links draw as if it were hovered, the rest of what Focus keeps bright as if nothing were,
       // and everything else sees a node nothing links to, so it fades.
@@ -1302,6 +1305,8 @@ export class NativeGraphs {
     s.stopFit();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopInput, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
+    s.view.contentEl.removeEventListener('mousedown', s.press, { capture: true });
+    s.view.contentEl.removeEventListener('dblclick', s.double);
     s.view.contentEl.win.removeEventListener('pointerup', s.repin);
     if (s.renderer.setData === s.wrapped) s.renderer.setData = s.original;
     if (s.renderer.onNodeClick === s.ownClick) s.renderer.onNodeClick = s.click;
