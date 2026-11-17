@@ -153,24 +153,32 @@ export class MindMap {
     });
   }
 
-  // Zooming out stops when the whole map takes half of the view (or half its size at 100%, for a small map), so it can't
-  // shrink to a dot. Fit still reaches any map: it needs at most twice this zoom.
+  private ready(): boolean { return !!this.cy?.width() && !!this.cy.height() && !!this.data?.nodes.length; }
+  // The part of the view the toolbar, legend and settings buttons leave uncovered, and the zoom that fits the map in it with a
+  // 64px margin, like cy.fit(undefined, 64).
+  private fitArea() {
+    const cy = this.cy!, { left, right, top, bottom } = this.covered, pad = 64, box = cy.elements().boundingBox();
+    const width = Math.max(1, cy.width() - left - right), height = Math.max(1, cy.height() - top - bottom);
+    const zoom = Math.min(Math.max(1, width - 2 * pad) / Math.max(1, box.w), Math.max(1, height - 2 * pad) / Math.max(1, box.h));
+    return { left, top, width, height, box, zoom };
+  }
+  // Zooming out stops when the map takes half of the room Fit gives it (or at half of 100% for a small map), so it can't shrink
+  // to a dot, and Fit always lands above it. The limit never rises above the current zoom: after a branch closes the view stays
+  // where it is, and zooming out from there does nothing instead of jumping in.
   private limitZoom(): void {
-    const cy = this.cy;
-    if (!cy?.width() || !cy.height() || !this.data?.nodes.length) return;
-    const box = cy.elements().boundingBox();
-    cy.minZoom(Math.min(1, cy.width() / Math.max(1, box.w), cy.height() / Math.max(1, box.h)) / 2);
+    if (!this.ready()) return;
+    this.cy!.minZoom(Math.min(this.cy!.zoom(), Math.min(1, this.fitArea().zoom) / 2));
   }
   private fitWhenReady(): void {
-    if (!this.pendingFit || !this.cy || !this.cy.width() || !this.cy.height() || !this.data?.nodes.length) return;
-    // Like cy.fit(undefined, 64), but in the part of the view the toolbar, legend and settings buttons leave uncovered.
-    const { left, right, top, bottom } = this.covered, pad = 64, box = this.cy.elements().boundingBox();
-    const width = Math.max(1, this.cy.width() - left - right), height = Math.max(1, this.cy.height() - top - bottom);
-    let zoom = Math.min(this.cy.maxZoom(), (width - 2 * pad) / Math.max(1, box.w), (height - 2 * pad) / Math.max(1, box.h));
-    if (this.data.nodes.length === 1) zoom = Math.min(zoom, 1);
-    zoom = Math.max(this.cy.minZoom(), zoom);
-    this.cy.viewport({ zoom, pan: { x: left + width / 2 - (box.x1 + box.w / 2) * zoom, y: top + height / 2 - (box.y1 + box.h / 2) * zoom } });
+    if (!this.pendingFit || !this.ready()) return;
+    const cy = this.cy!, { left, top, width, height, box, zoom: fits } = this.fitArea();
+    let zoom = Math.min(cy.maxZoom(), fits);
+    if (this.data!.nodes.length === 1) zoom = Math.min(zoom, 1);
+    // Cytoscape clamps the viewport to the limit, which an earlier, smaller view may have left above this fit.
+    cy.minZoom(Math.min(cy.minZoom(), zoom));
+    cy.viewport({ zoom, pan: { x: left + width / 2 - (box.x1 + box.w / 2) * zoom, y: top + height / 2 - (box.y1 + box.h / 2) * zoom } });
     this.pendingFit = false;
+    this.limitZoom();
   }
   fit(covered = this.covered): void { this.covered = covered; this.pendingFit = true; this.fitWhenReady(); }
   focusOn(id: string): void {

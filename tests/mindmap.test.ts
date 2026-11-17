@@ -51,7 +51,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
       const x1 = Math.min(...xs) - 20, y1 = Math.min(...ys) - 10;
       return { x1, y1, w: Math.max(...xs) + 20 - x1, h: Math.max(...ys) + 10 - y1 };
     } }),
-    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = value.zoom; pan = value.pan; },
+    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = Math.max(min, Math.min(2.5, value.zoom)); pan = value.pan; },
     pan: () => pan, animate() {}, destroy() { destroyed = true; } };
   const context = createContext({ console, window: { setTimeout, clearTimeout }, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
@@ -105,18 +105,26 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
   t.map.destroy(); assert.ok(t.disposed());
 });
 
-test('zooming out stops at half the size that fits the view, and Fit still reaches it', async () => {
+test('zooming out stops at half the room Fit gives the map, Fit lands above it, and a closed branch moves nothing', async () => {
   const t = await setup(); t.resize(800, 600);
   assert.equal(t.min(), 0.000001, 'no limit before there is a map');
   t.map.draw(data);
   assert.equal(t.min(), 0.5, 'a small map stops at half of 100%');
-  // 4,040 wide with the fake bounding box's margins: the map fits at 800 / 4040.
+  // 4,040 wide with the fake bounding box's margins; Fit leaves a 64px margin on each side.
   const wide: MindMapData = { root: 'root', nodes: [...data.nodes, { id: '#far', tag: 'far', name: 'Far', x: 4000, y: 0, expandable: false, expanded: false }], edges: [] };
   t.map.draw(wide);
-  assert.equal(t.min(), 800 / 4040 / 2);
-  t.map.fit(); assert.ok(t.zoom() > t.min());
+  assert.equal(t.min(), 672 / 4040 / 2);
+  t.map.fit(); assert.equal(t.zoom(), 672 / 4040);
   t.resize(400, 600);
-  assert.equal(t.min(), 400 / 4040 / 2, 'a narrower pane lowers the limit'); t.map.destroy();
+  assert.equal(t.min(), 272 / 4040 / 2, 'a narrower pane lowers the limit');
+  // A short pane with the toolbar along the top and the legend at the bottom: 140px left, 12px of it inside the margins.
+  const tall: MindMapData = { root: 'root', nodes: [...data.nodes, { id: '#low', tag: 'low', name: 'Low', x: 0, y: 980, expandable: false, expanded: false }], edges: [] };
+  t.resize(800, 300); t.map.draw(tall); t.map.fit({ left: 0, right: 0, top: 60, bottom: 100 });
+  assert.equal(t.zoom(), 12 / 1000, 'Fit is not held above the zoom that keeps the map clear of the controls');
+  assert.ok(t.min() <= t.zoom() / 2);
+  // Zoomed far out on a big map, then a branch closes: the limit stays at the current zoom and the view does not move.
+  t.viewport(5, 6, 0.001); t.map.draw(data);
+  assert.equal(t.zoom(), 0.001); assert.equal(t.min(), 0.001); t.map.destroy();
 });
 
 test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {
