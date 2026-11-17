@@ -26,6 +26,8 @@ class Element {
   setAttribute(key: string, value: string) { this.attrs[key] = value; }
   setText(text: string) { this.text = text; }
   setCssProps(props: Record<string, string>) { Object.assign(this.css, props); }
+  addClass(name: string) { this.classes.add(name); }
+  removeClass(name: string) { this.classes.delete(name); }
   toggleClass(name: string, on: boolean) { if (on) this.classes.add(name); else this.classes.delete(name); }
   addEventListener(name: string, callback: (event?: { preventDefault(): void }) => void) { this.events.set(name, callback); }
   all(): Element[] { return [this, ...this.children.flatMap(child => child.all())]; }
@@ -33,24 +35,25 @@ class Element {
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
-  let pan = { x: 0, y: 0 };
+  let pan = { x: 0, y: 0 }, min = 0.000001;
+  const handlers = new Map<string, () => void>();
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
   const node = (id: string) => ({ id: () => id, empty: () => !positions.has(id), nonempty: () => positions.has(id),
     position(at?: { x: number; y: number }) { if (at) positions.set(id, at); return positions.get(id); },
     renderedPosition: () => positions.get(id), remove: () => positions.delete(id) });
-  const graph = { on() {}, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
+  const graph = { on(events: string, callback: () => void) { for (const name of events.split(' ')) handlers.set(name, callback); }, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
     width: () => width, height: () => height, resize() {}, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
-    minZoom: () => 0.000001, maxZoom: () => 2.5,
+    minZoom(value?: number) { if (value !== undefined) min = value; return min; }, maxZoom: () => 2.5,
     elements: () => ({ boundingBox() {
       const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
       const x1 = Math.min(...xs) - 20, y1 = Math.min(...ys) - 10;
       return { x1, y1, w: Math.max(...xs) + 20 - x1, h: Math.max(...ys) + 10 - y1 };
     } }),
-    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = value.zoom; pan = value.pan; },
+    viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = Math.max(min, Math.min(2.5, value.zoom)); pan = value.pan; },
     pan: () => pan, animate() {}, destroy() { destroyed = true; } };
-  const context = createContext({ console, ResizeObserver: class {
+  const context = createContext({ console, window: { setTimeout, clearTimeout }, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
   } });
   const dependency = new SyntheticModule(['default'], function () { this.setExport('default', (opts: { minZoom: number; autoungrabify?: boolean }) => { options = opts; return graph; }); }, { context });
@@ -69,6 +72,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   await settle();
   return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan,
     viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
+    emit: (name: string) => handlers.get(name)!(), min: () => min,
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
 const data: MindMapData = { root: 'root', nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
@@ -80,6 +84,18 @@ test('pan and zoom update only the layer transform instead of inherited CSS vari
   assert.equal(layer.css['--mindmap-pan-x'], undefined); t.map.destroy();
 });
 
+test('the layer is composited only while the view moves, then paints sharp again', async () => {
+  const t = await setup(); t.resize(800, 600); t.map.draw(data);
+  const layer = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-layer'))!;
+  assert.equal(layer.classes.has('is-moving'), false);
+  t.emit('zoom'); t.emit('pan');
+  assert.equal(layer.classes.has('is-moving'), true);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(layer.classes.has('is-moving'), false);
+  t.emit('resize');
+  assert.equal(layer.classes.has('is-moving'), false); t.map.destroy();
+});
+
 test('a hidden mind map defers Fit until its pane has a size and permits fitting large maps', async () => {
   const t = await setup(); t.map.draw(data); t.map.fit();
   assert.equal(t.fits(), 0, 'zero-sized background tab must retain its pending fit');
@@ -87,6 +103,28 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
   assert.equal(t.zoom(), 1, 'a single starting node should not zoom so far in that its children begin off-screen');
   assert.ok(t.options()!.minZoom <= 0.001);
   t.map.destroy(); assert.ok(t.disposed());
+});
+
+test('zooming out stops at half the room Fit gives the map, Fit lands above it, and a closed branch moves nothing', async () => {
+  const t = await setup(); t.resize(800, 600);
+  assert.equal(t.min(), 0.000001, 'no limit before there is a map');
+  t.map.draw(data);
+  assert.equal(t.min(), 0.5, 'a small map stops at half of 100%');
+  // 4,040 wide with the fake bounding box's margins; Fit leaves a 64px margin on each side.
+  const wide: MindMapData = { root: 'root', nodes: [...data.nodes, { id: '#far', tag: 'far', name: 'Far', x: 4000, y: 0, expandable: false, expanded: false }], edges: [] };
+  t.map.draw(wide);
+  assert.equal(t.min(), 672 / 4040 / 2);
+  t.map.fit(); assert.equal(t.zoom(), 672 / 4040);
+  t.resize(400, 600);
+  assert.equal(t.min(), 272 / 4040 / 2, 'a narrower pane lowers the limit');
+  // A short pane with the toolbar along the top and the legend at the bottom: 140px left, 12px of it inside the margins.
+  const tall: MindMapData = { root: 'root', nodes: [...data.nodes, { id: '#low', tag: 'low', name: 'Low', x: 0, y: 980, expandable: false, expanded: false }], edges: [] };
+  t.resize(800, 300); t.map.draw(tall); t.map.fit({ left: 0, right: 0, top: 60, bottom: 100 });
+  assert.equal(t.zoom(), 12 / 1000, 'Fit is not held above the zoom that keeps the map clear of the controls');
+  assert.ok(t.min() <= t.zoom() / 2);
+  // Zoomed far out on a big map, then a branch closes: the limit stays at the current zoom and the view does not move.
+  t.viewport(5, 6, 0.001); t.map.draw(data);
+  assert.equal(t.zoom(), 0.001); assert.equal(t.min(), 0.001); t.map.destroy();
 });
 
 test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {

@@ -144,10 +144,12 @@
 .tag-ontology-mindmap { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background-primary); }
 .tag-ontology-mindmap-stage { position: absolute; inset: 0; }
 .tag-ontology-mindmap-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 0 0; }
+.tag-ontology-mindmap-layer.is-moving { will-change: transform; }
 .tag-ontology-mindmap-lines { position: absolute; width: 1px; height: 1px; overflow: visible; }
 .tag-ontology-mindmap-lines path { fill: none; stroke: var(--text-faint); stroke-width: 1.2; opacity: 0.45; }
 .tag-ontology-mindmap-lines path.is-related { stroke-dasharray: 5 5; opacity: 0.3; }
-.tag-ontology-mindmap-node { position: absolute; left: var(--mindmap-x); top: var(--mindmap-y); transform: translate(-50%, -50%); display: flex; width: 208px; height: 32px; align-items: center; border: 1px solid color-mix(in srgb, var(--mindmap-color) 40%, var(--background-modifier-border)); border-radius: 7px; background: color-mix(in srgb, var(--mindmap-color) 15%, var(--background-primary)); pointer-events: auto; }
+/* Centered with margins, not a transform: hundreds of per-card transforms made every zoom frame rebuild more layers. */
+.tag-ontology-mindmap-node { position: absolute; left: var(--mindmap-x); top: var(--mindmap-y); margin: -16px 0 0 -104px; display: flex; width: 208px; height: 32px; align-items: center; border: 1px solid color-mix(in srgb, var(--mindmap-color) 40%, var(--background-modifier-border)); border-radius: 7px; background: color-mix(in srgb, var(--mindmap-color) 15%, var(--background-primary)); pointer-events: auto; }
 .tag-ontology-mindmap-node button { height: 30px; border: 0; box-shadow: none; border-radius: 6px; background: transparent; color: var(--text-normal); }
 .tag-ontology-mindmap-node .tag-ontology-mindmap-name { flex: 1; min-width: 0; display: block; padding: 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; font-size: 12px; }
 .tag-ontology-mindmap-node .tag-ontology-mindmap-name:disabled { opacity: 1; }
