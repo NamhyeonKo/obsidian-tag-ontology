@@ -51,7 +51,7 @@ export class MindMap {
     this.lines.classList.add('tag-ontology-mindmap-lines');
     this.lines.setAttribute('aria-hidden', 'true');
     this.layer.appendChild(this.lines);
-    this.resize = new ResizeObserver(() => { this.cy?.resize(); this.fitWhenReady(); this.transform(); });
+    this.resize = new ResizeObserver(() => { this.cy?.resize(); this.limitZoom(); this.fitWhenReady(); this.transform(); });
     this.resize.observe(this.el);
     void import('cytoscape').then(({ default: cytoscape }) => {
       if (this.closed) return;
@@ -129,6 +129,7 @@ export class MindMap {
       this.lines.appendChild(path);
     }
     this.paint(data.selected, data.bright);
+    this.limitZoom();
     if (this.pendingFit) this.fitWhenReady();
     else if (anchor && anchorId && ids.has(anchorId)) {
       const at = cy.getElementById(anchorId).position(), zoom = cy.zoom();
@@ -152,6 +153,14 @@ export class MindMap {
     });
   }
 
+  // Zooming out stops when the whole map takes half of the view (or half its size at 100%, for a small map), so it can't
+  // shrink to a dot. Fit still reaches any map: it needs at most twice this zoom.
+  private limitZoom(): void {
+    const cy = this.cy;
+    if (!cy?.width() || !cy.height() || !this.data?.nodes.length) return;
+    const box = cy.elements().boundingBox();
+    cy.minZoom(Math.min(1, cy.width() / Math.max(1, box.w), cy.height() / Math.max(1, box.h)) / 2);
+  }
   private fitWhenReady(): void {
     if (!this.pendingFit || !this.cy || !this.cy.width() || !this.cy.height() || !this.data?.nodes.length) return;
     // Like cy.fit(undefined, 64), but in the part of the view the toolbar, legend and settings buttons leave uncovered.

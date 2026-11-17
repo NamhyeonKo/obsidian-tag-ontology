@@ -35,7 +35,7 @@ class Element {
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
-  let pan = { x: 0, y: 0 };
+  let pan = { x: 0, y: 0 }, min = 0.000001;
   const handlers = new Map<string, () => void>();
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
@@ -45,7 +45,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   const graph = { on(events: string, callback: () => void) { for (const name of events.split(' ')) handlers.set(name, callback); }, batch(callback: () => void) { callback(); }, nodes: () => [...positions.keys()].map(node),
     getElementById: node, add(item: { data: { id: string }; position: { x: number; y: number } }) { positions.set(item.data.id, item.position); },
     width: () => width, height: () => height, resize() {}, zoom(value?: { level: number }) { if (value) zoom = value.level; return zoom; },
-    minZoom: () => 0.000001, maxZoom: () => 2.5,
+    minZoom(value?: number) { if (value !== undefined) min = value; return min; }, maxZoom: () => 2.5,
     elements: () => ({ boundingBox() {
       const xs = [...positions.values()].map(p => p.x), ys = [...positions.values()].map(p => p.y);
       const x1 = Math.min(...xs) - 20, y1 = Math.min(...ys) - 10;
@@ -72,7 +72,7 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   await settle();
   return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan,
     viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
-    emit: (name: string) => handlers.get(name)!(),
+    emit: (name: string) => handlers.get(name)!(), min: () => min,
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
 }
 const data: MindMapData = { root: 'root', nodes: [{ id: '#root', tag: 'root', name: 'Root', x: 0, y: 0, expandable: true, expanded: false }], edges: [] };
@@ -103,6 +103,20 @@ test('a hidden mind map defers Fit until its pane has a size and permits fitting
   assert.equal(t.zoom(), 1, 'a single starting node should not zoom so far in that its children begin off-screen');
   assert.ok(t.options()!.minZoom <= 0.001);
   t.map.destroy(); assert.ok(t.disposed());
+});
+
+test('zooming out stops at half the size that fits the view, and Fit still reaches it', async () => {
+  const t = await setup(); t.resize(800, 600);
+  assert.equal(t.min(), 0.000001, 'no limit before there is a map');
+  t.map.draw(data);
+  assert.equal(t.min(), 0.5, 'a small map stops at half of 100%');
+  // 4,040 wide with the fake bounding box's margins: the map fits at 800 / 4040.
+  const wide: MindMapData = { root: 'root', nodes: [...data.nodes, { id: '#far', tag: 'far', name: 'Far', x: 4000, y: 0, expandable: false, expanded: false }], edges: [] };
+  t.map.draw(wide);
+  assert.equal(t.min(), 800 / 4040 / 2);
+  t.map.fit(); assert.ok(t.zoom() > t.min());
+  t.resize(400, 600);
+  assert.equal(t.min(), 400 / 4040 / 2, 'a narrower pane lowers the limit'); t.map.destroy();
 });
 
 test('Fit centers the map in the part of the view the toolbar, legend and settings leave uncovered', async () => {
