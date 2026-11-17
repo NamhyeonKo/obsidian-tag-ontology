@@ -28,6 +28,7 @@ export class MindMap {
   private layer: HTMLElement;
   private lines: SVGSVGElement;
   private resize: ResizeObserver;
+  private settle?: number;
   private suggest: TagSuggest;
   private start: HTMLElement;
   private choices: HTMLElement;
@@ -58,7 +59,8 @@ export class MindMap {
         { selector: 'node', style: { width: 208, height: 32, opacity: 0 } },
       ] });
       stage.appendChild(this.layer);
-      this.cy.on('pan zoom resize', () => this.transform());
+      this.cy.on('pan zoom', () => { this.moving(); this.transform(); });
+      this.cy.on('resize', () => this.transform());
       if (this.data) this.draw(this.data);
     }).catch(error => {
       if (this.closed) return;
@@ -166,10 +168,18 @@ export class MindMap {
     const node = this.cy?.getElementById(id);
     if (node?.nonempty()) this.cy?.animate({ center: { eles: node } }, { duration: 200 });
   }
+  // While the view moves, the layer is its own GPU layer: each frame only scales and shifts the bitmap it already has, instead
+  // of painting every card and line again. Text blurs a little while zooming, so the layer goes back to normal painting, once
+  // and sharp at the new zoom, when the gesture stops.
+  private moving(): void {
+    this.layer.addClass('is-moving');
+    window.clearTimeout(this.settle);
+    this.settle = window.setTimeout(() => this.layer.removeClass('is-moving'), 150);
+  }
   private transform(): void {
     if (!this.cy) return;
     const pan = this.cy.pan();
     this.layer.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${this.cy.zoom()})`;
   }
-  destroy(): void { this.closed = true; this.resize.disconnect(); this.suggest.close(); this.cy?.destroy(); this.cards.clear(); this.el.remove(); }
+  destroy(): void { window.clearTimeout(this.settle); this.closed = true; this.resize.disconnect(); this.suggest.close(); this.cy?.destroy(); this.cards.clear(); this.el.remove(); }
 }
