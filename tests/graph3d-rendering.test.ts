@@ -233,3 +233,44 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   assert.ok(lastTarget, 'public fit() frames 3D graph for Home action');
   c.onunload();
 });
+
+test('3D node labels ignore pointer raycasts while spheres still hit for tags and notes', async () => {
+  const c = await setup({ settings: { ...settings.DEFAULT_SETTINGS }, native: {}, tagColor: () => '#123456' });
+  const internal = c as unknown as {
+    ball: THREE.SphereGeometry;
+    nodeObject(item: { id: string; type: string; tag?: string; name: string; degree: number; radius: number; dot?: THREE.Mesh; label?: THREE.Sprite }): THREE.Object3D;
+  };
+  class SpriteTextStub extends THREE.Sprite {
+    fontFace = ''; fontSize = 0;
+    constructor() { super(new THREE.SpriteMaterial()); }
+  }
+  c.three = { ...THREE, SpriteText: SpriteTextStub } as unknown as typeof THREE;
+  internal.ball = new THREE.SphereGeometry(1, 8, 8);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+  camera.position.set(0, 0, 50);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+
+  const items: Parameters<typeof internal.nodeObject>[0][] = [
+    { id: '#tag', type: 'tag', tag: 'tag', name: 'tag', degree: 1, radius: 1.5 },
+    { id: 'Note.md', type: 'note', name: 'Note', degree: 1, radius: 1.2 },
+  ];
+  for (const item of items) {
+    const group = internal.nodeObject(item);
+    item.label!.scale.set(12, 2.2, 1);
+    group.updateMatrixWorld(true);
+
+    const ray = new THREE.Raycaster();
+    // Aiming at the sphere hits the mesh.
+    const dotNdc = new THREE.Vector3(0, 0, 0).project(camera);
+    ray.setFromCamera(new THREE.Vector2(dotNdc.x, dotNdc.y), camera);
+    const dotHits = ray.intersectObject(group, true);
+    assert.equal(dotHits[0]?.object, item.dot, `${item.type} sphere is clickable`);
+
+    // Aiming at the hanging label hits nothing (passes through).
+    const labelPos = new THREE.Vector3(0, -(item.radius + 1.5), 0).project(camera);
+    ray.setFromCamera(new THREE.Vector2(labelPos.x, labelPos.y), camera);
+    assert.deepEqual(ray.intersectObject(group, true), [], `${item.type} label ignores raycasts`);
+  }
+});

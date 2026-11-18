@@ -410,6 +410,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     label.center.set(0.5, 1);
     // Its size at TEXT_HEIGHT; every frame scales it from this to keep it readable.
     label.userData.base = { x: label.scale.x, y: label.scale.y };
+    // Only the node sphere handles pointer events; labels pass hover, drag, and clicks through like in 2D.
+    label.raycast = () => {};
     group.add(label);
     this.size(item);
     return group;
