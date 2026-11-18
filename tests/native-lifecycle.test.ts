@@ -16,7 +16,7 @@ import * as coreModule from 'tag-ontology';
 import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology';
 
 class Element {
-  tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
+  tag = ''; children: Element[] = []; text = ''; hidden = false; open = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   css: Record<string, string> = {}; disabled = false; checked = false; shown = true; isShown() { return this.shown; }
   // The window the element is in, like Obsidian's Node.win.
@@ -2244,4 +2244,47 @@ test('graph palette picker lists named snapshots and working copy, and save open
   assert.equal(save.text, '');
   assert.match(picker().attrs['aria-label'], /unsaved/);
   t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
+});
+
+test('sidebar details sections keep closed state across same-view refreshes and reset when navigating', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  t.search('ml');
+  const findSection = (prefix: string) => t.sidebar.all().find(el => el.tag === 'details' && el.children[0]?.text.startsWith(prefix))!;
+  const children = findSection('Children');
+  assert.equal(children.open, true);
+  children.open = false;
+  children.events.get('toggle')!();
+  t.controller.refresh(false);
+  assert.equal(findSection('Children').open, false);
+  assert.equal(findSection('Parents').open, true);
+  t.click('#cs');
+  assert.equal(findSection('Children').open, true);
+});
+
+test('group view keeps filter query and checked notes across filtering and same-group refreshes', async () => {
+  const t = await setup(), now = Date.now(), taken: [string, string[]][] = [];
+  let notes = [
+    { path: 'Notes/Alpha.md', mtime: now },
+    { path: 'Notes/Beta.md', mtime: now - 864e5 },
+    { path: 'Notes/Gamma.md', mtime: now - 2 * 864e5 },
+  ];
+  t.controller.explorer = { groupNotes: tag => tag === 'ml' ? notes : undefined, takeOut: (tag, paths) => { taken.push([tag, paths]); } };
+  t.controller.showGroup('ml');
+  const rows = () => t.sidebar.all().filter(el => el.tag === 'li');
+  const filter = () => t.sidebar.all().find(el => el.attrs['aria-label'] === 'Filter notes')!;
+  const firstInput = rows()[0]!.all().find(el => el.tag === 'input')!;
+  firstInput.checked = true; firstInput.events.get('change')!();
+  filter().value = 'a'; filter().events.get('input')!();
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['Alpha', 'Beta', 'Gamma']);
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, true);
+  notes = [...notes, { path: 'Notes/Delta.md', mtime: now - 3 * 864e5 }];
+  t.controller.renderPanel();
+  assert.equal(filter().value, 'a');
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['Alpha', 'Beta', 'Gamma', 'Delta']);
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, true);
+  t.click('Take out selected');
+  assert.deepEqual(taken, [['ml', ['Notes/Alpha.md']]]);
+  t.controller.renderPanel();
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, false);
 });

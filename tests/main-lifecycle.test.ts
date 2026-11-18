@@ -206,7 +206,7 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
+      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: (cache?: { tags?: string[] }) => cache?.tags ?? [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './colors.ts' ? { ...colors }
       : specifier === './palettes.ts' ? { ...palettes }
@@ -470,14 +470,20 @@ test('a pending manual reload does not report its failure after unload', async (
   assert.deepEqual(t.errors, []);
 });
 
-test('note edits still skip graph redraws and a coalesced dictionary edit still redraws', async () => {
+test('note edits still skip graph redraws and dictionary reads, while a coalesced dictionary edit still reloads and redraws', async () => {
   const t = await setup();
   t.ready(); await settle();
+  let tags: string[] = [];
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'Notes/A.md' }];
+  (t.metadataCache as { getFileCache: () => { tags?: string[] } }).getFileCache = () => ({ tags });
+  tags = ['#root'];
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.model!.notesFor('root', false), ['Notes/A.md']);
+  assert.equal(t.reads(), 1);
   t.events.get('modify')!({ path: 'Tag-Dictionary.json' });
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'refresh:false', 'refresh:true']);
-  assert.equal(t.reads(), 3);
+  assert.equal(t.reads(), 2);
 });
 
 test('each metadata resolution refreshes the views', async () => {
