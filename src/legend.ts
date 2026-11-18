@@ -4,16 +4,57 @@ import { paletteGroups, paletteSelection } from './palettes.ts';
 
 interface LegendActions { color(depth: number, color: string): void; choose(key: string): void; save(): void }
 const rendered = new WeakMap<HTMLElement, string>();
+const observed = new WeakSet<Element>();
+let overlayObserver: ResizeObserver | undefined;
+// Keep up to the 8-level default palette height unclipped before flipping the toolbar horizontal; longer palettes scroll.
+const MIN_VISIBLE_LEVELS = 8;
+
+function fitOverlay(overlay: HTMLElement): void {
+  if (typeof getComputedStyle !== 'function' || !overlay.clientHeight) return;
+  const tools = overlay.querySelector<HTMLElement>('.tag-ontology-tools');
+  if (!tools) return;
+  const gap = parseFloat(getComputedStyle(overlay).rowGap) || 0;
+  const toolGap = parseFloat(getComputedStyle(tools).rowGap) || 0;
+  const items = Array.from(tools.querySelectorAll<HTMLElement>('.tag-ontology-icon, .tag-ontology-separator')).filter(item => !item.hidden);
+  const toolsNeed = items.reduce((sum, item) => sum + Math.min(item.offsetWidth, item.offsetHeight), 0) + Math.max(0, items.length - 1) * toolGap;
+  if (!toolsNeed) return;
+  const legend = overlay.querySelector<HTMLElement>('.tag-ontology-legend');
+  const actions = overlay.querySelector<HTMLElement>('.tag-ontology-actions');
+  const status = overlay.querySelector<HTMLElement>('.tag-ontology-status');
+  let legendNeed = 0;
+  if (legend && !legend.hidden) {
+    const list = legend.querySelector<HTMLElement>('.tag-ontology-legend-levels');
+    const rows = list?.children.length ?? 0;
+    const chrome = legend.scrollHeight - (list?.clientHeight ?? 0) + (legend.offsetHeight - legend.clientHeight);
+    legendNeed = chrome + (list && rows ? list.scrollHeight * Math.min(rows, MIN_VISIBLE_LEVELS) / rows : 0);
+  }
+  const bottomNeed = Math.max(actions?.offsetHeight ?? 0, legendNeed);
+  overlay.classList.toggle('is-compact', overlay.clientHeight < toolsNeed + bottomNeed + (status?.offsetHeight ?? 0) + gap * 2);
+}
+
+function observeOverlay(overlay: HTMLElement): void {
+  if (typeof ResizeObserver === 'undefined') return;
+  overlayObserver ??= new ResizeObserver(entries => {
+    for (const target of new Set(entries.map(entry => entry.target.closest<HTMLElement>('.tag-ontology-overlay')))) {
+      if (target) { observeOverlay(target); fitOverlay(target); }
+    }
+  });
+  for (const target of [overlay, ...Array.from(overlay.querySelectorAll('.tag-ontology-tools, .tag-ontology-layouts, .tag-ontology-status'))]) {
+    if (!observed.has(target)) { observed.add(target); overlayObserver.observe(target); }
+  }
+}
 
 export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: LegendActions): void {
+  const overlay = el.parentElement;
+  const sync = () => { if (overlay) { observeOverlay(overlay); fitOverlay(overlay); } };
   const state = JSON.stringify([settings.customColors, settings.hierarchyColors, settings.hierarchyPalette,
     settings.hierarchyPalettePreset, settings.customHierarchyPalette, settings.workingPaletteSource, settings.savedHierarchyPalettes]);
-  if (rendered.get(el) === state) return;
+  if (rendered.get(el) === state) { sync(); return; }
   // Metadata refreshes must not replace a focused palette control.
   rendered.delete(el);
   el.empty();
   el.hidden = !settings.customColors || !settings.hierarchyColors;
-  if (el.hidden) { rendered.set(el, state); return; }
+  if (el.hidden) { rendered.set(el, state); sync(); return; }
   el.setAttribute('role', 'region');
   el.setAttribute('aria-label', 'Hierarchy depth colors');
   el.setAttribute('aria-description', `Root is level 0. Level ${settings.hierarchyPalette.length - 1} and deeper use the last color.`);
@@ -56,4 +97,5 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
     save.addEventListener('click', () => actions.save());
   }
   rendered.set(el, state);
+  sync();
 }
