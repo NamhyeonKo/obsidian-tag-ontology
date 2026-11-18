@@ -61,7 +61,7 @@ interface Session {
   // The tag the last click picked, and when the first press of the current click sequence began.
   lastTag?: { tag: string; at: number }; firstDown?: number; pressCount: number;
   press: (event: MouseEvent) => void; double: () => void;
-  fitFrame?: number; stopFit: () => void; stopInput: () => void; repin: () => void; grab: () => void;
+  fitFrame?: number; stopFit: () => void; stopInput: () => void; stopLegend?: () => void; repin: () => void; grab: () => void;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -546,7 +546,7 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     if (session.mindmapRoot && !model.placed.has(session.mindmapRoot)) session.mindmapRoot = undefined;
-    renderDepthLegend(session.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+    session.stopLegend = renderDepthLegend(session.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
@@ -1377,6 +1377,7 @@ export class NativeGraphs {
     }
     s.mindmap?.destroy();
     s.texture?.destroy();
+    s.stopLegend?.();
     s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native'); s.view.contentEl.removeClass('is-mindmap'); s.view.contentEl.removeClass('has-embedded-graph');
     this.sessions.delete(id);
     if (redraw) {
