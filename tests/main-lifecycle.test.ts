@@ -1155,6 +1155,13 @@ test('followAccent skips unchanged body style mutations from startup and under d
   t.restyle('hsl(258, 88%, 66%)');
   assert.equal(t.plugin.native.recolors, 1);
 
+  // Even when customColors is off or CSS uses oklch(), body.style accent changes still recolor 2D highlights without full refresh.
+  t.plugin.settings.customColors = false;
+  t.plugin.native.calls.length = 0;
+  t.restyle('oklch(0.6 0.2 25)');
+  assert.equal(t.plugin.native.recolors, 2);
+  assert.deepEqual(t.plugin.native.calls, []);
+
   t.plugin.native.linkedCalls.length = 0;
   await t.plugin.saveSettings();
   assert.deepEqual(t.plugin.native.linkedCalls, ['settings']);

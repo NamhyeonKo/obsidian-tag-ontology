@@ -51,7 +51,7 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
-  pendingRender?: boolean;
+  pendingRender?: boolean; pendingRecolor?: boolean;
   staticPositions?: { key: string; positions: Map<string, { x: number; y: number }> };
   choice: Settings['layout']; mindmapExpanded: string[];
   viewports: Map<Settings['layout'], { scale: number; targetScale: number; x: number; y: number; positions: Map<string, { x: number; y: number }> }>;
@@ -361,8 +361,8 @@ export class NativeGraphs {
       }
       // Ask the engine to send its data again so the first render goes through the layer.
       // Sync Obsidian's CSS graph colors too in case body accent variables settled after the graph renderer opened.
-      try { r.testCSS?.(); view.update(); }
-      catch (error) { this.fail(leaf, error); }
+      this.recolorSession(session);
+      if (session.active) try { view.update(); } catch (error) { this.fail(leaf, error); }
     }
     this.syncNav();
   }
@@ -394,7 +394,14 @@ export class NativeGraphs {
   }
 
   // Obsidian's core graph refreshes CSS colors on theme switches, not when the accent setting rewrites <body>'s style.
-  recolor() { for (const session of this.sessions.values()) session.renderer.testCSS?.(); }
+  recolor() { for (const session of [...this.sessions.values()]) this.recolorSession(session); }
+
+  private recolorSession(session: Session) {
+    if (session.mode !== '2d' || session.choice === 'mindmap') { session.pendingRecolor = true; return; }
+    session.pendingRecolor = false;
+    if (typeof session.renderer.testCSS !== 'function') return;
+    try { session.renderer.testCSS(); } catch (error) { this.fail(session.leaf, error); }
+  }
 
   link(view: LinkedGraph) { this.linked.add(view); }
   unlink(view: LinkedGraph) { this.linked.delete(view); }
@@ -462,6 +469,10 @@ export class NativeGraphs {
     const explorer = this.explorer;
     if (session.mode === '2d' && session.pendingRender) {
       session.pendingRender = false; this.render(session, 'refresh');
+      if (!session.active) return;
+    }
+    if (session.mode === '2d' && session.pendingRecolor && session.choice !== 'mindmap') {
+      this.recolorSession(session);
       if (!session.active) return;
     }
     if (session.mode !== '2d' && !session.nativePaused) {
@@ -577,6 +588,10 @@ export class NativeGraphs {
   private render(session: Session, operation: string) {
     if (session.mode !== '2d') { session.pendingRender = true; return; }
     session.pendingRender = false;
+    if (session.pendingRecolor && session.choice !== 'mindmap') {
+      this.recolorSession(session);
+      if (!session.active) return;
+    }
     try { return this.draw(session, operation); }
     catch (error) { this.fail(session.leaf, error); }
   }

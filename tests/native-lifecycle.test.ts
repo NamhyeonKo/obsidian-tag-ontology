@@ -2446,15 +2446,47 @@ test('Home fits visible 2D, mind map, and linked views while canceling pending s
   assert.equal(map.fitted, before + 1, 'Home fits open mind map view');
 });
 
-test('attach and recolor refresh core 2D renderer CSS colors when accent variables settle or change', async () => {
+test('attach and recolor refresh 2D renderer CSS colors safely, in order, and defer while hidden or in mind map', async () => {
   const t = await setup();
-  let cssCalls = 0;
-  (t.renderer as { testCSS?: () => void }).testCSS = () => { cssCalls++; };
+  const order: string[] = [];
+  const origSetData = t.renderer.setData;
+  const wrappedSetData = t.renderer.setData = data => { order.push('update'); return origSetData.call(t.renderer, data); };
+  (t.renderer as { testCSS?: () => void }).testCSS = function () {
+    assert.equal(this, t.renderer, 'preserves renderer as this');
+    order.push('testCSS');
+  };
   t.controller.attach();
-  assert.equal(cssCalls, 1, 'attaching syncs core graph highlight colors with current CSS');
+  assert.deepEqual(order, ['testCSS', 'update'], 'syncs CSS before initial layered render');
+
+  t.layout('Mind map');
+  order.length = 0;
   t.controller.recolor();
-  assert.equal(cssCalls, 2, 'recolor re-reads core graph highlight CSS colors after body style accent changes');
+  assert.deepEqual(order, [], 'mind map keeps hidden native renderer idle on recolor');
+  t.layout('Force');
+  assert.deepEqual(order.slice(0, 1), ['testCSS'], 'leaving mind map flushes deferred recolor');
+
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  order.length = 0;
+  t.controller.recolor();
+  assert.deepEqual(order, [], 'embedded explorer defers recolor');
+  await t.controller.switchMode(t.leaves[0], '2d');
+  assert.deepEqual(order, ['testCSS'], 'returning to 2D flushes deferred recolor');
+
+  t.addTab();
+  const secondRenderer = (t.leaves[1] as { view: { renderer: typeof t.renderer & { testCSS?: () => void } } }).view.renderer;
+  let secondCalls = 0;
+  secondRenderer.testCSS = () => { secondCalls++; };
+  t.controller.attach();
+  assert.equal(secondCalls, 1);
+
+  (t.renderer as { testCSS?: () => void }).testCSS = () => { throw new Error('broken renderer'); };
+  t.controller.recolor();
+  assert.equal(secondCalls, 2, 'one failing renderer isolates to that tab without aborting others');
+  assert.equal(t.notices.length, 1);
+  assert.equal(t.renderer.setData, wrappedSetData);
+  assert.equal(t.contentEl.classes.has('tag-ontology-native'), false, 'failing session detaches');
+
   t.controller.destroy();
   t.controller.recolor();
-  assert.equal(cssCalls, 2, 'detached sessions ignore recolor');
+  assert.equal(secondCalls, 2, 'detached sessions ignore recolor');
 });
