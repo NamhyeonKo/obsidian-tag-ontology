@@ -29,6 +29,8 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
       chip(parent: object, text: string, tag: string): void;
       size(c: card.Card): layout.Size;
       addNode(id: string, c: card.Card, data: Record<string, unknown>, position: layout.Point): unknown;
+      draw(operation: string): void;
+      readTheme(): void; style(): unknown; changed(): void;
     };
   }).ExplorerCanvas;
 }
@@ -88,4 +90,14 @@ test('explorer caches facet colors per model and computes card height without bu
   view.addNode('tag:root', rootCard, { type: 'tag', tag: 'root' }, { x: 0, y: 0 });
   assert.equal(added, 1);
   assert.equal(imageCalls, 1, 'addNode() generates SVG once');
+
+  let restyled = 0;
+  view.cy = {
+    nodes: (sel?: string) => sel ? [] : { forEach() {} },
+    edges: () => ({ filter: () => ({ remove() {} }) }),
+    style: () => { restyled++; },
+  };
+  view.readTheme = () => {};
+  view.draw('settings');
+  assert.equal(restyled, 1, 'explorer redraws colors when settings change');
 });

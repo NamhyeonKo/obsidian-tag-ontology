@@ -152,7 +152,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const cy = this.cy, model = this.owner.model;
     if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
-    if (operation !== 'refresh' || !cy || !model) return;
+    if ((operation !== 'refresh' && operation !== 'settings') || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
     // Redrawing every card ends in changed(), which refills the groups.

@@ -4,20 +4,22 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import * as THREE from 'three';
+import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as settings from '../src/settings.ts';
 import * as geometry from '../src/geometry3d.ts';
 
 interface Node { id: string; x: number; y: number; z: number; radius: number }
 interface Renderer {
-  three: typeof THREE; graph: { scene(): THREE.Scene; pauseAnimation(): void }; nodes: Map<string, Node>;
+  three: typeof THREE; graph: { scene(): THREE.Scene; pauseAnimation(): void; graphData?(data: unknown): void }; nodes: Map<string, Node>;
+  status?: { setText(text: string): void };
   draw(operation: string): void; setVisible(visible: boolean): void; pendingDraw?: string;
   links: { source: string | Node; target: string | Node; kind: string }[];
   lines: THREE.LineSegments; dashes: THREE.LineSegments; cone: THREE.ConeGeometry; arrowMaterial: THREE.MeshLambertMaterial;
   arrows: THREE.InstancedMesh; buildLinks(): void; placeLinks(): void;
 }
-async function setup() {
-  const context = createContext({});
+async function setup(owner: object = {}) {
+  const context = createContext({ window: { setTimeout: () => 0, clearTimeout: () => {} } });
   const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
@@ -30,8 +32,9 @@ async function setup() {
   });
   await module.evaluate();
   const Canvas = (module.namespace as unknown as { Graph3DCanvas: new(root: object, owner: object, leaf: object) => Renderer }).Graph3DCanvas;
-  const canvas = new Canvas({ isShown: () => true }, {}, {}), scene = new THREE.Scene();
-  canvas.three = THREE; canvas.graph = { scene: () => scene, pauseAnimation() {} };
+  const canvas = new Canvas({ isShown: () => true }, owner, {}), scene = new THREE.Scene();
+  canvas.three = THREE; canvas.graph = { scene: () => scene, pauseAnimation() {}, graphData() {} };
+  canvas.status = { setText() {} };
   canvas.lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial());
   canvas.dashes = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial());
   canvas.cone = new THREE.ConeGeometry(1, 1, 8); canvas.arrowMaterial = new THREE.MeshLambertMaterial();
@@ -68,4 +71,30 @@ test('hidden 3D updates are coalesced and a full refresh is flushed on return', 
   assert.deepEqual(operations, ['refresh']); assert.equal(c.pendingDraw, undefined);
   c.setVisible(false); c.setVisible(true);
   assert.deepEqual(operations, ['refresh'], 'unchanged visibility must not force another redraw');
+});
+
+test('settings redraws reuse base graphData and do not drop queued vault refreshes', async () => {
+  let baseBuilds = 0;
+  const model = new Ontology({ root: { description: '', broader: [] } }, [{ path: 'A.md', tags: ['root'] }]);
+  const owner = {
+    model,
+    settings: { ...settings.DEFAULT_SETTINGS },
+    native: { selectedTag: undefined },
+    tagColor: () => '#123456',
+    graphData: () => { baseBuilds++; return { nodes: { 'A.md': { type: '', links: { '#root': true } }, '#root': { type: 'tag', links: {} } }, numLinks: 0 }; },
+  };
+  const c = await setup(owner);
+  c.setVisible(true);
+  c.draw('refresh');
+  assert.equal(baseBuilds, 1);
+
+  c.draw('settings');
+  assert.equal(baseBuilds, 1, 'settings redraws do not rebuild vault graphData');
+
+  c.setVisible(false);
+  c.draw('refresh');
+  c.draw('settings');
+  assert.equal(c.pendingDraw, 'refresh', 'pending note/vault refresh is preserved across subsequent settings redraw');
+  c.setVisible(true);
+  assert.equal(baseBuilds, 2);
 });
