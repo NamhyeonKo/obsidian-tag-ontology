@@ -90,6 +90,8 @@ export interface LinkedGraph {
   has(tag: string): boolean;
   // Bring a tag the sidebar revealed into view.
   focusOn(tag: string): void;
+  // Frame everything currently shown in this graph.
+  fit?(): void;
   // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
   renamed?(from: string, to: string): void;
 }
@@ -488,7 +490,13 @@ export class NativeGraphs {
     const bar = el.createDiv('tag-ontology-nav');
     this.nav.back = this.navButton(bar, 'arrow-left', 'Back', () => this.step(-1));
     this.nav.forward = this.navButton(bar, 'arrow-right', 'Forward', () => this.step(1));
-    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => { this.go({ kind: 'roots' }); this.showSelection(); }));
+    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => {
+      window.clearTimeout(this.centerTimer);
+      this.go({ kind: 'roots' });
+      this.showSelection();
+      for (const session of this.sessions.values()) if (session.view.contentEl.isShown()) { session.stopInput(); this.fit(session); }
+      for (const view of this.linked) if (view.isVisible?.() !== false) view.fit?.();
+    }));
     bar.createDiv('tag-ontology-spacer');
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));

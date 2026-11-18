@@ -186,7 +186,7 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   });
   await module.evaluate();
   const Canvas = (module.namespace as unknown as {
-    Graph3DCanvas: new(root: El, owner: object, leaf: object) => Renderer & { open(): Promise<void>; focusOn(tag: string): void; paint(): void; unload?(): void; onunload(): void };
+    Graph3DCanvas: new(root: El, owner: object, leaf: object) => Renderer & { open(): Promise<void>; focusOn(tag: string): void; fit(): void; paint(): void; unload?(): void; onunload(): void };
   }).Graph3DCanvas;
   const c = new Canvas(root, owner, {});
   c.setVisible(true);
@@ -227,5 +227,9 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   owner.native.selectedTag = 'leaf';
   c.paint();
   assert.equal(recenter.hidden, true, 'hides when the selected tag is collapsed out of view');
+
+  lastTarget = undefined;
+  c.fit();
+  assert.ok(lastTarget, 'public fit() frames 3D graph for Home action');
   c.onunload();
 });
