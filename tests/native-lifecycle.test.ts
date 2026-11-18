@@ -44,7 +44,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
@@ -2444,4 +2444,17 @@ test('Home fits visible 2D, mind map, and linked views while canceling pending s
   const before = map.fitted;
   t.click('Home');
   assert.equal(map.fitted, before + 1, 'Home fits open mind map view');
+});
+
+test('attach and recolor refresh core 2D renderer CSS colors when accent variables settle or change', async () => {
+  const t = await setup();
+  let cssCalls = 0;
+  (t.renderer as { testCSS?: () => void }).testCSS = () => { cssCalls++; };
+  t.controller.attach();
+  assert.equal(cssCalls, 1, 'attaching syncs core graph highlight colors with current CSS');
+  t.controller.recolor();
+  assert.equal(cssCalls, 2, 'recolor re-reads core graph highlight CSS colors after body style accent changes');
+  t.controller.destroy();
+  t.controller.recolor();
+  assert.equal(cssCalls, 2, 'detached sessions ignore recolor');
 });

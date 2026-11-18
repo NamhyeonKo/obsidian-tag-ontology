@@ -22,7 +22,7 @@ interface NativeLink {
 interface NativeRenderer {
   setData: (data: NativeData) => unknown;
   onNodeClick: (event: MouseEvent, id: string, type: string) => void;
-  changed(): void; resetPan(): void;
+  changed(): void; resetPan(): void; testCSS?: () => void;
   width: number; height: number; scale: number; targetScale: number; panX?: number; panY?: number;
   setScale(scale: number): void; setPan(x: number, y: number): void;
   fShowArrow: boolean;
@@ -360,7 +360,8 @@ export class NativeGraphs {
         void this.owner.saveState();
       }
       // Ask the engine to send its data again so the first render goes through the layer.
-      try { view.update(); }
+      // Sync Obsidian's CSS graph colors too in case body accent variables settled after the graph renderer opened.
+      try { r.testCSS?.(); view.update(); }
       catch (error) { this.fail(leaf, error); }
     }
     this.syncNav();
@@ -391,6 +392,9 @@ export class NativeGraphs {
     this.drawLinked(linked);
     this.renderPanel();
   }
+
+  // Obsidian's core graph refreshes CSS colors on theme switches, not when the accent setting rewrites <body>'s style.
+  recolor() { for (const session of this.sessions.values()) session.renderer.testCSS?.(); }
 
   link(view: LinkedGraph) { this.linked.add(view); }
   unlink(view: LinkedGraph) { this.linked.delete(view); }

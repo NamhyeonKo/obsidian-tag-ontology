@@ -40,8 +40,9 @@ export default class TagOntologyPlugin extends Plugin {
   private redraw = false;
   private disposed = false;
   private settingsTab?: OntologySettingsTab;
-  // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
+  // The accent last handed out for drawing, and the accent last synced to Obsidian's 2D graph highlight CSS.
   private accent?: string;
+  private themeAccent?: string;
 
   async onload(): Promise<void> {
     const saved: unknown = await this.loadData();
@@ -81,9 +82,9 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on('active-leaf-change', leaf => this.native.activate(leaf)));
     // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
     // accent variables on <body>, so <body>'s style is watched too.
-    this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
-    this.accent = this.readAccent();
-    const accentWatch = new MutationObserver(() => this.followAccent());
+    this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent(false)));
+    this.accent = this.themeAccent = this.readAccent();
+    const accentWatch = new MutationObserver(() => this.followAccent(true));
     accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
     // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
@@ -316,9 +317,11 @@ export default class TagOntologyPlugin extends Plugin {
   }
 
   // Every redraw takes the tag color from tagColor(), so whatever redrew last, the accent it drew with is the one compared.
-  private followAccent() {
-    if (!this.model || !this.settings.customColors || this.settings.tagColor) return;
+  // An inline style update on <body> skips Obsidian's css-change event, so open 2D renderers re-read CSS highlight colors.
+  private followAccent(restyle: boolean) {
     const accent = this.readAccent();
+    if (accent !== this.themeAccent) { this.themeAccent = accent; if (restyle) this.native.recolor(); }
+    if (!this.model || !this.settings.customColors || this.settings.tagColor) return;
     if (accent === this.accent) return;
     this.accent = accent;
     this.native.refresh(true, 'settings');
