@@ -57,8 +57,9 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+    const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    this.register(() => stopLegend?.());
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     // The same buttons in the same places as the graph modes, so switching modes moves nothing; the ones the explorer has no
     // use for stay disabled.

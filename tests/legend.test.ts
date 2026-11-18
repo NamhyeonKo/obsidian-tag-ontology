@@ -12,6 +12,8 @@ class DomEl {
   classes: Set<string>;
   classList: { toggle(cls: string, force?: boolean): boolean; contains(cls: string): boolean };
   hidden = false;
+  isConnected = true;
+  win?: { ResizeObserver?: unknown };
   offsetWidth = 0;
   offsetHeight = 0;
   clientHeight = 0;
@@ -56,17 +58,30 @@ class DomEl {
   }
 }
 
-async function setup() {
+function createResizeSpy() {
   const observed: DomEl[] = [];
-  let triggerResize: (entries: { target: DomEl }[]) => void = () => {};
-  class MockResizeObserver {
-    constructor(cb: (entries: { target: DomEl }[]) => void) { triggerResize = cb; }
+  let observers = 0;
+  let disconnects = 0;
+  let trigger: (entries: { target: DomEl }[]) => void = () => {};
+  class SpyResizeObserver {
+    constructor(cb: (entries: { target: DomEl }[]) => void) { observers++; trigger = cb; }
     observe(target: DomEl) { observed.push(target); }
+    disconnect() { disconnects++; }
   }
+  return {
+    ResizeObserver: SpyResizeObserver,
+    observed,
+    counts: () => ({ observers, disconnects }),
+    trigger: (target: DomEl) => trigger([{ target }]),
+  };
+}
+
+async function setup() {
+  const ro = createResizeSpy();
   const styles = new WeakMap<DomEl, Record<string, string>>();
   const context = createContext({
     getComputedStyle: (el: DomEl) => styles.get(el) ?? { rowGap: '0' },
-    ResizeObserver: MockResizeObserver,
+    ResizeObserver: ro.ResizeObserver,
   });
   const code = await transform(readFileSync(new URL('../src/legend.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
@@ -79,7 +94,7 @@ async function setup() {
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });
   await module.evaluate();
-  const renderDepthLegend = (module.namespace as { renderDepthLegend: (el: DomEl, settings: Settings, actions: object) => void }).renderDepthLegend;
+  const renderDepthLegend = (module.namespace as { renderDepthLegend: (el: DomEl, settings: Settings, actions: object) => (() => void) | undefined }).renderDepthLegend;
 
   const measureLegend = (el: DomEl) => {
     if (el.classes.has('tag-ontology-legend-levels')) el.clientHeight = 147;
@@ -113,7 +128,7 @@ async function setup() {
     legend.scrollHeight = (legend.hidden ? 0 : chrome - 2) + (list?.clientHeight ?? 0);
   };
 
-  return { overlay, buttons, legend, observed, triggerResize: () => triggerResize([{ target: overlay }]), renderDepthLegend, syncLegendBoxes };
+  return { overlay, buttons, legend, observed: ro.observed, ro, triggerResize: () => ro.trigger(overlay), renderDepthLegend, syncLegendBoxes };
 }
 
 test('renderDepthLegend switches overlay compact mode from measured tools, legend, and status bounds rather than a hardcoded height', async () => {
@@ -169,4 +184,44 @@ test('renderDepthLegend switches overlay compact mode from measured tools, legen
   t.triggerResize();
   assert.equal(t.overlay.classList.contains('is-compact'), true);
   assert.equal(t.observed.length, 4, 'observer registers overlay, tools, layouts, and status once without duplicates');
+});
+
+test('renderDepthLegend returns a stop cleanup, ignores disconnected callbacks, and uses popout ResizeObserver', async () => {
+  const base: Settings = { ...DEFAULT_SETTINGS, customColors: true, hierarchyColors: true };
+  const actions = { color() {}, choose() {}, save() {} };
+  const t = await setup();
+
+  t.overlay.clientHeight = 300;
+  const stop = t.renderDepthLegend(t.legend, base, actions);
+  assert.equal(typeof stop, 'function');
+  assert.deepEqual(t.ro.counts(), { observers: 1, disconnects: 0 });
+  assert.equal(t.observed.length, 4);
+
+  t.overlay.classList.toggle('is-compact', false);
+  t.overlay.isConnected = false;
+  t.triggerResize();
+  assert.equal(t.overlay.classList.contains('is-compact'), false, 'skips resize work when overlay is disconnected');
+
+  t.overlay.isConnected = true;
+  stop?.();
+  assert.deepEqual(t.ro.counts(), { observers: 1, disconnects: 1 });
+  assert.equal(t.renderDepthLegend(t.legend, base, actions) !== stop, true, 're-attaching creates a new observer after stop');
+  assert.deepEqual(t.ro.counts(), { observers: 2, disconnects: 1 });
+  assert.equal(t.observed.length, 8);
+
+  const popout = await setup();
+  const popoutRo = createResizeSpy();
+  popout.overlay.win = { ResizeObserver: popoutRo.ResizeObserver };
+  popout.overlay.clientHeight = 300;
+  const stopPopout = popout.renderDepthLegend(popout.legend, base, actions);
+  assert.deepEqual(popout.ro.counts(), { observers: 0, disconnects: 0 });
+  assert.deepEqual(popoutRo.counts(), { observers: 1, disconnects: 0 });
+  assert.equal(popoutRo.observed.length, 4);
+
+  popout.overlay.classList.toggle('is-compact', false);
+  popoutRo.trigger(popout.overlay);
+  assert.equal(popout.overlay.classList.contains('is-compact'), true);
+
+  stopPopout?.();
+  assert.deepEqual(popoutRo.counts(), { observers: 1, disconnects: 1 });
 });
