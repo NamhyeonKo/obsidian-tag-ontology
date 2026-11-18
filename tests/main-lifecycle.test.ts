@@ -27,13 +27,14 @@ function deferred<T>() {
 
 class NativeGraphs {
   calls: string[] = [];
+  linkedCalls: string[] = [];
   // Like the real one, a redraw reads the tag color (the sidebar title and the graph's tags take it).
   owner?: { tagColor(): string; settings?: settings.Settings };
   savedExpandedOverride?: string[];
   get savedExpanded() { return this.savedExpandedOverride ?? this.owner?.settings?.expanded ?? []; }
   constructor(owner?: { tagColor(): string; settings?: settings.Settings }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
-  refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
+  refresh(redraw = true, linked = 'refresh') { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); this.linkedCalls.push(linked); }
   showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
   renderPanel() { this.calls.push('render-panel'); }
   drawLinked() { this.calls.push('draw-linked'); }
@@ -1122,6 +1123,27 @@ test('the accent the graph was last drawn with is the one compared, even after a
   t.plugin.native.calls.length = 0;
   t.restyle('hsl(258, 88%, 66%)');
   assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'the accent going back is a change from what is drawn');
+});
+
+test('followAccent skips unchanged body style mutations from startup and under depth coloring, and passes settings to linked views', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  Object.assign(t.plugin.settings, { customColors: true, hierarchyColors: true, tagColor: '' });
+  t.plugin.native.calls.length = 0; t.plugin.native.linkedCalls.length = 0;
+
+  // Startup initialized the tracked accent, so an unrelated body.style mutation never calls refresh().
+  t.restyle('hsl(258, 88%, 66%)');
+  assert.deepEqual(t.plugin.native.calls, []);
+
+  // Even when depth colors keep tagColor() from reading fallback accent, followAccent updates its baseline and skips repeats.
+  t.restyle('hsl(353, 81%, 55%)');
+  t.restyle('hsl(353, 81%, 55%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  assert.deepEqual(t.plugin.native.linkedCalls, ['settings']);
+
+  t.plugin.native.linkedCalls.length = 0;
+  await t.plugin.saveSettings();
+  assert.deepEqual(t.plugin.native.linkedCalls, ['settings']);
 });
 
 

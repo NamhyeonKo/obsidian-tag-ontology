@@ -82,6 +82,7 @@ export default class TagOntologyPlugin extends Plugin {
     // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
     // accent variables on <body>, so <body>'s style is watched too.
     this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
+    this.accent = this.readAccent();
     const accentWatch = new MutationObserver(() => this.followAccent());
     accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
@@ -316,8 +317,11 @@ export default class TagOntologyPlugin extends Plugin {
 
   // Every redraw takes the tag color from tagColor(), so whatever redrew last, the accent it drew with is the one compared.
   private followAccent() {
-    if (!this.model || !this.settings.customColors || this.settings.tagColor || this.readAccent() === this.accent) return;
-    this.native.refresh();
+    if (!this.model || !this.settings.customColors || this.settings.tagColor) return;
+    const accent = this.readAccent();
+    if (accent === this.accent) return;
+    this.accent = accent;
+    this.native.refresh(true, 'settings');
   }
 
   // Persists graph state (expansion, toggles) without reloading the dictionary or redrawing views.
@@ -393,7 +397,7 @@ export default class TagOntologyPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveState();
-    await this.refreshViews({ notify: true });
+    await this.refreshViews({ notify: true, linked: 'settings' });
     this.settingsTab?.syncPaletteControls();
   }
 
@@ -448,7 +452,7 @@ export default class TagOntologyPlugin extends Plugin {
     }, 300);
   }
 
-  private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
+  private async refreshViews({ redraw = true, notify = false, linked = 'refresh' } = {}): Promise<void> {
     if (this.disposed) return;
     // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
     if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
@@ -456,7 +460,10 @@ export default class TagOntologyPlugin extends Plugin {
     try {
       if (redraw || !this.model || !this.raw || this.error !== undefined) await this.loadModel();
       else this.buildModel();
-      if (!this.disposed) this.native.refresh(redraw);
+      if (!this.disposed) {
+        if (redraw && !this.settings.tagColor) this.accent = this.readAccent();
+        this.native.refresh(redraw, linked);
+      }
     }
     catch (error) {
       if (this.disposed) return;
