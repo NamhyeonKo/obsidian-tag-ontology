@@ -46,11 +46,6 @@ class DomEl {
     return child;
   }
   all(): DomEl[] { return [this, ...this.children.flatMap(child => child.all())]; }
-  closest(selector: string): DomEl | null {
-    const name = selector.replace(/^\./, '');
-    for (let cur: DomEl | undefined = this; cur; cur = cur.parentElement) if (cur.classes.has(name)) return cur;
-    return null;
-  }
   querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
   querySelectorAll(selector: string): DomEl[] {
     const names = selector.split(',').map(part => part.trim().replace(/^\./, ''));
@@ -62,9 +57,9 @@ function createResizeSpy() {
   const observed: DomEl[] = [];
   let observers = 0;
   let disconnects = 0;
-  let trigger: (entries: { target: DomEl }[]) => void = () => {};
+  let trigger = () => {};
   class SpyResizeObserver {
-    constructor(cb: (entries: { target: DomEl }[]) => void) { observers++; trigger = cb; }
+    constructor(cb: () => void) { observers++; trigger = cb; }
     observe(target: DomEl) { observed.push(target); }
     disconnect() { disconnects++; }
   }
@@ -72,7 +67,7 @@ function createResizeSpy() {
     ResizeObserver: SpyResizeObserver,
     observed,
     counts: () => ({ observers, disconnects }),
-    trigger: (target: DomEl) => trigger([{ target }]),
+    trigger: () => trigger(),
   };
 }
 
@@ -128,7 +123,7 @@ async function setup() {
     legend.scrollHeight = (legend.hidden ? 0 : chrome - 2) + (list?.clientHeight ?? 0);
   };
 
-  return { overlay, buttons, legend, observed: ro.observed, ro, triggerResize: () => ro.trigger(overlay), renderDepthLegend, syncLegendBoxes };
+  return { overlay, buttons, legend, observed: ro.observed, ro, triggerResize: ro.trigger, renderDepthLegend, syncLegendBoxes };
 }
 
 test('renderDepthLegend switches overlay compact mode from measured tools, legend, and status bounds rather than a hardcoded height', async () => {
@@ -219,7 +214,7 @@ test('renderDepthLegend returns a stop cleanup, ignores disconnected callbacks, 
   assert.equal(popoutRo.observed.length, 4);
 
   popout.overlay.classList.toggle('is-compact', false);
-  popoutRo.trigger(popout.overlay);
+  popoutRo.trigger();
   assert.equal(popout.overlay.classList.contains('is-compact'), true);
 
   stopPopout?.();

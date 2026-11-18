@@ -37,11 +37,7 @@ function observeOverlay(overlay: HTMLElement): (() => void) | undefined {
     const RO = (overlay as { win?: { ResizeObserver?: typeof ResizeObserver } }).win?.ResizeObserver
       ?? (typeof ResizeObserver !== 'undefined' ? ResizeObserver : undefined);
     if (!RO) return;
-    const ro = new RO(entries => {
-      for (const target of new Set(entries.map(entry => entry.target.closest<HTMLElement>('.tag-ontology-overlay')))) {
-        if (target && target.isConnected !== false) { observeOverlay(target); fitOverlay(target); }
-      }
-    });
+    const ro = new RO(() => { if (overlay.isConnected !== false) { observeOverlay(overlay); fitOverlay(overlay); } });
     state = { ro, seen: new WeakSet(), stop: () => { ro.disconnect(); overlays.delete(overlay); } };
     overlays.set(overlay, state);
   }
