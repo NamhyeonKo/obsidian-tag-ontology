@@ -178,6 +178,8 @@ export class NativeGraphs {
   private lastClick?: { id: string; at: number };
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
+  private closedDetails = new Set<string>();
+  private groupState?: { key: string; query: string; checked: Set<string> };
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   explorer?: ExplorerPanel;
   constructor(private owner: TagOntologyPlugin) {}
@@ -189,10 +191,15 @@ export class NativeGraphs {
     const previous = this.history[this.at];
     if (view.kind === previous.kind && (view.kind === 'group' && previous.kind === 'group'
       ? view.tag === previous.tag && view.source === previous.source : JSON.stringify(view) === JSON.stringify(previous))) return;
+    this.closedDetails.clear(); this.groupState = undefined;
     this.history = [...this.history.slice(0, this.at + 1), view]; this.at = this.history.length - 1;
   }
   private step(by: number) {
-    this.leave(() => { this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1); this.showSelection(); });
+    this.leave(() => {
+      const next = Math.min(Math.max(this.at + by, 0), this.history.length - 1);
+      if (next !== this.at) { this.closedDetails.clear(); this.groupState = undefined; this.at = next; }
+      this.showSelection();
+    });
   }
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
   // Unsaved edits are only dropped when the user says so.
@@ -846,7 +853,7 @@ export class NativeGraphs {
     if (this.mode) return;
     const panel = this.panel, model = this.owner.model, error = this.owner.error;
     if (!panel) return;
-    if (this.missing()) { panel.empty(); this.notFound(panel); return; }
+    if (this.missing()) { this.closedDetails.clear(); this.groupState = undefined; panel.empty(); this.notFound(panel); return; }
     if (!model && !error) return;
     panel.empty();
     if (error) this.loadError(panel, error);
@@ -862,7 +869,7 @@ export class NativeGraphs {
       const source = (view.source ?? this.explorer)!;
       this.groupView(panel, view.tag, source.groupNotes(view.tag)!, source);
     }
-    else this.home(panel, model);
+    else { this.closedDetails.clear(); this.groupState = undefined; this.home(panel, model); }
   }
 
   private home(panel: HTMLElement, model: Ontology) {
@@ -907,6 +914,12 @@ export class NativeGraphs {
     if (this.owner.model) panel.createEl('hr');
   }
 
+  private details(parent: HTMLElement, key: string, text: string): HTMLDetailsElement {
+    const el = parent.createEl('details'); el.open = !this.closedDetails.has(key);
+    el.addEventListener('toggle', () => { if (el.open) this.closedDetails.delete(key); else this.closedDetails.add(key); });
+    el.createEl('summary', { text }); return el;
+  }
+
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
     const entry = model.entries.get(tag)!;
     const header = panel.createDiv('tag-ontology-header');
@@ -918,14 +931,12 @@ export class NativeGraphs {
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', model.related(tag)]] as const) {
       if (!tags.length) continue;
-      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `${label} ${tags.length}` });
-      this.tagLinks(details, tags);
+      this.tagLinks(this.details(panel, label, `${label} ${tags.length}`), tags);
     }
     panel.createEl('hr');
     for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
-      const details = panel.createEl('details'); details.open = true;
-      const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
-      this.noteLinks(details, paths);
+      const paths = model.notesFor(tag, rollup);
+      this.noteLinks(this.details(panel, label, `${label} (${paths.length})`), paths);
     }
   }
 
@@ -939,8 +950,12 @@ export class NativeGraphs {
 
   // A group's notes, newest first: filter them by name, tick some to take out, or take the latest out.
   private groupView(panel: HTMLElement, tag: string, notes: { path: string; mtime: number }[], source: ExplorerPanel) {
+    const state = this.groupState?.key === tag ? this.groupState : (this.groupState = { key: tag, query: '', checked: new Set() });
+    const present = new Set(notes.map(note => note.path));
+    for (const path of state.checked) if (!present.has(path)) state.checked.delete(path);
     panel.createEl('h3', { text: `${count(notes.length, 'note', 'notes')} · #${tag}` });
     const filter = panel.createEl('input', { type: 'search', placeholder: 'Filter notes', attr: { 'aria-label': 'Filter notes' } });
+    filter.value = state.query;
     const list = panel.createEl('ul', { cls: 'tag-ontology-group' }), now = Date.now();
     let rows: { input: HTMLInputElement; path: string }[] = [];
     const draw = () => {
@@ -949,16 +964,21 @@ export class NativeGraphs {
       rows = notes.filter(note => name(note.path).toLowerCase().includes(query)).map(note => {
         const label = list.createEl('li').createEl('label');
         const input = label.createEl('input', { type: 'checkbox' });
+        input.checked = state.checked.has(note.path);
+        input.addEventListener('change', () => {
+          if (input.checked) state.checked.add(note.path); else state.checked.delete(note.path);
+        });
         label.createSpan({ text: name(note.path) });
         label.createEl('small', { text: relativeTime(note.mtime, now), cls: 'tag-ontology-muted' });
         return { input, path: note.path };
       });
     };
-    filter.addEventListener('input', draw);
+    filter.addEventListener('input', () => { state.query = filter.value; draw(); });
     draw();
     const buttons = panel.createDiv('tag-ontology-group-buttons');
     buttons.createEl('button', { text: 'Take out selected', cls: 'mod-cta' }).addEventListener('click', () => {
       const picked = rows.filter(row => row.input.checked).map(row => row.path);
+      for (const path of picked) state.checked.delete(path);
       if (picked.length) source.takeOut(tag, picked);
     });
     buttons.createEl('button', { text: `Take out latest ${TAKE_OUT}` }).addEventListener('click', () => source.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
@@ -969,7 +989,7 @@ export class NativeGraphs {
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const details = this.details(panel, `unregistered:${tag}`, `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}`);
       const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
       if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
@@ -977,26 +997,24 @@ export class NativeGraphs {
     if (found) {
       const aliases = groupNonCanonical(found.nonCanonical);
       if (aliases.length) {
-        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        const details = this.details(panel, 'aliases', `Written as an alias or in another case (${aliases.length})`);
         details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
         for (const group of aliases) {
-          const nested = details.createEl('details'); nested.open = true;
-          nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          const nested = this.details(details, `alias:${group.tag}->${group.canonical}`, `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
           this.noteLinks(nested, group.notes);
         }
       }
       const broader = groupRedundant(found.redundant);
       if (broader.length) {
-        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        const details = this.details(panel, 'broader', `Broader tag next to a narrower tag (${broader.length})`);
         details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
         for (const group of broader) {
-          const nested = details.createEl('details'); nested.open = true;
-          nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          const nested = this.details(details, `broader:${group.tag}`, `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
           this.noteLinks(nested, group.notes);
         }
       }
     }
-    const unused = panel.createEl('details'); unused.open = true; unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    const unused = this.details(panel, 'unused', `Unused dictionary tags (${model.unused.length})`);
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
     this.tagLinks(unused, model.unused);
   }

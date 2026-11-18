@@ -165,16 +165,13 @@ export default class TagOntologyPlugin extends Plugin {
     let raw: unknown;
     try { raw = JSON.parse(text); }
     catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
-    const dictionaryMs = performance.now() - start;
-    const indexStart = performance.now();
-    const notes = this.notes();
-    const model = new Ontology(raw, notes);
-    this.loadMetrics = {
-      dictionaryMs, indexMs: performance.now() - indexStart,
-      noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
-    };
-    this.raw = raw as RawDictionary;
-    this.model = model;
+    return this.buildModel(raw as RawDictionary, performance.now() - start);
+  }
+
+  private buildModel(raw = this.raw!, dictionaryMs = this.loadMetrics.dictionaryMs): Ontology {
+    const indexStart = performance.now(), notes = this.notes(), model = new Ontology(raw, notes);
+    this.loadMetrics = { dictionaryMs, indexMs: performance.now() - indexStart, noteCount: notes.length, taggedNotes: notes.filter(note => note.tags.length > 0).length };
+    this.raw = raw; this.model = model;
     return model;
   }
 
@@ -456,7 +453,11 @@ export default class TagOntologyPlugin extends Plugin {
     // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
     if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
     if (!this.settings.enableExplorer) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_EXPLORER)) leaf.detach();
-    try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
+    try {
+      if (redraw || !this.model || !this.raw || this.error !== undefined) await this.loadModel();
+      else this.buildModel();
+      if (!this.disposed) this.native.refresh(redraw);
+    }
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
