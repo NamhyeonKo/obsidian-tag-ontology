@@ -2366,6 +2366,21 @@ test('recenter button tracks camera movement, fit, sidebar expansion, selection 
   t.click('Fit');
   assert.equal(recenter().hidden, false, 'Fit moves the view off center and shows the button');
   t.click('Center on selected tag');
+  t.renderer.setPan(t.renderer.panX + 12, t.renderer.panY);
+  t.contentEl.events.get('wheel')!({ type: 'wheel' });
+  t.tick(50);
+  assert.equal(recenter().hidden, false, 'interrupting recenter before frame 1 still detects camera move');
+
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.renderer.setPan(t.renderer.panX + 12, t.renderer.panY);
+  t.contentEl.events.get('wheel')!({ type: 'wheel' });
+  t.tick(50);
+  assert.equal(recenter().hidden, false, 'interrupting single-click wait before centerOn detects camera move');
+  t.click('Center on selected tag');
   t.tick(2500);
   assert.equal(recenter().hidden, true);
 

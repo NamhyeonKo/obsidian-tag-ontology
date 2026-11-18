@@ -161,6 +161,7 @@ const REVEAL_MS = 350;
 // How long a single click on a 2D node waits for a second click before it moves the camera (Cytoscape's default).
 const SINGLE_CLICK_WAIT_MS = 250;
 const FOLLOW_MS = 2000;
+const viewOf = (r: NativeRenderer) => ({ scale: r.scale, x: r.panX ?? 0, y: r.panY ?? 0 });
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -253,7 +254,8 @@ export class NativeGraphs {
       const checkCamera = (watchUntil = 0) => {
         if (session.watchFrame !== undefined) { window.cancelAnimationFrame(session.watchFrame); session.watchFrame = undefined; }
         if (!session.active || session.choice === 'mindmap' || session.moved || session.fitFrame !== undefined || !session.centeredView) return;
-        if (r.scale !== session.centeredView.scale || (r.panX ?? 0) !== session.centeredView.x || (r.panY ?? 0) !== session.centeredView.y) {
+        const view = viewOf(r);
+        if (view.scale !== session.centeredView.scale || view.x !== session.centeredView.x || view.y !== session.centeredView.y) {
           session.moved = true; this.syncRecenter(session); return;
         }
         if (watchUntil && performance.now() < watchUntil) session.watchFrame = window.requestAnimationFrame(() => checkCamera(watchUntil));
@@ -781,7 +783,7 @@ export class NativeGraphs {
       // stays under the pointer for it; a double click moves at once.
       // Only 2D graph tabs have a session to move; the sidebar comes forward from any graph.
       const session = leaf && this.sessions.get(leaf);
-      if (session) { session.stopFit(); session.centeredTag = tag; session.centeredView = undefined; session.moved = false; this.syncRecenter(session); }
+      if (session) { session.stopFit(); session.centeredTag = tag; session.centeredView = viewOf(session.renderer); session.moved = false; this.syncRecenter(session); }
       if (session && double) this.centerOn(session, tag);
       else if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
@@ -838,7 +840,7 @@ export class NativeGraphs {
     if (session.mode !== '2d') return;
     const id = session.resolved?.idOf.get(tag), r = session.renderer;
     if (!id) return;
-    session.centeredTag = tag; session.moved = false; this.syncRecenter(session);
+    session.centeredTag = tag; session.centeredView = viewOf(r); session.moved = false; this.syncRecenter(session);
     if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
     // One eased camera move: the node glides from where it is to the middle while the zoom goes to where the node is
     // REVEAL_SIZE on screen. Scale and pan are both set here every frame, so the core graph's own zoom easing never pulls
@@ -856,7 +858,7 @@ export class NativeGraphs {
       const x = startX + (r.width * ratio / 2 - startX) * t, y = startY + (r.height * ratio / 2 - startY) * t;
       r.targetScale = scale; r.setScale(scale);
       r.setPan(x - node.x * scale, y - node.y * scale);
-      session.centeredView = { scale: r.scale, x: r.panX ?? 0, y: r.panY ?? 0 };
+      session.centeredView = viewOf(r);
       r.changed();
     };
     this.follow(session, center);

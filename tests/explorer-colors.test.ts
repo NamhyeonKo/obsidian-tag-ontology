@@ -233,7 +233,13 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
 
   view.focusOn('b');
   emitTap('b');
-  assert.equal(recenter.hidden, true, 'tapping another tag hides recenter until camera moves');
+  assert.equal(recenter.hidden, true, 'tapping an already-centered tag keeps recenter hidden');
+
+  emitTap('a');
+  assert.equal(recenter.hidden, false, 'tapping another off-center tag does not hide recenter');
+
+  recenterBtn.events.get('click')![0]();
+  assert.equal(recenter.hidden, true, 'centering on tapped tag hides recenter');
 
   handlers.filter(h => h.event === 'zoom' && !h.selector).forEach(h => h.fn());
   assert.equal(recenter.hidden, false, 'zooming shows recenter');

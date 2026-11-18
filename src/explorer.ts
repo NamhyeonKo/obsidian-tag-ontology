@@ -96,9 +96,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { this.centering = false; }, { capture: true });
     cy.on('pan zoom', () => { if (!this.centering && !this.moved) { this.moved = true; this.syncRecenter(); } });
     cy.on('tap', 'node[type="tag"]', event => {
-      const tag = this.tagOf(event);
-      this.centeredTag = tag; this.moved = false;
-      this.owner.native.clickTag(tag, false, this.leaf);
+      this.owner.native.clickTag(this.tagOf(event), false, this.leaf);
       this.syncRecenter();
     });
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
