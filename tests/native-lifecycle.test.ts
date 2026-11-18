@@ -2290,3 +2290,56 @@ test('group view keeps filter query and checked notes across filtering and same-
   t.controller.renderPanel();
   assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, false);
 });
+
+test('static layouts fit once without scheduling a follow loop, while force keeps following', async () => {
+  const tree = await setup({ layout: 'tree' });
+  tree.controller.attach();
+  tree.renderer.targetScale = tree.renderer.scale = 4;
+  tree.tick(16); tree.tick(2500);
+  assert.equal(tree.renderer.scale, 4, 'initial tree attach does not refit on animation frames');
+  tree.click('Collapse all');
+  tree.renderer.targetScale = tree.renderer.scale = 4;
+  tree.tick(16);
+  assert.equal(tree.renderer.scale, 4, 'tree roots action fits synchronously without a follow loop');
+
+  const mindmap = await setup({ layout: 'mindmap' });
+  mindmap.controller.attach();
+  const map = mindmaps.at(-1)!;
+  assert.equal(map.fitted, 1);
+  mindmap.tick(16); mindmap.tick(2500);
+  assert.equal(map.fitted, 1, 'mind map does not schedule repeated fit frames');
+
+  const force = await setup({ layout: 'force' });
+  force.controller.attach();
+  force.renderer.targetScale = force.renderer.scale = 4;
+  force.tick(16);
+  assert.notEqual(force.renderer.scale, 4, 'force keeps refitting during initial settling');
+});
+
+test('leaving force pauses the simulation worker, and mind map keeps the hidden native renderer idle', async () => {
+  const t = await setup({ focus: true });
+  t.controller.attach();
+  t.layout('Vertical tree');
+  assert.equal((t.renderer.worker.messages.at(-1) as { run?: boolean })?.run, false, 'switching force -> tree stops the worker');
+
+  t.layout('Force');
+  const before = t.renderer.worker.messages.length;
+  t.layout('Mind map');
+  assert.equal((t.renderer.worker.messages.slice(before).at(-1) as { run?: boolean })?.run, false, 'switching force -> mind map stops the worker');
+
+  const map = mindmaps.at(-1)!;
+  let wakes = 0;
+  t.renderer.changed = () => { wakes++; };
+  map.chooseRoot('cs'); map.toggle('cs'); await settle();
+  map.select('ml');
+  t.controller.refresh();
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!;
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
+  node.fx = null; node.fy = null;
+  t.win.events.get('pointerup')?.();
+  t.tick(100);
+  t.layout('Force'); wakes = 0; t.layout('Mind map');
+  await t.controller.switchMode(t.leaves[0], 'explorer'); wakes = 0; await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.equal(wakes, 0, 'mind map interactions, refreshes, and returning to mind map do not wake the hidden native renderer');
+  assert.equal(node.fx, null, 'mind map does not start a spring repin loop on pointerup');
+});

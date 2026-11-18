@@ -250,7 +250,7 @@ export class NativeGraphs {
       // listening on the same window after it catches a release anywhere, such as over the sidebar. A drag starts with a
       // press on the graph, so each press listens on the window the graph is in then, which follows a tab moved to a popout.
       session.repin = () => {
-        if (!session.active || session.choice === 'force') return;
+        if (!session.active || session.choice === 'force' || session.choice === 'mindmap') return;
         const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
         if (!released.length) return;
         for (const { node } of released) { node.fx = node.x; node.fy = node.y; }
@@ -439,7 +439,7 @@ export class NativeGraphs {
     } else if (session.mode === '2d' && session.nativePaused) {
       session.nativePaused = false;
       if (session.choice === 'force') session.renderer.worker.postMessage({ run: true });
-      session.renderer.changed();
+      if (session.choice !== 'mindmap') session.renderer.changed();
     }
     session.view.contentEl.toggleClass('has-embedded-graph', session.mode !== '2d');
     for (const [mode, entry] of session.canvases) {
@@ -565,11 +565,12 @@ export class NativeGraphs {
     let result: unknown;
     try { result = session.original.call(r, layer.data); } finally { worker.postMessage = post; }
     this.paint(session);
-    if (restyled) r.changed();
+    if (restyled && settings.layout !== 'mindmap') r.changed();
     this.styleLinks(session);
     this.styleNodes(session);
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
+    if (settings.layout !== 'force' && session.layout === 'force') r.worker.postMessage({ run: false });
     session.layout = settings.layout;
     if (settings.layout !== 'force') this.staticLayout(session);
     // Taking over from a tree releases its pins and restarts the simulation from the tree's positions. Otherwise the core
@@ -589,9 +590,9 @@ export class NativeGraphs {
     this.syncToolbar(session);
     const viewport = layoutChanged ? session.viewports.get(settings.layout) : undefined;
     if (viewport) {
-      r.setScale(viewport.scale); r.targetScale = viewport.targetScale; r.setPan(viewport.x, viewport.y); r.changed();
+      r.setScale(viewport.scale); r.targetScale = viewport.targetScale; r.setPan(viewport.x, viewport.y); if (settings.layout !== 'mindmap') r.changed();
     } else if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
-    if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
+    if (settings.layout === 'force' && (operation === 'initial' || operation === 'roots')) this.follow(session, () => this.fit(session));
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
@@ -688,7 +689,7 @@ export class NativeGraphs {
       node.x = node.fx = x; node.y = node.fy = y; moved = true;
     }
     // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
-    if (moved) r.changed();
+    if (moved && settings.layout !== 'mindmap') r.changed();
   }
 
   private syncMindMap(session: Session) {
@@ -844,7 +845,7 @@ export class NativeGraphs {
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
     if (session.choice === 'mindmap') session.mindmap?.paint(tag ? resolved?.idOf.get(tag) : undefined, bright);
     const center = bright ? session.renderer.nodes.find(node => node.id === resolved!.idOf.get(tag!)) : undefined;
-    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; this.styleLinks(session); this.styleNodes(session); session.renderer.changed(); }
+    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; this.styleLinks(session); this.styleNodes(session); if (session.choice !== 'mindmap') session.renderer.changed(); }
   }
 
   renderPanel() {
