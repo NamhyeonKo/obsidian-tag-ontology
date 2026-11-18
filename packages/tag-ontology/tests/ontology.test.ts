@@ -154,3 +154,36 @@ test('suggest ranks key matches before alias matches and caps the list', () => {
   assert.deepEqual(model.suggest('  '), []);
   assert.equal(model.suggest('o', 2).length, 2);
 });
+
+test('related and tagsOf return symmetric, sorted, defensive copies in O(1) lookup', () => {
+  const graph = new Ontology({
+    a: { description: '', broader: [] },
+    b: { description: '', broader: [] },
+    c: { description: '', broader: [], related: ['z'] },
+    d: { description: '', broader: [], related: ['z'] },
+    z: { description: '', broader: [], related: ['b', 'a'] },
+  }, [
+    { path: 'Shared.md', tags: ['z', 'A', 'missing', '#b', 'a'] },
+    { path: 'Shared.md', tags: ['b'] },
+    { path: '.obsidian/Hidden.md', tags: ['a'] },
+  ]);
+  assert.deepEqual(graph.related('z'), ['b', 'a', 'c', 'd']);
+  assert.deepEqual(graph.related('c'), ['z']);
+  assert.deepEqual(graph.related('missing'), []);
+
+  const rel = graph.related('c');
+  rel.push('mutated');
+  assert.deepEqual(graph.related('c'), ['z']);
+
+  assert.deepEqual(graph.tagsOf('Shared.md'), ['a', 'b', 'z']);
+  assert.deepEqual(graph.tagsOf('.obsidian/Hidden.md'), []);
+  assert.deepEqual(graph.tagsOf('missing.md'), []);
+
+  const tags = graph.tagsOf('Shared.md');
+  tags.push('mutated');
+  assert.deepEqual(graph.tagsOf('Shared.md'), ['a', 'b', 'z']);
+
+  const direct = graph.notesFor('a', false);
+  direct.push('mutated');
+  assert.deepEqual(graph.notesFor('a', false), ['Shared.md']);
+});

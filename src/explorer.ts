@@ -2,11 +2,12 @@ import { renderDepthLegend } from './legend.ts';
 import { Component, ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import { graphModeBar } from './graph-modes.ts';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
+import type { Ontology } from 'tag-ontology';
 import type TagOntologyPlugin from './main.ts';
 import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
-import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
+import { cardHeight, cardImage, type Card, type CardTheme } from './explorer-card.ts';
 import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
@@ -41,6 +42,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
+  private facets?: { model: Ontology; colors: Map<string, string> };
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
   private pending?: string;
 
@@ -381,7 +383,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     return this.cy!.add({ group: 'nodes', data: { id, ...data, img: image.uri, w: image.width, h: image.height }, position });
   }
 
-  private size(card: Card): Size { return { w: card.width, h: cardImage(card, this.theme, () => 0).height }; }
+  private size(card: Card): Size { return { w: card.width, h: cardHeight(card.rows.length) }; }
 
   private measure(text: string, px: number, bold: boolean) {
     const ctx = this.measurer;
@@ -392,9 +394,11 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
 
   private tagCard(tag: string): Card {
     const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
-    const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
+    if (!this.owner.settings.customColors && entry?.facet && this.facets?.model !== model) {
+      this.facets = { model, colors: facetColors([...model.entries.values()].flatMap(each => each.facet ?? [])) };
+    }
     const color = this.owner.settings.customColors ? this.owner.tagColor(tag)
-      : entry?.facet ? facets.get(entry.facet)! : this.colors.tag;
+      : entry?.facet ? this.facets!.colors.get(entry.facet)! : this.colors.tag;
     return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }

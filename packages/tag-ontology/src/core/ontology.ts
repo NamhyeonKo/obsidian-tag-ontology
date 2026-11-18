@@ -28,6 +28,8 @@ export class Ontology {
   unused: string[] = [];
   // Every dictionary tag, parents before children.
   order: string[] = [];
+  private relatedTags = new Map<string, Set<string>>();
+  private noteTags = new Map<string, string[]>();
 
   constructor(raw: unknown, notes: Note[]) {
     assertDictionary(raw);
@@ -40,9 +42,11 @@ export class Ontology {
       if (typeof value.facet === 'string') entry.facet = value.facet;
       this.entries.set(tag, entry);
       this.children.set(tag, []);
+      this.relatedTags.set(tag, new Set(entry.related ?? []));
     }
     for (const [tag, entry] of this.entries) {
       for (const parent of entry.broader ?? []) this.children.get(parent)?.push(tag);
+      for (const other of entry.related ?? []) this.relatedTags.get(other)?.add(tag);
       if (entry.broader?.length === 0) this.roots.push(tag);
     }
     // validate() has ruled out cycles, so every tag gets its turn here.
@@ -68,7 +72,15 @@ export class Ontology {
         paths.get(tag)!.add(note.path);
       }
     }
-    for (const tag of this.entries.keys()) this.direct.set(tag, [...paths.get(tag) ?? []].sort());
+    for (const tag of this.entries.keys()) {
+      const sorted = [...paths.get(tag) ?? []].sort();
+      this.direct.set(tag, sorted);
+      for (const path of sorted) {
+        const list = this.noteTags.get(path);
+        if (list) list.push(tag);
+        else this.noteTags.set(path, [tag]);
+      }
+    }
     for (const tag of [...paths.keys()].sort()) {
       if (!this.entries.has(tag)) this.unregistered.set(tag, [...paths.get(tag)!].sort());
     }
@@ -105,16 +117,24 @@ export class Ontology {
 
   // Related is two-way: the tags this one lists and the tags that list it.
   related(tag: string): string[] {
-    const listing = [...this.entries].filter(([, entry]) => entry.related?.includes(tag)).map(([key]) => key);
-    return [...new Set([...this.entries.get(tag)?.related ?? [], ...listing])];
+    return [...this.relatedTags.get(tag) ?? []];
+  }
+
+  tagsOf(path: string): string[] {
+    return [...this.noteTags.get(path) ?? []];
+  }
+
+  private rollup(tag: string): Set<string> {
+    const found = new Set<string>();
+    for (const item of [tag, ...this.descendants(tag)]) for (const path of this.direct.get(item) ?? []) found.add(path);
+    return found;
   }
 
   notesFor(tag: string, rollup: boolean): string[] {
-    const tags = rollup ? [tag, ...this.descendants(tag)] : [tag];
-    return [...new Set(tags.flatMap((item) => this.direct.get(item) ?? []))].sort();
+    return rollup ? [...this.rollup(tag)].sort() : [...this.direct.get(tag) ?? []];
   }
 
   counts(tag: string): { direct: number; rollup: number } {
-    return { direct: this.direct.get(tag)?.length ?? 0, rollup: this.notesFor(tag, true).length };
+    return { direct: this.direct.get(tag)?.length ?? 0, rollup: this.rollup(tag).size };
   }
 }
