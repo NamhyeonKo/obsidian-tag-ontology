@@ -98,3 +98,134 @@ test('settings redraws reuse base graphData and do not drop queued vault refresh
   c.setVisible(true);
   assert.equal(baseBuilds, 2);
 });
+
+test('recenter button tracks 3D focus, tween arrival, user camera change, wheel interrupt, fit, and expand', async () => {
+  class El {
+    children: El[] = []; classes = new Set<string>(); attrs: Record<string, string> = {}; hidden = false; text = '';
+    events = new Map<string, ((e?: unknown) => void)[]>();
+    doc = { body: { style: '' }, addEventListener() {} };
+    createDiv(cls = '') { const child = new El(); for (const c of cls.split(' ')) if (c) child.classes.add(c); this.children.push(child); return child; }
+    createEl(_tag: string, opts?: { cls?: string }) { return this.createDiv(opts?.cls); }
+    setText(t: string) { this.text = t; }
+    setAttribute(k: string, v: string) { this.attrs[k] = v; }
+    setCssProps() {}
+    querySelectorAll() { return []; } querySelector() { return null; }
+    addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
+    hasClass(cls: string) { return this.classes.has(cls); }
+    toggleClass(cls: string, on: boolean) { if (on) this.classes.add(cls); else this.classes.delete(cls); }
+    toggle(show: boolean) { this.hidden = !show; }
+    empty() { this.children = []; } isShown() { return true; }
+    get clientWidth() { return 800; } get clientHeight() { return 600; }
+    addEventListener(type: string, fn: (e?: unknown) => void) { const list = this.events.get(type) ?? []; list.push(fn); this.events.set(type, list); }
+    all(): El[] { return [this, ...this.children.flatMap(c => c.all())]; }
+  }
+  const controlListeners = new Map<string, Set<() => void>>();
+  let camPos = { x: 0, y: 0, z: 200 }, lastTarget: { x: number; y: number; z: number } | undefined;
+  const fakeGraph = {
+    backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
+    nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
+    onNodeClick() { return this; }, onNodeDrag() { return this; }, onNodeDragEnd() { return this; }, cooldownTime() { return this; },
+    d3AlphaMin() { return this; }, width() { return this; }, height() { return this; },
+    d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
+    d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
+    scene: () => Object.assign(new THREE.Scene(), { fog: undefined, onBeforeRender: undefined }),
+    camera: () => ({ position: camPos, fov: 45, aspect: 1.33, matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] } }),
+    controls: () => ({
+      target: { x: 0, y: 0, z: 0 },
+      addEventListener(type: string, fn: () => void) { const s = controlListeners.get(type) ?? new Set(); s.add(fn); controlListeners.set(type, s); },
+      removeEventListener(type: string, fn: () => void) { controlListeners.get(type)?.delete(fn); },
+    }),
+    cameraPosition(pos?: { x: number; y: number; z: number }, lookAt?: { x: number; y: number; z: number }) {
+      if (!pos) return { ...camPos };
+      lastTarget = pos; void lookAt; return this;
+    },
+    graphData() { return this; },
+    renderer: () => ({ forceContextLoss() {}, dispose() {} }), _destructor() {},
+  };
+  let now = 0;
+  const model = new Ontology({ root: { description: '', broader: [] }, leaf: { description: '', broader: ['root'] } }, []);
+  const owner = {
+    model,
+    settings: { ...settings.DEFAULT_SETTINGS },
+    native: { selectedTag: 'root' as string | undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => ({ nodes: { '#root': { type: 'tag', links: {} }, '#leaf': { type: 'tag', links: {} } }, numLinks: 0 }),
+  };
+  const root = new El();
+  const context = createContext({
+    performance: { now: () => now },
+    window: { setTimeout: () => 0, clearTimeout: () => {} },
+    ResizeObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class { observe() {} disconnect() {} },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    createEl: () => ({ getContext: () => ({ fillRect() {}, measureText: () => ({ width: 20 }) }) }),
+  });
+  const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
+  const threeMock = { ...THREE, ForceGraph3D: class { constructor() { return fakeGraph; } } };
+  const module = new SourceTextModule(code.code, {
+    context,
+    importModuleDynamically: async () => {
+      const m = new SyntheticModule(Object.keys(threeMock), function () { for (const [k, v] of Object.entries(threeMock)) this.setExport(k, v); }, { context });
+      await m.link(() => { throw new Error('unexpected'); }); await m.evaluate(); return m;
+    },
+  });
+  const control = () => ({ setValue() { return control(); }, setLimits() { return control(); }, setInstant() { return control(); }, onChange() { return control(); }, setButtonText() { return control(); }, onClick() { return control(); } });
+  await module.link(specifier => {
+    const exports = specifier === 'obsidian' ? {
+      Component: class { register() {} registerEvent() {} registerDomEvent(el: El, type: string, fn: (e?: unknown) => void) { el.addEventListener(type, fn); } },
+      ItemView: class {},
+      Setting: class { nameEl = new El(); settingEl = new El(); setName() { return this; } addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } },
+      debounce: (fn: () => void) => fn, setIcon(el: El, id: string) { el.attrs.icon = id; }, setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
+    }
+      : specifier === './legend.ts' ? { renderDepthLegend() {} }
+      : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
+      : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
+      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : { ...layer };
+    return new SyntheticModule(Object.keys(exports), function () { for (const [k, v] of Object.entries(exports)) this.setExport(k, v); }, { context });
+  });
+  await module.evaluate();
+  const Canvas = (module.namespace as unknown as {
+    Graph3DCanvas: new(root: El, owner: object, leaf: object) => Renderer & { open(): Promise<void>; focusOn(tag: string): void; paint(): void; unload?(): void; onunload(): void };
+  }).Graph3DCanvas;
+  const c = new Canvas(root, owner, {});
+  c.setVisible(true);
+  await c.open();
+  const recenter = root.all().find(el => el.classes.has('tag-ontology-recenter'))!;
+  const recenterBtn = root.all().find(el => el.attrs['aria-label'] === 'Center on selected tag')!;
+  const emitChange = () => controlListeners.get('change')?.forEach(fn => fn());
+
+  assert.equal(recenter.hidden, false, 'shown initially when a tag is already selected without focusing');
+  c.nodes.get('#root')!.x = 0; c.nodes.get('#root')!.y = 0; c.nodes.get('#root')!.z = 0;
+  recenterBtn.events.get('click')![0]();
+  assert.equal(recenter.hidden, true, 'hides when clicking recenter flies to selected tag');
+
+  // Simulate mid-flight tween updates even past nominal duration until destination arrival.
+  now = 1500;
+  emitChange();
+  assert.equal(recenter.hidden, true, 'ignores late tween frames while still away from destination');
+  camPos = { ...lastTarget! };
+  emitChange();
+  assert.equal(recenter.hidden, true, 'arriving at destination completes flight without marking moved');
+
+  camPos = { x: camPos.x + 15, y: camPos.y, z: camPos.z };
+  emitChange();
+  assert.equal(recenter.hidden, false, 'user orbit or pan shows recenter');
+
+  c.focusOn('root');
+  assert.equal(recenter.hidden, true);
+  const stage = root.all().find(el => el.classes.has('tag-ontology-3d-stage'))!;
+  stage.events.get('wheel')![0]();
+  emitChange();
+  assert.equal(recenter.hidden, false, 'wheel clears active flight target and shows recenter');
+
+  c.focusOn('root');
+  assert.equal(recenter.hidden, true);
+  c.draw('expand:root');
+  assert.equal(recenter.hidden, false, 'sidebar expand marks layout moved');
+
+  owner.native.selectedTag = 'leaf';
+  c.paint();
+  assert.equal(recenter.hidden, true, 'hides when the selected tag is collapsed out of view');
+  c.onunload();
+});
