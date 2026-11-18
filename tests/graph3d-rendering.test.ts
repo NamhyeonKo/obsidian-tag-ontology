@@ -121,11 +121,19 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   }
   const controlListeners = new Map<string, Set<() => void>>();
   let camPos = { x: 0, y: 0, z: 200 }, lastTarget: { x: number; y: number; z: number } | undefined;
+  let alphaMin = 0, cooldownTicks = Infinity;
+  let onDrag: ((item: unknown, translate: { x: number; y: number; z: number }) => void) | undefined, onDragEnd: ((item: unknown) => void) | undefined, onTick: (() => void) | undefined;
   const fakeGraph = {
     backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
     nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
-    onNodeClick() { return this; }, onNodeDrag() { return this; }, onNodeDragEnd() { return this; }, cooldownTime() { return this; },
-    d3AlphaMin() { return this; }, width() { return this; }, height() { return this; },
+    onNodeClick() { return this; },
+    onNodeDrag(fn: (item: unknown, translate: { x: number; y: number; z: number }) => void) { onDrag = fn; return this; },
+    onNodeDragEnd(fn: (item: unknown) => void) { onDragEnd = fn; return this; },
+    onEngineTick(fn: () => void) { onTick = fn; return this; },
+    cooldownTime() { return this; },
+    cooldownTicks(v?: number) { if (v === undefined) return cooldownTicks; cooldownTicks = v; return this; },
+    d3AlphaMin(v?: number) { if (v === undefined) return alphaMin; alphaMin = v; return this; },
+    width() { return this; }, height() { return this; },
     d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
     d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
     scene: () => Object.assign(new THREE.Scene(), { fog: undefined, onBeforeRender: undefined }),
@@ -143,10 +151,12 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
     renderer: () => ({ forceContextLoss() {}, dispose() {} }), _destructor() {},
   };
   let now = 0;
+  let saved = 0;
   const model = new Ontology({ root: { description: '', broader: [] }, leaf: { description: '', broader: ['root'] } }, []);
   const owner = {
     model,
     settings: { ...settings.DEFAULT_SETTINGS },
+    saveState() { saved++; },
     native: { selectedTag: 'root' as string | undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
     tagColor: () => '#123456',
     app: { workspace: { on: () => () => {} } },
@@ -170,12 +180,22 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
       await m.link(() => { throw new Error('unexpected'); }); await m.evaluate(); return m;
     },
   });
-  const control = () => ({ setValue() { return control(); }, setLimits() { return control(); }, setInstant() { return control(); }, onChange() { return control(); }, setButtonText() { return control(); }, onClick() { return control(); } });
+  const toggles = new Map<string, (value: boolean) => void>(), toggleValues = new Map<string, unknown>(), buttons = new Map<string, () => void>();
+  const control = (name: string) => {
+    const api = {
+      setValue(value: unknown) { toggleValues.set(name, value); return api; },
+      setLimits() { return api; }, setInstant() { return api; },
+      onChange(fn: (value: boolean) => void) { toggles.set(name, fn); return api; },
+      setButtonText(label: string) { name = label; return api; },
+      onClick(fn: () => void) { buttons.set(name, fn); return api; },
+    };
+    return api;
+  };
   await module.link(specifier => {
     const exports = specifier === 'obsidian' ? {
       Component: class { register() {} registerEvent() {} registerDomEvent(el: El, type: string, fn: (e?: unknown) => void) { el.addEventListener(type, fn); } },
       ItemView: class {},
-      Setting: class { nameEl = new El(); settingEl = new El(); setName() { return this; } addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control()); return this; } },
+      Setting: class { name = ''; nameEl = new El(); settingEl = new El(); setName(name: string) { this.name = name; return this; } addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } },
       debounce: (fn: () => void) => fn, setIcon(el: El, id: string) { el.attrs.icon = id; }, setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
     }
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
@@ -227,6 +247,55 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   owner.native.selectedTag = 'leaf';
   c.paint();
   assert.equal(recenter.hidden, true, 'hides when the selected tag is collapsed out of view');
+
+  // With dragTension3d on (default), dragging lifts alphaMin so settled layouts wake up and restores it on post-drag tick.
+  const dragged = c.nodes.get('#root')! as Node & { fx?: number };
+  assert.equal(alphaMin, 0.001);
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(alphaMin, 0);
+  assert.equal(cooldownTicks, Infinity);
+  onTick!();
+  assert.equal(alphaMin, 0, 'keeps alphaMin off while dragging');
+  onDragEnd!(dragged);
+  assert.equal(alphaMin, 0, 'waits for a physics tick to raise alpha before restoring alphaMin');
+  onTick!();
+  assert.equal(alphaMin, 0.001, 'restores alphaMin after post-drag tick');
+
+  const sections = root.all().filter(el => el.classes.has('graph-control-section'));
+  assert.equal(sections.length, 2);
+  assert.ok(sections.every(el => !el.classes.has('is-collapsed')), 'Labels and Forces sections open expanded by default');
+  // With dragTension3d off, dragging stops the simulation and pins the released node to spring back cleanly.
+  toggles.get('Drag tension')!(false);
+  assert.equal(owner.settings.dragTension3d, false);
+  assert.equal(saved, 1);
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(cooldownTicks, 0);
+  onDragEnd!(dragged);
+  assert.equal(cooldownTicks, Infinity);
+  assert.equal(dragged.fx, dragged.x);
+  buttons.get('Restore defaults')!();
+  assert.equal(owner.settings.dragTension3d, true);
+  assert.equal(toggleValues.get('Drag tension'), true);
+  assert.equal(dragged.fx, undefined, 're-enabling drag tension clears active return springs cleanly');
+  assert.equal(saved, 2);
+
+  // Turning tension off before release skips spring-back when no home was recorded, and turning it back on mid-drag restores cooldown.
+  const state = c as unknown as { homes: Map<unknown, unknown>; springs: Map<unknown, unknown> };
+  dragged.fx = undefined;
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(alphaMin, 0);
+  toggles.get('Drag tension')!(false);
+  assert.equal(alphaMin, 0.001);
+  onDragEnd!(dragged);
+  assert.equal(dragged.fx, undefined);
+  assert.equal(state.springs.size, 0, 'does not queue a spring without a pre-drag home');
+
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(cooldownTicks, 0);
+  toggles.get('Drag tension')!(true);
+  assert.equal(cooldownTicks, Infinity, 'restores cooldown even when tension turns on before release');
+  assert.equal(state.homes.size, 0, 'clears off-mode drag homes when tension turns on');
+  onDragEnd!(dragged);
 
   lastTarget = undefined;
   c.fit();
