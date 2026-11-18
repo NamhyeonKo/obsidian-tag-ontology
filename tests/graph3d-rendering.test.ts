@@ -279,6 +279,24 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   assert.equal(dragged.fx, undefined, 're-enabling drag tension clears active return springs cleanly');
   assert.equal(saved, 2);
 
+  // Turning tension off before release skips spring-back when no home was recorded, and turning it back on mid-drag restores cooldown.
+  const state = c as unknown as { homes: Map<unknown, unknown>; springs: Map<unknown, unknown> };
+  dragged.fx = undefined;
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(alphaMin, 0);
+  toggles.get('Drag tension')!(false);
+  assert.equal(alphaMin, 0.001);
+  onDragEnd!(dragged);
+  assert.equal(dragged.fx, undefined);
+  assert.equal(state.springs.size, 0, 'does not queue a spring without a pre-drag home');
+
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(cooldownTicks, 0);
+  toggles.get('Drag tension')!(true);
+  assert.equal(cooldownTicks, Infinity, 'restores cooldown even when tension turns on before release');
+  assert.equal(state.homes.size, 0, 'clears off-mode drag homes when tension turns on');
+  onDragEnd!(dragged);
+
   lastTarget = undefined;
   c.fit();
   assert.ok(lastTarget, 'public fit() frames 3D graph for Home action');

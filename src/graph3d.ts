@@ -521,6 +521,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private release(item: Node3D) {
     if (this.owner.settings.dragTension3d) { this.dragging = false; return; }
     this.graph?.cooldownTicks(Infinity);
+    if (!this.homes.has(item)) return;
     const from = { x: item.x ?? 0, y: item.y ?? 0, z: item.z ?? 0 };
     item.fx = from.x; item.fy = from.y; item.fz = from.z;
     this.springs.set(item, { from, start: performance.now() });
@@ -528,7 +529,6 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private syncDragMode() {
     if (this.owner.settings.dragTension3d) {
-      if (!this.springs.size) return;
       for (const item of this.springs.keys()) item.fx = item.fy = item.fz = undefined;
       this.springs.clear(); this.homes.clear();
       this.graph?.cooldownTicks(Infinity);
