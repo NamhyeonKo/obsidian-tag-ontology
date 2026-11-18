@@ -11,7 +11,7 @@ import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type Nod
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
 import { groupNonCanonical, groupRedundant } from './check.ts';
-import { TAKE_OUT, relativeTime, tagsOfNote } from './explorer-layout.ts';
+import { TAKE_OUT, relativeTime } from './explorer-layout.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -944,7 +944,7 @@ export class NativeGraphs {
   private noteView(panel: HTMLElement, model: Ontology, path: string) {
     panel.createEl('h3', { text: path.split('/').at(-1)!.replace(/\.md$/, '') });
     panel.createEl('p', { text: path, cls: 'tag-ontology-muted' });
-    const tags = tagsOfNote(model, path);
+    const tags = model.tagsOf(path);
     if (tags.length) this.tagLinks(panel, tags);
     panel.createEl('button', { text: 'Open note', cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
   }

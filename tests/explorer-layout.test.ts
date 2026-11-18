@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Ontology } from 'tag-ontology';
-import { canvasEdges, facetColors, grouped, groupPaths, plural, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, tagsOfNote, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
+import { canvasEdges, facetColors, grouped, groupPaths, plural, pruneCanvas, freeSpot, placeAside, placeColumn, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from '../src/explorer-layout.ts';
 
 const raw = {
   cs: { description: '', broader: [] },
@@ -72,11 +72,6 @@ test('canvasEdges links tags on the canvas by hierarchy and related, notes to ev
   assert.deepEqual(byId.get('g:ml'), { id: 'g:ml', kind: 'note', source: 'tag:ml', target: 'group:ml' });
   const without = canvasEdges(model, on(['cs', 'dl', 'ov'], ['C.md'], ['ml'])).map(edge => edge.id).sort();
   assert.deepEqual(without, ['n:dl->C.md', 'n:ov->C.md', 'r:["dl","ov"]']);
-});
-
-test('tagsOfNote lists the dictionary tags a note carries directly', () => {
-  assert.deepEqual(tagsOfNote(model, 'C.md'), ['dl', 'ov']);
-  assert.deepEqual(tagsOfNote(model, 'missing.md'), []);
 });
 
 test('facetColors gives sorted facets the palette in order and wraps after eight', () => {
