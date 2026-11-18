@@ -30,6 +30,8 @@ export interface Settings {
   perspectiveLabels: boolean; labelSize: number; locationNoticeShown: boolean;
   // 3D forces, in the units and ranges of the 2D graph's Forces sliders; the 3D view scales them to its own space.
   forces3d: Forces;
+  // When on, dragging a 3D node keeps the simulation active so linked nodes follow; when off, only the grabbed node moves.
+  dragTension3d: boolean;
 }
 export interface Forces { center: number; repel: number; link: number; distance: number }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   savedHierarchyPalettes: [], workingPaletteSource: '',
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
   forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
+  dragTension3d: true,
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -84,7 +87,7 @@ function forces(raw: unknown): Forces {
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
   const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown> : {};
-  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'enableTree' | 'enableTreeHorizontal' | 'perspectiveLabels' | 'kebabNames') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
+  const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'enableTree' | 'enableTreeHorizontal' | 'perspectiveLabels' | 'kebabNames' | 'dragTension3d') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
   const legacy = Object.hasOwn(value, 'highlightColor') && value.tagColor === '#8b6cef';
@@ -137,6 +140,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
     locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
     forces3d: forces(value.forces3d),
+    dragTension3d: flag('dragTension3d'),
   };
 }
 
