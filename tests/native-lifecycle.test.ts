@@ -2417,3 +2417,31 @@ test('recenter button tracks camera movement, fit, sidebar expansion, selection 
   assert.equal(map.focused, '#cs');
   assert.equal(recenter().hidden, true);
 });
+
+test('Home fits visible 2D, mind map, and linked views while canceling pending single-click centerOn', async () => {
+  const t = await setup({ layout: 'force' });
+  t.controller.attach();
+  const visible = { ...linkedGraph(), isVisible: () => true, fits: 0, fit() { this.fits++; } };
+  const hidden = { ...linkedGraph(), isVisible: () => false, fits: 0, fit() { this.fits++; } };
+  t.controller.link(visible); t.controller.link(hidden);
+
+  t.renderer.nodes.find(n => n.id === '#cs')!.x = 200;
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.renderer.setScale(4); t.renderer.setPan(999, 999);
+  t.click('Home');
+  assert.equal(heading(t), 'Root tags (2)');
+  assert.notEqual(t.renderer.scale, 4, 'Home fits visible 2D graph immediately');
+  assert.notEqual(t.renderer.panX, 999);
+  const afterHome = { scale: t.renderer.scale, panX: t.renderer.panX };
+  t.tick(300);
+  assert.deepEqual({ scale: t.renderer.scale, panX: t.renderer.panX }, afterHome, 'pending centerOn timer is canceled by Home');
+  assert.equal(visible.fits, 1);
+  assert.equal(hidden.fits, 0, 'hidden linked graph is skipped');
+
+  t.layout('Mind map');
+  const map = mindmaps.at(-1)!;
+  map.chooseRoot('cs');
+  const before = map.fitted;
+  t.click('Home');
+  assert.equal(map.fitted, before + 1, 'Home fits open mind map view');
+});

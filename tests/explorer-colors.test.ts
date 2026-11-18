@@ -42,7 +42,7 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
   return (module.namespace as unknown as {
     ExplorerCanvas: new(root: object, owner: object, leaf: object) => {
       cy?: object;
-      open(): Promise<void>; focusOn(tag: string): void; paint(): void; onunload(): void;
+      open(): Promise<void>; focusOn(tag: string): void; fit(): void; paint(): void; onunload(): void;
       tagCard(tag: string): card.Card;
       chip(parent: object, text: string, tag: string): void;
       size(c: card.Card): layout.Size;
@@ -161,6 +161,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
       remove() { if (id) nodes.delete(id); },
     };
   };
+  let animates = 0;
   const fakeCy = {
     width: () => 800,
     on(event: string, arg2: string | ((e?: unknown) => void), arg3?: (e?: unknown) => void) {
@@ -186,6 +187,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
     zoom() { handlers.filter(h => h.event === 'zoom').forEach(h => h.fn()); },
     center() { handlers.filter(h => h.event === 'pan').forEach(h => h.fn()); },
     animate(_spec: unknown, opts?: { complete?: () => void }) {
+      animates++;
       handlers.filter(h => h.event === 'pan').forEach(h => h.fn());
       opts?.complete?.();
     },
@@ -244,7 +246,13 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
   handlers.filter(h => h.event === 'zoom' && !h.selector).forEach(h => h.fn());
   assert.equal(recenter.hidden, false, 'zooming shows recenter');
 
+  const before = animates;
+  view.fit();
+  assert.equal(animates, before + 1, 'public fit() frames populated Explorer canvas');
+
   clearBtn.events.get('click')![0]();
   assert.equal(recenter.hidden, true, 'Clear canvas removes cards and hides recenter');
+  view.fit();
+  assert.equal(animates, before + 1, 'fit() skips empty Explorer canvas');
   view.onunload();
 });

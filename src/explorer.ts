@@ -70,7 +70,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const unused = (button: HTMLElement) => { button.setAttribute('aria-disabled', 'true'); return button; };
     unused(this.button(actions, 'chevrons-down-up', 'Not used in the ontology explorer', () => {}, 'top'));
     unused(this.button(actions, 'chevrons-up-down', 'Not used in the ontology explorer', () => {}, 'top'));
-    this.button(actions, 'scan', 'Fit', () => { this.centering = false; this.moved = true; this.syncRecenter(); this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
+    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
     // Clearing the canvas brings back the start screen, like the mind map's Change starting tag. A group the sidebar shows goes
     // with the canvas, so the sidebar draws again.
     this.button(actions, 'home', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
@@ -185,6 +185,12 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   has(tag: string): boolean { return !!this.owner.model?.entries.has(tag); }
   // A tag picked in the sidebar search or its links joins the canvas, or comes into view if it is there.
   focusOn(tag: string): void { this.addTag(tag); }
+  fit(): void {
+    const cy = this.cy;
+    if (!cy || cy.nodes().empty()) return;
+    this.centering = false; this.moved = true; this.syncRecenter();
+    cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 300 });
+  }
 
   // The editor renamed a tag: its card and group take the new name where they stand. The reload that follows redraws them.
   renamed(from: string, to: string): void {

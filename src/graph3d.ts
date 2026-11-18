@@ -129,7 +129,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.button(actions, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf), 'top');
     this.button(actions, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf), 'top');
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
-    this.button(actions, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); }, 'top');
+    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
     this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = native.selectedTag; if (tag) this.focusOn(tag); }, 'top');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
@@ -523,7 +523,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
   // The library's own zoomToFit frames every last node from a box corner, which left the graph small in the middle.
-  private fit() {
+  fit() {
+    window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (!graph) return;
     const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
