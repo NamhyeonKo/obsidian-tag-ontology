@@ -33,6 +33,7 @@ interface Node3D {
 }
 interface Link3D { source: string | Node3D; target: string | Node3D; kind: EdgeKind | 'note' }
 type Graph = ForceGraph3DInstance<Node3D, Link3D>;
+interface ControlsLike { addEventListener(type: string, fn: () => void): void; removeEventListener(type: string, fn: () => void): void }
 type Layer = ReturnType<typeof buildLayer>;
 type Three = typeof import('./three.ts');
 
@@ -70,7 +71,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private three?: Three; private ball?: SphereGeometry; private closed = false;
   // Where the camera looks, refreshed every frame.
   private forward?: Vector3;
-  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private recenter?: HTMLElement;
   private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
   private colors = FALLBACK;
   // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
@@ -80,6 +81,20 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
   private shape?: string;
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
+  private controls?: ControlsLike;
+  private centeredTag?: string; private moved = false;
+  // Where flyTo is sending the camera so tween frames don't mark the view as user-moved.
+  private flyDest?: { x: number; y: number; z: number; until: number };
+  private onControlChange = () => {
+    const dest = this.flyDest;
+    if (dest) {
+      const p = this.graph?.camera().position;
+      if (p && Math.hypot(p.x - dest.x, p.y - dest.y, p.z - dest.z) < 0.05) { this.flyDest = undefined; return; }
+      if (performance.now() < dest.until) return;
+      this.flyDest = undefined;
+    }
+    if (!this.moved) { this.moved = true; this.syncRecenter(); }
+  };
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
   // Where each dragged node was before it was grabbed, and the nodes let go that are easing back there.
@@ -103,7 +118,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
+    recenter.hidden = true;
     this.legend = overlay.createDiv('tag-ontology-legend');
     const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
@@ -114,6 +130,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.button(actions, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf), 'top');
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
     this.button(actions, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); }, 'top');
+    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = native.selectedTag; if (tag) this.focusOn(tag); }, 'top');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
       this.toggles[key].addClass('tag-ontology-toggle');
@@ -158,6 +175,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       .cooldownTime(Infinity)
       .d3AlphaMin(0.001);
     this.applyForces();
+    this.controls = graph.controls() as ControlsLike;
+    this.controls.addEventListener('change', this.onControlChange);
     graph.d3Force('gravity', this.gravity());
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
     // Related links are dashed, as in 2D. Hierarchy links always show their direction with an arrow. The objects span the whole
@@ -179,7 +198,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.resize.observe(this.stage);
     // A fit still waiting for the layout to spread, or a flight waiting for a second click, gives way once the user moves the
     // camera, as in 2D. A second click cancels the flight with its press.
-    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer); }, { capture: true });
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => {
+      window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
+      if (type === 'wheel') this.flyDest = undefined;
+    }, { capture: true });
+    this.registerDomEvent(this.stage, 'pointermove', event => { if (event.buttons) this.flyDest = undefined; }, { capture: true });
     // Letting go of a dragged node, the library sends the page a made-up touch pointerup, which the orbit controls can't match to
     // the mouse, so they throw. The real pointerup comes right after and ends them, so the made-up one is stopped.
     this.registerDomEvent(this.contentEl.doc, 'pointerup', event => { if (!event.isTrusted && event.pointerType === 'touch') event.stopImmediatePropagation(); }, { capture: true });
@@ -212,6 +235,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.closed = true;
     this.owner.native.unlink(this);
     this.resize?.disconnect();
+    this.controls?.removeEventListener('change', this.onControlChange); this.controls = undefined; this.flyDest = undefined;
     window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (graph) {
@@ -274,6 +298,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
     const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
     if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
+    if (operation.startsWith('expand:')) this.moved = true;
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
     this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
@@ -308,6 +333,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
     if (graph) this.colorLinks();
+    this.syncRecenter();
+  }
+
+  private syncRecenter() {
+    if (!this.recenter) return;
+    const tag = this.owner.native.selectedTag, visible = !!tag && !!this.layer?.resolved.visible.has(tag);
+    this.recenter.hidden = !visible || (!this.moved && this.centeredTag === tag);
   }
 
   has(tag: string) { return !!this.layer?.resolved.range.has(tag); }
@@ -316,6 +348,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   focusOn(tag: string) {
     window.clearTimeout(this.flyTimer);
     const id = this.layer?.resolved.idOf.get(tag), started = performance.now();
+    if (id !== undefined) { this.centeredTag = tag; this.moved = false; this.syncRecenter(); }
     const attempt = () => {
       const item = id === undefined ? undefined : this.nodes.get(id);
       if (item?.x !== undefined) { this.flyTo(item); return; }
@@ -331,7 +364,10 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const native = this.owner.native, double = native.isDouble(item.id);
     if (item.tag) {
       native.clickTag(item.tag, double, this.leaf);
-      if (!double) this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
+      if (!double) {
+        this.centeredTag = item.tag; this.moved = false; this.syncRecenter();
+        this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
+      }
     }
     else if (item.type !== 'tag' && !double) native.openNote(item.id);
   }
@@ -343,7 +379,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     window.clearTimeout(this.fitTimer);
     const camera = graph.cameraPosition(), at = { x: item.x, y: item.y ?? 0, z: item.z ?? 0 };
     const dx = camera.x - at.x, dy = camera.y - at.y, dz = camera.z - at.z, length = Math.hypot(dx, dy, dz) || 1;
-    graph.cameraPosition({ x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE }, at, FLY_MS);
+    const dest = { x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE };
+    this.flyDest = { ...dest, until: performance.now() + FLY_MS + 1000 };
+    graph.cameraPosition(dest, at, FLY_MS);
   }
 
   private lineColor(link: Link3D) {
@@ -491,6 +529,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
     const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
     if (!points.length) return;
+    this.flyDest = undefined;
+    if (!this.moved) { this.moved = true; this.syncRecenter(); }
     // The graph fits in the part of the view the toolbar, legend, status line and settings panel leave uncovered.
     const width = this.contentEl.clientWidth || 1, height = this.contentEl.clientHeight || 1, edge = coveredEdges(this.contentEl);
     const free = { width: Math.max(1, width - edge.left - edge.right) / width, height: Math.max(1, height - edge.top - edge.bottom) / height };

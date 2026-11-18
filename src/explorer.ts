@@ -39,12 +39,13 @@ const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
-  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement; private recenter?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
   private facets?: { model: Ontology; colors: Map<string, string> };
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
   private pending?: string;
+  private centeredTag?: string; private moved = false; private centering = false;
 
   private syncModes = () => {};
   private visible = false;
@@ -57,7 +58,8 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.stage = root.createDiv('tag-ontology-explorer-stage');
     // The canvas has its own right-click menu.
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
+    recenter.hidden = true;
     this.legend = overlay.createDiv('tag-ontology-legend');
     const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
@@ -68,11 +70,12 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const unused = (button: HTMLElement) => { button.setAttribute('aria-disabled', 'true'); return button; };
     unused(this.button(actions, 'chevrons-down-up', 'Not used in the ontology explorer', () => {}, 'top'));
     unused(this.button(actions, 'chevrons-up-down', 'Not used in the ontology explorer', () => {}, 'top'));
-    this.button(actions, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
+    this.button(actions, 'scan', 'Fit', () => { this.centering = false; this.moved = true; this.syncRecenter(); this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
     // Clearing the canvas brings back the start screen, like the mind map's Change starting tag. A group the sidebar shows goes
     // with the canvas, so the sidebar draws again.
     this.button(actions, 'home', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
       .addClass('tag-ontology-after-divider');
+    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = this.owner.native.selectedTag; if (tag) this.centerOn(tag); }, 'top');
     for (const icon of ['file-text', 'link']) unused(this.button(tools, icon, 'Not used in the ontology explorer', () => {})).addClass('tag-ontology-toggle');
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => this.owner.native.checkDictionary());
@@ -90,7 +93,14 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
-    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false, this.leaf));
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { this.centering = false; }, { capture: true });
+    cy.on('pan zoom', () => { if (!this.centering && !this.moved) { this.moved = true; this.syncRecenter(); } });
+    cy.on('tap', 'node[type="tag"]', event => {
+      const tag = this.tagOf(event);
+      this.centeredTag = tag; this.moved = false;
+      this.owner.native.clickTag(tag, false, this.leaf);
+      this.syncRecenter();
+    });
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
     cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
@@ -124,7 +134,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const node = this.pending ? cy.getElementById(this.pending) : undefined;
     if (!node || !cy.width()) return;
     this.pending = undefined;
-    if (node.nonempty()) cy.center(node);
+    if (node.nonempty()) { this.centering = true; cy.center(node); this.centering = false; }
   }
 
   setVisible(visible: boolean) {
@@ -163,8 +173,14 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   paint(): void {
     this.updateStart();
     const tag = this.owner.native.selectedTag, node = tag ? this.cy?.getElementById('tag:' + tag) : undefined;
-    if (!node?.nonempty() || node.selected()) return;
-    this.cy!.elements().unselect(); node.select();
+    if (node?.nonempty() && !node.selected()) { this.cy!.elements().unselect(); node.select(); }
+    this.syncRecenter();
+  }
+
+  private syncRecenter() {
+    if (!this.recenter) return;
+    const tag = this.owner.native.selectedTag, visible = !!tag && !!this.cy?.getElementById('tag:' + tag).nonempty();
+    this.recenter.hidden = !visible || (!this.moved && this.centeredTag === tag);
   }
 
   // Any dictionary tag can be brought onto the canvas.
@@ -230,6 +246,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     if (regroup) this.regroup();
     this.syncEdges();
     this.updateStart();
+    this.syncRecenter();
     const on = this.onCanvas(), status = this.status;
     if (status) status.textContent = `${plural(on.tags.size, 'tag')} · ${plural(on.notes.size, 'note')} · ${plural(on.groups.size, 'group')}`;
   }
@@ -335,10 +352,19 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
       const card = this.tagCard(tag), first = cy.nodes().empty();
       node = this.addNode('tag:' + tag, card, { type: 'tag', tag }, placeAside(this.taken(), this.size(card)));
       this.changed();
-      if (first) { cy.zoom(1); cy.center(node); }
+      if (first) { this.centering = true; cy.zoom(1); cy.center(node); this.centering = false; }
     }
     cy.elements().unselect(); node.select();
-    if (cy.width()) cy.animate({ center: { eles: node } }, { duration: 250 }); else this.pending = node.id();
+    this.centerOn(tag, node);
+  }
+
+  private centerOn(tag: string, node = this.cy?.getElementById('tag:' + tag)) {
+    const cy = this.cy;
+    if (!cy || !node?.nonempty()) return;
+    this.centeredTag = tag; this.moved = false; this.syncRecenter();
+    if (!cy.width()) { this.pending = node.id(); return; }
+    this.centering = true;
+    cy.animate({ center: { eles: node } }, { duration: 250, complete: () => { this.centering = false; } });
   }
 
   private expand(node: NodeSingular, kind: Expand) {
@@ -356,7 +382,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.changed();
     if (!cy || added.empty()) return;
     const view = cy.extent(), box = added.boundingBox();
-    if (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2) cy.animate({ center: { eles: added } }, { duration: 250 });
+    if (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2) { this.centering = false; cy.animate({ center: { eles: added } }, { duration: 250 }); }
   }
 
   private tagMenu(event: EventObject) {

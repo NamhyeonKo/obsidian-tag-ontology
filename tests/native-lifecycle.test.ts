@@ -46,7 +46,7 @@ class Element {
 class File {}
 type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
-  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
@@ -2342,4 +2342,63 @@ test('leaving force pauses the simulation worker, and mind map keeps the hidden 
   await t.controller.switchMode(t.leaves[0], 'explorer'); wakes = 0; await t.controller.switchMode(t.leaves[0], 'mindmap');
   assert.equal(wakes, 0, 'mind map interactions, refreshes, and returning to mind map do not wake the hidden native renderer');
   assert.equal(node.fx, null, 'mind map does not start a spring repin loop on pointerup');
+});
+
+test('recenter button tracks camera movement, fit, sidebar expansion, selection changes, and mind map moves', async () => {
+  const t = await setup({ layout: 'force' });
+  t.controller.attach();
+  const recenter = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-recenter'))!;
+  assert.equal(recenter().hidden, true, 'hidden before any tag is selected');
+
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.tick(300); t.tick(200);
+  assert.equal(recenter().hidden, true, 'hidden while centered on selected tag');
+
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
+  t.renderer.setPan(t.renderer.panX + 25, t.renderer.panY);
+  t.contentEl.events.get('pointermove')!({ buttons: 1 });
+  assert.equal(recenter().hidden, false, 'shows as soon as the camera pans away');
+
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true, 're-centering returns focus and hides the button');
+
+  t.click('Fit');
+  assert.equal(recenter().hidden, false, 'Fit moves the view off center and shows the button');
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.click('Expand in graph');
+  assert.equal(recenter().hidden, false, 'sidebar Expand in graph shows recenter on 2D layouts');
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.search('ml');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+  t.click('Back');
+  assert.equal(recenter().hidden, false, 'navigating back without re-centering shows recenter');
+
+  t.click('Forward');
+  assert.equal(recenter().hidden, true, 'Forward back to ml while camera is still centered there keeps recenter hidden');
+  t.click('Fit');
+  assert.equal(recenter().hidden, false);
+  t.controller.collapseAll();
+  assert.equal(recenter().hidden, true, 'hides when the selected child tag is collapsed out of view');
+
+  t.layout('Mind map');
+  const map = mindmaps.at(-1)!;
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  assert.equal(recenter().hidden, true, 'hidden on the mind map starting-tag picker');
+  map.chooseRoot('cs');
+  map.select('cs');
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  assert.equal(recenter().hidden, true);
+  map.start.onMove!();
+  assert.equal(recenter().hidden, false, 'mind map viewport movement shows recenter');
+  t.click('Center on selected tag');
+  assert.equal(map.focused, '#cs');
+  assert.equal(recenter().hidden, true);
 });
