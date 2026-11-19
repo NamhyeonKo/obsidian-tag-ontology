@@ -44,7 +44,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
@@ -2444,4 +2444,49 @@ test('Home fits visible 2D, mind map, and linked views while canceling pending s
   const before = map.fitted;
   t.click('Home');
   assert.equal(map.fitted, before + 1, 'Home fits open mind map view');
+});
+
+test('attach and recolor refresh 2D renderer CSS colors safely, in order, and defer while hidden or in mind map', async () => {
+  const t = await setup();
+  const order: string[] = [];
+  const origSetData = t.renderer.setData;
+  const wrappedSetData = t.renderer.setData = data => { order.push('update'); return origSetData.call(t.renderer, data); };
+  (t.renderer as { testCSS?: () => void }).testCSS = function () {
+    assert.equal(this, t.renderer, 'preserves renderer as this');
+    order.push('testCSS');
+  };
+  t.controller.attach();
+  assert.deepEqual(order, ['testCSS', 'update'], 'syncs CSS before initial layered render');
+
+  t.layout('Mind map');
+  order.length = 0;
+  t.controller.recolor();
+  assert.deepEqual(order, [], 'mind map keeps hidden native renderer idle on recolor');
+  t.layout('Force');
+  assert.deepEqual(order.slice(0, 1), ['testCSS'], 'leaving mind map flushes deferred recolor');
+
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  order.length = 0;
+  t.controller.recolor();
+  assert.deepEqual(order, [], 'embedded explorer defers recolor');
+  await t.controller.switchMode(t.leaves[0], '2d');
+  assert.deepEqual(order, ['testCSS'], 'returning to 2D flushes deferred recolor');
+
+  t.addTab();
+  const secondRenderer = (t.leaves[1] as { view: { renderer: typeof t.renderer & { testCSS?: () => void } } }).view.renderer;
+  let secondCalls = 0;
+  secondRenderer.testCSS = () => { secondCalls++; };
+  t.controller.attach();
+  assert.equal(secondCalls, 1);
+
+  (t.renderer as { testCSS?: () => void }).testCSS = () => { throw new Error('broken renderer'); };
+  t.controller.recolor();
+  assert.equal(secondCalls, 2, 'one failing renderer isolates to that tab without aborting others');
+  assert.equal(t.notices.length, 1);
+  assert.equal(t.renderer.setData, wrappedSetData);
+  assert.equal(t.contentEl.classes.has('tag-ontology-native'), false, 'failing session detaches');
+
+  t.controller.destroy();
+  t.controller.recolor();
+  assert.equal(secondCalls, 2, 'detached sessions ignore recolor');
 });
