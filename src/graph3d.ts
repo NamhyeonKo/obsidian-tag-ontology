@@ -1,16 +1,17 @@
 import { renderDepthLegend } from './legend.ts';
-import { Component, ItemView, Setting, debounce, setIcon, setTooltip, type SliderComponent, type ToggleComponent, type WorkspaceLeaf } from 'obsidian';
+import { Component, ItemView, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import { graphModeBar } from './graph-modes.ts';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
-import type { BufferGeometry, Color, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
+import type { BufferGeometry, Color, ConeGeometry, CylinderGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import { DOUBLE_CLICK_MS, coveredEdges, type LinkedGraph } from './native.ts';
-import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
+import { DEFAULT_SETTINGS, cssColorToHex } from './settings.ts';
 import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
+import { applySearchFilter, removeOrphans } from './filter3d.ts';
+import { Controls3D, type DisplayChangeKind, type Sync3dChange } from './controls3d.ts';
 import { t } from './i18n/index.ts';
-import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -39,8 +40,6 @@ interface ControlsLike { addEventListener(type: string, fn: () => void): void; r
 type Layer = ReturnType<typeof buildLayer>;
 type Three = typeof import('./three.ts');
 
-// The 2D graph's Display defaults in 3D units: nodes and links start a little smaller than 2D's 1.
-const NODE_SIZE = 0.8, LINK_OPACITY = 0.8;
 // The gravity, repulsion, and link forces scale from 2D; cooling stops once alpha drops below this floor.
 const REPEL_SCALE = -6, DISTANCE_SCALE = 0.12, CENTER_SCALE = 0.04, ALPHA_MIN = 0.001;
 const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
@@ -54,7 +53,7 @@ const FADED_NODE = 0.2, FADED_LABEL = 0.15;
 // screen follows the label settings (see labelBounds).
 const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
 // Used when a theme leaves a graph color unset or in a format cssColorToHex can't read.
-const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
+const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', attachment: '#b8b8b8', unresolved: '#888888', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
 const TOGGLES = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']] as const;
 
 const idOf = (end: string | Node3D) => typeof end === 'string' ? end : end.id;
@@ -65,7 +64,7 @@ const mix = (from: string, to: string, share: number) => '#' + [1, 3, 5].map(at 
   return Math.round(a + (b - a) * share).toString(16).padStart(2, '0');
 }).join('');
 // Like 2D, a node grows a little with its links.
-const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE;
+const radiusOf = (degree: number, nodeSize: number) => (1.4 + Math.sqrt(degree) * 0.3) * nodeSize;
 
 // The tag hierarchy in three dimensions. It layers the same shared state as the 2D graph, through NativeGraphs.
 export class Graph3DCanvas extends Component implements LinkedGraph {
@@ -78,7 +77,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private colors = FALLBACK;
   // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
   private font = 'sans-serif';
-  private base?: NativeData; private layer?: Layer;
+  private base?: NativeData; private baseKey?: string; private layer?: Layer;
   private nodes = new Map<string, Node3D>(); private links: Link3D[] = [];
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
   private shape?: string;
@@ -103,11 +102,12 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // Without drag tension, where each grabbed node came from and active return springs.
   private homes = new Map<Node3D, Point>(); private springs = new Map<Node3D, { from: Point; start: number }>();
   // Nodes are drawn in two instanced meshes (lit opaque and faded transparent), while each node keeps an invisible pick sphere
-  // for 3d-force-graph pointer events. Links are drawn by three objects (solid, dashed, arrows) instead of one draw call each.
+  // for 3d-force-graph pointer events. Links use either thin LineSegments or thick instanced cylinders plus arrows.
   private litDots?: InstancedMesh<SphereGeometry, MeshLambertMaterial>; private fadedDots?: InstancedMesh<SphereGeometry, MeshLambertMaterial>;
   private litDotMaterial?: MeshLambertMaterial; private fadedDotMaterial?: MeshLambertMaterial;
   private dotsDirty = true; private dotColor?: Color;
   private lines?: LineSegments<BufferGeometry, LineBasicMaterial>; private dashes?: LineSegments<BufferGeometry, LineDashedMaterial>;
+  private thickLinks?: InstancedMesh<CylinderGeometry, MeshLambertMaterial>; private cylinder?: CylinderGeometry; private thickLinkMaterial?: MeshLambertMaterial;
   private arrows?: InstancedMesh<ConeGeometry, MeshLambertMaterial>; private cone?: ConeGeometry; private arrowMaterial?: MeshLambertMaterial;
   private solid: Link3D[] = []; private related: Link3D[] = []; private pointed: Link3D[] = [];
   private linkPositions = new Float64Array(0);
@@ -117,10 +117,12 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private visible = false;
   private pendingDraw?: string;
   private pendingRecolor = false;
-  private controlsRoot?: HTMLElement;
-  private collapsedSections = new Set<string>();
+  private pendingSync3d = false;
+  private controlsPanel?: Controls3D;
   private syncModes = () => {};
   private get app() { return this.owner.app; }
+  private get displaySettings() { return this.owner?.settings?.display3d ?? DEFAULT_SETTINGS.display3d; }
+  private get filterSettings() { return this.owner?.settings?.filters3d ?? DEFAULT_SETTINGS.filters3d; }
   constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
 
   async open(): Promise<void> {
@@ -149,7 +151,14 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // The same mode controls as the core graph and ontology explorer.
     tools.createDiv('tag-ontology-separator');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
-    this.controlPanel(root);
+    const change3d = (kind: Sync3dChange) => { this.apply3d(kind); this.owner.native.sync3d?.(this, kind); };
+    this.controlsPanel = new Controls3D(root, this.owner, {
+      onFilters: () => change3d('filters'),
+      onDisplay: kind => change3d(kind),
+      onForces: () => change3d('forces'),
+      onDragTension: () => change3d('dragTension'),
+      onResetAll: () => change3d('reset'),
+    });
     this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
     const three = this.three = await import('./three.ts');
@@ -204,10 +213,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
     // Related links are dashed, as in 2D. Hierarchy links always show their direction with an arrow. The objects span the whole
     // graph and move every frame, so they are never culled.
-    this.lines = new three.LineSegments(new three.BufferGeometry(), new three.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LINK_OPACITY }));
-    this.dashes = new three.LineSegments(new three.BufferGeometry(), new three.LineDashedMaterial({ vertexColors: true, transparent: true, opacity: LINK_OPACITY, dashSize: DASH, gapSize: GAP }));
+    this.lines = new three.LineSegments(new three.BufferGeometry(), new three.LineBasicMaterial({ vertexColors: true, transparent: true }));
+    this.dashes = new three.LineSegments(new three.BufferGeometry(), new three.LineDashedMaterial({ vertexColors: true, transparent: true, dashSize: DASH, gapSize: GAP }));
     this.cone = new three.ConeGeometry(ARROW / 4, ARROW, 8);
-    this.arrowMaterial = new three.MeshLambertMaterial({ transparent: true, opacity: LINK_OPACITY });
+    this.arrowMaterial = new three.MeshLambertMaterial({ transparent: true });
+    this.syncLinkAppearance();
     for (const object of [this.lines, this.dashes]) { object.frustumCulled = false; graph.scene().add(object); }
     // Fog and label fading follow the camera; three calls this before drawing every frame of the library's own loop.
     graph.scene().onBeforeRender = () => this.frame();
@@ -240,6 +250,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   setVisible(visible: boolean) {
     this.visible = visible;
+    if (visible) this.controlsPanel?.sync();
     this.flushDraw();
     if (visible && this.stage?.clientWidth && this.stage.clientHeight) this.graph?.width(this.stage.clientWidth).height(this.stage.clientHeight).resumeAnimation();
     else this.graph?.pauseAnimation();
@@ -251,8 +262,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private flushDraw() {
     if (!this.isVisible()) return;
     if (this.pendingRecolor) this.recolor();
-    if (!this.pendingDraw) return;
-    const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
+    let reshaped = false;
+    if (this.pendingDraw) {
+      const prevShape = this.shape;
+      const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
+      reshaped = this.shape !== prevShape;
+    }
+    if (this.pendingSync3d) {
+      this.pendingSync3d = false;
+      if (!reshaped) this.applyDisplay('reset');
+      this.syncDragMode();
+      this.applyForces();
+    }
   }
 
   // The WebGL context and GPU resources go with the graph tab.
@@ -273,13 +294,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       this.ball?.dispose(); this.pickMaterial?.dispose();
       this.litDotMaterial?.dispose(); this.fadedDotMaterial?.dispose();
       this.cone?.dispose(); this.arrowMaterial?.dispose();
-      this.litDots?.dispose(); this.fadedDots?.dispose(); this.arrows?.dispose();
+      this.cylinder?.dispose(); this.thickLinkMaterial?.dispose();
+      this.litDots?.dispose(); this.fadedDots?.dispose(); this.arrows?.dispose(); this.thickLinks?.dispose();
       graph.renderer().forceContextLoss(); graph.renderer().dispose();
       graph._destructor();
     }
-    this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
-    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false;
-    this.controlsRoot = undefined;
+    this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.thickLinks = undefined;
+    this.cylinder = undefined; this.thickLinkMaterial = undefined; this.baseKey = undefined;
+    this.nodes.clear(); this.links = []; this.shape = undefined;
+    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false; this.pendingSync3d = false;
+    this.controlsPanel?.destroy(); this.controlsPanel = undefined;
     this.contentEl.empty();
   }
 
@@ -292,9 +316,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     if (!model) { this.status.setText(this.owner.error ? `Could not load the tag dictionary: ${this.owner.error}` : 'Loading the tag dictionary…'); return; }
     const first = !this.layer;
-    if (operation === 'refresh' || !this.base) this.base = this.owner.graphData();
-    const layer = this.layer = buildLayer(this.base, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes, showRelated: settings.showRelated });
-    const data = layer.data.nodes, degree = new Map<string, number>(), next = new Map<string, Node3D>(), fresh: Node3D[] = [];
+    const filters = this.filterSettings, display = this.displaySettings;
+    const baseKey = `${filters.attachments}:${filters.existingOnly}`;
+    if (operation === 'refresh' || !this.base || this.baseKey !== baseKey) {
+      this.baseKey = baseKey;
+      this.base = this.owner.graphData({ attachments: filters.attachments, existingOnly: filters.existingOnly });
+    }
+    const searched = applySearchFilter(this.base, filters.search);
+    const layer = this.layer = buildLayer(searched, model, { expanded: new Set(settings.expanded), showNotes: settings.showNotes, showRelated: settings.showRelated });
+    const filtered = filters.orphans ? layer.data : removeOrphans(layer.data);
+    const data = filtered.nodes, degree = new Map<string, number>(), next = new Map<string, Node3D>(), fresh: Node3D[] = [];
     const links: Link3D[] = [];
     for (const [id, node] of Object.entries(data)) for (const target of Object.keys(node.links)) {
       if (!Object.hasOwn(data, target)) continue;
@@ -307,7 +338,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       if (!kept) fresh.push(item);
       item.type = node.type; item.tag = layer.resolved.tagOf.get(id);
       item.name = node.type === 'tag' ? id : basename(id);
-      item.degree = degree.get(id) ?? 0; item.radius = radiusOf(item.degree);
+      item.degree = degree.get(id) ?? 0; item.radius = radiusOf(item.degree, display.nodeSize);
       this.size(item);
       next.set(id, item);
     }
@@ -405,7 +436,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
         this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
       }
     }
-    else if (item.type !== 'tag' && !double) native.openNote(item.id);
+    else if (item.type === 'attachment' && !double) {
+      const file = this.app.vault.getAbstractFileByPath(item.id);
+      if (file instanceof TFile) void Promise.resolve(this.app.workspace.getLeaf('tab').openFile(file)).catch(error => console.error('Tag Ontology:', error));
+    }
+    else if (item.type === '' && !double) native.openNote(item.id);
   }
 
   private flyTo(item: Node3D) {
@@ -428,6 +463,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // A node object the library builds later (after expanding) takes the highlight in effect then.
   private colorOf(item: Node3D) {
     if (item.id === this.center) return this.colors.accent;
+    if (item.type === 'attachment') return this.colors.attachment;
+    if (item.type === 'unresolved') return this.colors.unresolved;
     if (item.type !== 'tag') return this.colors.note;
     return this.owner.settings.customColors ? this.owner.tagColor(item.tag) : this.colors.tag;
   }
@@ -503,12 +540,15 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     fadedDots.instanceMatrix.needsUpdate = true; if (fadedDots.instanceColor) fadedDots.instanceColor.needsUpdate = true;
   }
 
-  // New buffers for a new set of links: one segment each in the solid or the dashed lines, and an arrow for each hierarchy link.
+  // New buffers for a new set of links: thin LineSegments or thick instanced cylinders, and direction arrows.
   private buildLinks() {
     const three = this.three!, scene = this.graph!.scene();
+    const cylinder = this.cylinder ??= new three.CylinderGeometry(1, 1, 1, 6, 1, true);
+    const thickMaterial = this.thickLinkMaterial ??= new three.MeshLambertMaterial();
+    const showNoteArrows = this.displaySettings.arrows;
     this.solid = this.links.filter(link => link.kind !== 'related');
     this.related = this.links.filter(link => link.kind === 'related');
-    this.pointed = this.links.filter(link => link.kind === 'broader');
+    this.pointed = this.links.filter(link => link.kind === 'broader' || (showNoteArrows && link.kind === 'note'));
     for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
       object.geometry.dispose();
       object.geometry = new three.BufferGeometry();
@@ -519,6 +559,10 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.arrows = new three.InstancedMesh(this.cone, this.arrowMaterial, Math.max(1, this.pointed.length));
     this.arrows.count = this.pointed.length; this.arrows.frustumCulled = false;
     scene.add(this.arrows);
+    if (this.thickLinks) { scene.remove(this.thickLinks); this.thickLinks.dispose(); }
+    this.thickLinks = new three.InstancedMesh(cylinder, thickMaterial, Math.max(1, this.links.length));
+    this.thickLinks.count = this.links.length; this.thickLinks.frustumCulled = false; this.thickLinks.raycast = () => {};
+    scene.add(this.thickLinks);
     this.linksDirty = true;
     this.placeLinks();
   }
@@ -538,24 +582,46 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // Orbit and zoom move the camera, not the links; reuse their GPU buffers until nodes move.
     if (!changed) return false;
     this.linksDirty = false;
+    this.syncLinkAppearance();
+    const thickness = this.displaySettings.linkThickness, thick = thickness > 1, arrowScale = thick ? 1 + (thickness - 1) * 0.15 : 1;
     const at = (end: string | Node3D) => (typeof end === 'string' ? this.nodes.get(end) : end) ?? { x: 0, y: 0, z: 0, radius: 0 };
-    for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
-      const position = object.geometry.getAttribute('position') as InstanceType<Three['BufferAttribute']>, values = position.array as Float32Array;
-      list.forEach((link, index) => {
-        const from = at(link.source), to = at(link.target);
-        const offset = index * 6;
-        values[offset] = from.x ?? 0; values[offset + 1] = from.y ?? 0; values[offset + 2] = from.z ?? 0;
-        values[offset + 3] = to.x ?? 0; values[offset + 4] = to.y ?? 0; values[offset + 5] = to.z ?? 0;
-      });
-      position.needsUpdate = true;
-    }
-    if (this.related.length) this.dashes!.computeLineDistances();
     const placed = this.arrowTransform ??= new three.Object3D(), up = this.arrowUp ??= new three.Vector3(0, 1, 0), direction = this.arrowDirection ??= new three.Vector3();
+    if (thick && this.thickLinks) {
+      const baseRadius = 0.08 + (thickness - 1) * 0.12;
+      this.links.forEach((link, index) => {
+        const from = at(link.source), to = at(link.target);
+        const fx = from.x ?? 0, fy = from.y ?? 0, fz = from.z ?? 0;
+        const tx = to.x ?? 0, ty = to.y ?? 0, tz = to.z ?? 0;
+        const dx = tx - fx, dy = ty - fy, dz = tz - fz, length = Math.hypot(dx, dy, dz);
+        const radius = baseRadius * (link.kind === 'related' ? 0.65 : 1);
+        if (length < 1e-4) placed.scale.setScalar(0);
+        else {
+          placed.position.set((fx + tx) / 2, (fy + ty) / 2, (fz + tz) / 2);
+          placed.quaternion.setFromUnitVectors(up, direction.set(dx / length, dy / length, dz / length));
+          placed.scale.set(radius, length, radius);
+        }
+        placed.updateMatrix();
+        this.thickLinks!.setMatrixAt(index, placed.matrix);
+      });
+      this.thickLinks.instanceMatrix.needsUpdate = true;
+    } else {
+      for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
+        const position = object.geometry.getAttribute('position') as InstanceType<Three['BufferAttribute']>, values = position.array as Float32Array;
+        list.forEach((link, index) => {
+          const from = at(link.source), to = at(link.target);
+          const pos = index * 6;
+          values[pos] = from.x ?? 0; values[pos + 1] = from.y ?? 0; values[pos + 2] = from.z ?? 0;
+          values[pos + 3] = to.x ?? 0; values[pos + 4] = to.y ?? 0; values[pos + 5] = to.z ?? 0;
+        });
+        position.needsUpdate = true;
+      }
+      if (this.related.length) this.dashes!.computeLineDistances();
+    }
     this.pointed.forEach((link, index) => {
       const from = at(link.source), to = at(link.target);
-      const arrow = arrowAt({ x: from.x ?? 0, y: from.y ?? 0, z: from.z ?? 0 }, { x: to.x ?? 0, y: to.y ?? 0, z: to.z ?? 0 }, to.radius, ARROW);
+      const arrow = arrowAt({ x: from.x ?? 0, y: from.y ?? 0, z: from.z ?? 0 }, { x: to.x ?? 0, y: to.y ?? 0, z: to.z ?? 0 }, to.radius, ARROW * arrowScale);
       // Nodes overlapping leave no line to put an arrow on, so it shrinks to nothing.
-      placed.scale.setScalar(arrow ? 1 : 0);
+      placed.scale.setScalar(arrow ? arrowScale : 0);
       if (arrow) {
         placed.position.set(arrow.center.x, arrow.center.y, arrow.center.z);
         placed.quaternion.setFromUnitVectors(up, direction.set(arrow.direction.x, arrow.direction.y, arrow.direction.z));
@@ -571,14 +637,24 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private colorLinks() {
     const three = this.three, arrows = this.arrows;
     if (!three || !arrows) return;
-    const color = new three.Color();
-    for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
-      const attribute = object.geometry.getAttribute('color') as InstanceType<Three['BufferAttribute']>, values = attribute.array as Float32Array;
-      list.forEach((link, index) => {
-        color.set(this.lineColor(link));
-        values.set([color.r, color.g, color.b, color.r, color.g, color.b], index * 6);
+    this.syncLinkAppearance();
+    const color = this.dotColor ??= new three.Color();
+    if (this.displaySettings.linkThickness > 1 && this.thickLinks) {
+      this.links.forEach((link, index) => {
+        const base = this.lineColor(link);
+        color.set(link.kind === 'related' ? mix(base, this.colors.background, 0.25) : base);
+        this.thickLinks!.setColorAt(index, color);
       });
-      attribute.needsUpdate = true;
+      if (this.thickLinks.instanceColor) this.thickLinks.instanceColor.needsUpdate = true;
+    } else {
+      for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
+        const attribute = object.geometry.getAttribute('color') as InstanceType<Three['BufferAttribute']>, values = attribute.array as Float32Array;
+        list.forEach((link, index) => {
+          color.set(this.lineColor(link));
+          values.set([color.r, color.g, color.b, color.r, color.g, color.b], index * 6);
+        });
+        attribute.needsUpdate = true;
+      }
     }
     this.pointed.forEach((link, index) => arrows.setColorAt(index, color.set(this.lineColor(link))));
     if (arrows.instanceColor) arrows.instanceColor.needsUpdate = true;
@@ -693,12 +769,14 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     const moved = this.placeLinks();
     this.placeDots(moved);
+    const fadeFactor = 2 ** (-this.displaySettings.textFadeThreshold);
+    const labelNear = LABEL_NEAR * fadeFactor, labelFar = LABEL_FAR * fadeFactor;
     for (const item of this.nodes.values()) {
       if (item.x === undefined) continue;
       radius = Math.max(radius, Math.hypot(item.x - target.x, (item.y ?? 0) - target.y, (item.z ?? 0) - target.z));
       const lit = !this.lit || this.lit.has(item.id);
       const distance = Math.hypot(camera.x - item.x, camera.y - (item.y ?? 0), camera.z - (item.z ?? 0));
-      const far = Math.min(1, Math.max(0, (LABEL_FAR - distance) / (LABEL_FAR - LABEL_NEAR)));
+      const far = Math.min(1, Math.max(0, (labelFar - distance) / (labelFar - labelNear)));
       // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't built or drawn.
       const opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
       if (opacity <= 0) { if (item.label) item.label.visible = false; continue; }
@@ -719,9 +797,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // Obsidian's graph colors from the theme in use; a theme change repaints with them.
   private readColors() {
     const style = getComputedStyle(this.contentEl), read = (name: string, fallback: string) => cssColorToHex(style.getPropertyValue(name)) ?? fallback;
+    const note = read('--graph-node', FALLBACK.note);
     return {
-      note: read('--graph-node', FALLBACK.note), tag: read('--graph-node-tag', FALLBACK.tag), line: read('--graph-line', FALLBACK.line),
-      text: read('--graph-text', FALLBACK.text), background: read('--background-primary', FALLBACK.background), accent: read('--interactive-accent', FALLBACK.accent),
+      note,
+      tag: read('--graph-node-tag', FALLBACK.tag),
+      attachment: read('--graph-node-attachment', note),
+      unresolved: read('--graph-node-unresolved', read('--text-faint', FALLBACK.unresolved)),
+      line: read('--graph-line', FALLBACK.line),
+      text: read('--graph-text', FALLBACK.text),
+      background: read('--background-primary', FALLBACK.background),
+      accent: read('--interactive-accent', FALLBACK.accent),
     };
   }
 
@@ -737,8 +822,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const prev = this.colors, next = this.readColors();
     const font = this.readFont(), refont = font !== this.font;
     const textChanged = next.text !== prev.text;
-    const changed = refont || next.note !== prev.note || next.tag !== prev.tag || next.line !== prev.line
-      || textChanged || next.background !== prev.background || next.accent !== prev.accent;
+    const changed = refont || next.note !== prev.note || next.tag !== prev.tag || next.attachment !== prev.attachment
+      || next.unresolved !== prev.unresolved || next.line !== prev.line || textChanged
+      || next.background !== prev.background || next.accent !== prev.accent;
     if (!changed) return;
     this.colors = next; this.font = font;
     if (next.background !== prev.background) {
@@ -755,97 +841,81 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.paint();
   }
 
-  // The label and force settings, in a panel opened with a gear at the top right, built like the 2D graph's settings panel.
-  // Every 3D tab reads the label settings each frame, so a change shows at once everywhere; saving waits until the slider stops.
-  private controlPanel(root: HTMLElement) {
-    this.controlsRoot = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
-    this.renderControlPanel();
-  }
-
   refreshLocale() {
-    if (this.controlsRoot) this.renderControlPanel();
+    this.controlsPanel?.refreshLocale();
   }
 
-  private renderControlPanel() {
-    const panel = this.controlsRoot;
-    if (!panel) return;
-    panel.empty();
-    // The settings tab replaces the settings object on every change, so each change writes to the current one.
-    const owner = this.owner, save = debounce(() => void owner.saveState(), 500, true);
-    // Real buttons, unlike the core panel's, so the keyboard reaches them.
-    const close = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-close' });
-    const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
-    setIcon(close, 'x'); setTooltip(close, t('controls3d.close')); setIcon(open, 'settings'); setTooltip(open, t('controls3d.openSettings'));
-    // A collapsible section with its rows laid out like the core panel's: a toggle beside its name, a slider under it.
-    const section = (key: string, name: string) => {
-      const el = panel.createDiv('tree-item graph-control-section');
-      const heading = el.createDiv('tree-item-self mod-collapsible');
-      const icon = heading.createDiv('tree-item-icon collapse-icon');
-      setIcon(icon, 'right-triangle');
-      heading.createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: name });
-      const body = el.createDiv('tree-item-children');
-      const applyCollapsed = (collapsed: boolean) => {
-        el.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
-      };
-      applyCollapsed(this.collapsedSections.has(key));
-      // As in the core panel, the icon carries the state too, which turns it.
-      heading.addEventListener('click', () => {
-        const collapsed = !el.hasClass('is-collapsed');
-        if (collapsed) this.collapsedSections.add(key); else this.collapsedSections.delete(key);
-        applyCollapsed(collapsed);
-      });
-      return body;
-    };
-    const labels = section('labels', t('controls3d.labelsSection'));
-    let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
-    const perspective = new Setting(labels).setName(t('controls3d.perspectiveLabels')).addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
-      if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
-    }));
-    perspective.settingEl.addClass('mod-toggle');
-    setTooltip(perspective.nameEl, t('controls3d.perspectiveLabelsTooltip'));
-    // The labels follow the slider while it is dragged.
-    new Setting(labels).setName(t('controls3d.labelSize')).addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
-      .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }))
-      .settingEl.addClass('mod-slider');
-    // As in 2D, moving a force slider warms the layout up so it settles into the new balance.
-    const forces = section('forces', t('controls3d.forcesSection')), sliders = new Map<keyof Forces, SliderComponent>();
-    let tension: ToggleComponent | undefined;
-    const dragTension = new Setting(forces).setName(t('controls3d.dragTension')).addToggle(component => (tension = component).setValue(owner.settings.dragTension3d).onChange(value => {
-      if (value === owner.settings.dragTension3d) return;
-      owner.settings.dragTension3d = value; this.syncDragMode(); save();
-    }));
-    dragTension.settingEl.addClass('mod-toggle');
-    setTooltip(dragTension.nameEl, t('controls3d.dragTensionTooltip'));
-    const forceNames: Record<keyof Forces, StringMessageKey> = {
-      center: 'controls3d.centerForce',
-      repel: 'controls3d.repelForce',
-      link: 'controls3d.linkForce',
-      distance: 'controls3d.linkDistance',
-    };
-    for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
-      const { min, max, step } = FORCES[key];
-      new Setting(forces).setName(t(forceNames[key])).addSlider(component => { sliders.set(key, component); component.setLimits(min, max, step).setInstant(true)
-        .setValue(owner.settings.forces3d[key]).onChange(value => {
-          if (value === owner.settings.forces3d[key]) return;
-          owner.settings.forces3d = { ...owner.settings.forces3d, [key]: value };
-          this.applyForces(); this.graph?.d3ReheatSimulation(); save();
-        }); }).settingEl.addClass('mod-slider');
+  /** Apply a 3D settings change initiated in another 3D tab. */
+  sync3d(change: Sync3dChange) {
+    this.apply3d(change, true);
+  }
+
+  private apply3d(change: Sync3dChange, syncControls = false) {
+    if (syncControls) this.controlsPanel?.sync();
+    if (!this.isVisible()) {
+      if (change === 'filters' || change === 'reset') this.pendingDraw = this.pendingDraw === 'refresh' ? 'refresh' : 'settings';
+      if (change !== 'filters' && change !== 'fade' && change !== 'labels') this.pendingSync3d = true;
+      return;
     }
-    new Setting(forces).addButton(button => button.setButtonText(t('common.restoreDefaults')).onClick(() => {
-      owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
-      owner.settings.dragTension3d = DEFAULT_SETTINGS.dragTension3d;
-      tension?.setValue(owner.settings.dragTension3d); this.syncDragMode();
-      for (const [key, component] of sliders) component.setValue(owner.settings.forces3d[key]);
-      this.applyForces(); this.graph?.d3ReheatSimulation(); save();
-    }));
-    // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
-    open.addEventListener('click', () => {
-      toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
-      tension?.setValue(owner.settings.dragTension3d);
-      for (const [key, component] of sliders) component.setValue(owner.settings.forces3d[key]);
-      panel.removeClass('is-close');
-    });
-    close.addEventListener('click', () => panel.addClass('is-close'));
+    if (change === 'filters') { this.draw('settings'); return; }
+    if (change === 'forces') { this.applyForces(); this.graph?.d3ReheatSimulation(); return; }
+    if (change === 'dragTension') { this.syncDragMode(); return; }
+    if (change === 'reset') {
+      const prevShape = this.shape;
+      this.draw('settings');
+      if (this.shape === prevShape) this.applyDisplay('reset');
+      this.syncDragMode();
+      this.applyForces();
+      this.graph?.d3ReheatSimulation();
+      return;
+    }
+    this.applyDisplay(change);
+  }
+
+  private syncLinkAppearance() {
+    const thickness = this.displaySettings.linkThickness, thick = thickness > 1;
+    const opacity = thick ? 1 : Math.max(0.1, Math.min(1, thickness));
+    if (this.lines) {
+      this.lines.visible = !thick;
+      this.lines.material.opacity = opacity;
+    }
+    if (this.dashes) {
+      this.dashes.visible = !thick;
+      this.dashes.material.opacity = opacity;
+    }
+    if (this.thickLinks) this.thickLinks.visible = thick;
+    if (this.arrowMaterial) this.arrowMaterial.opacity = opacity;
+  }
+
+  private applyNodeSize() {
+    const nodeSize = this.displaySettings.nodeSize;
+    for (const item of this.nodes.values()) {
+      item.radius = radiusOf(item.degree, nodeSize);
+      this.size(item);
+    }
+    this.dotsDirty = true;
+    this.linksDirty = true;
+    this.placeDots(true);
+    this.placeLinks();
+  }
+
+  private applyDisplay(kind: DisplayChangeKind) {
+    if (!this.graph) return;
+    if (kind === 'arrows' || kind === 'reset') {
+      if (kind === 'reset') this.applyNodeSize();
+      this.buildLinks();
+      this.colorLinks();
+      return;
+    }
+    if (kind === 'nodeSize') {
+      this.applyNodeSize();
+      return;
+    }
+    if (kind === 'linkThickness') {
+      this.linksDirty = true;
+      this.placeLinks();
+      this.colorLinks();
+    }
   }
 
   private button(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {

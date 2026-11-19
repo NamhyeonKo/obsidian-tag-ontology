@@ -247,7 +247,6 @@ const de = {
 
   'controls3d.openSettings': 'Graph-Einstellungen öffnen',
   'controls3d.close': 'Schließen',
-  'controls3d.labelsSection': 'Labels',
   'controls3d.perspectiveLabels': 'Perspektivische Labels',
   'controls3d.perspectiveLabelsTooltip': 'Labels wachsen beim Heranzoomen. Aus: feste Größe in jeder Entfernung.',
   'controls3d.labelSize': 'Label-Größe',
@@ -258,6 +257,21 @@ const de = {
   'controls3d.repelForce': 'Abstoßungskraft',
   'controls3d.linkForce': 'Linkkraft',
   'controls3d.linkDistance': 'Linkabstand',
+  'controls3d.restoreAll': 'Voreinstellungen wiederherstellen',
+  'controls3d.filtersSection': 'Filter',
+  'controls3d.searchPlaceholder': 'Suche Dateien...',
+  'controls3d.attachments': 'Anhänge',
+  'controls3d.attachmentsTooltip': 'Zeige Dateien, die keine Notizen sind.',
+  'controls3d.existingOnly': 'Nur existierende Dateien zeigen',
+  'controls3d.existingOnlyTooltip': 'Wenn aktiviert, werden Links zu nicht existierenden Dateien ausgeblendet.',
+  'controls3d.orphans': 'Verwaiste Dateien',
+  'controls3d.orphansTooltip': 'Zeige Dateien, die nicht mit anderen Dateien verlinkt sind.',
+  'controls3d.displaySection': 'Anzeige',
+  'controls3d.arrows': 'Pfeile',
+  'controls3d.arrowsTooltip': 'Pfeile auch an Notiz-Links zeigen. Hierarchie-Links zeigen immer Pfeile.',
+  'controls3d.textFadeThreshold': 'Grenze Text-Transparenz',
+  'controls3d.nodeSize': 'Knotengröße',
+  'controls3d.linkThickness': 'Kantenstärke',
 } satisfies Messages;
 
 export default de;

@@ -100,13 +100,19 @@ export default class TagOntologyPlugin extends Plugin {
         : this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile; } catch { notify = false; }
       await this.refreshViews({ notify });
     }); });
+    const isAttachmentFile = (file: { path: string; children?: unknown }) => this.settings.filters3d.attachments
+      && !('children' in file) && !isHiddenPath(file.path) && !file.path.toLowerCase().endsWith('.md');
     const relevant = (path: string) => this.isDictionaryFile(path) || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
+    const changedOrAttachment = (file: { path: string; children?: unknown }) => {
+      if (relevant(file.path) || isAttachmentFile(file)) this.scheduleRefresh(file.path);
+    };
     this.registerEvent(this.app.vault.on('modify', changed));
-    this.registerEvent(this.app.vault.on('create', changed));
-    this.registerEvent(this.app.vault.on('delete', changed));
+    this.registerEvent(this.app.vault.on('create', changedOrAttachment));
+    this.registerEvent(this.app.vault.on('delete', changedOrAttachment));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-      if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh(file.path, oldPath);
+      const attachmentRenamed = isAttachmentFile(file) || (this.settings.filters3d.attachments && !isHiddenPath(oldPath) && !oldPath.toLowerCase().endsWith('.md'));
+      if (relevant(file.path) || relevant(oldPath) || attachmentRenamed) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
     // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
@@ -257,10 +263,23 @@ export default class TagOntologyPlugin extends Plugin {
     return this.checked.usage;
   }
 
-  // The core graph's data, built from the vault for the 3D view: notes, their tags and links between included notes.
-  graphData(): NativeData {
+  // The core graph's data, built from the vault for the 3D view: notes, their tags, links, and optional attachments/unresolved targets.
+  graphData(options?: { attachments?: boolean; existingOnly?: boolean }): NativeData {
+    const includeAttachments = Boolean(options?.attachments);
+    const includeUnresolved = options?.existingOnly === false;
     const resolved = this.app.metadataCache.resolvedLinks;
-    return vaultData(this.notes().map(note => ({ ...note, links: Object.keys(resolved[note.path] ?? {}) })));
+    const unresolved = includeUnresolved ? this.app.metadataCache.unresolvedLinks : undefined;
+    const attachments = includeAttachments
+      ? (this.app.vault.getFiles?.() ?? []).filter(file => file.extension.toLowerCase() !== 'md' && !isHiddenPath(file.path)).map(file => file.path)
+      : undefined;
+    return vaultData(
+      this.notes().map(note => ({
+        ...note,
+        links: Object.keys(resolved[note.path] ?? {}),
+        unresolved: unresolved ? Object.keys(unresolved[note.path] ?? {}) : undefined,
+      })),
+      { includeAttachments, attachments, includeUnresolved },
+    );
   }
 
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,

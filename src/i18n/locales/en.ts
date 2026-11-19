@@ -247,7 +247,6 @@ const en = {
 
   'controls3d.openSettings': 'Open graph settings',
   'controls3d.close': 'Close',
-  'controls3d.labelsSection': 'Labels',
   'controls3d.perspectiveLabels': 'Perspective labels',
   'controls3d.perspectiveLabelsTooltip': 'Labels grow as you come closer. Off: one size at any distance.',
   'controls3d.labelSize': 'Label size',
@@ -258,6 +257,21 @@ const en = {
   'controls3d.repelForce': 'Repel force',
   'controls3d.linkForce': 'Link force',
   'controls3d.linkDistance': 'Link distance',
+  'controls3d.restoreAll': 'Restore default settings',
+  'controls3d.filtersSection': 'Filters',
+  'controls3d.searchPlaceholder': 'Search files...',
+  'controls3d.attachments': 'Attachments',
+  'controls3d.attachmentsTooltip': 'Show attachments',
+  'controls3d.existingOnly': 'Existing files only',
+  'controls3d.existingOnlyTooltip': 'When enabled, links to nonexistent files are not shown',
+  'controls3d.orphans': 'Orphans',
+  'controls3d.orphansTooltip': 'Show files that are not linked to any other file',
+  'controls3d.displaySection': 'Display',
+  'controls3d.arrows': 'Arrows',
+  'controls3d.arrowsTooltip': 'Show arrows on note links. Hierarchy links always show arrows.',
+  'controls3d.textFadeThreshold': 'Text fade threshold',
+  'controls3d.nodeSize': 'Node size',
+  'controls3d.linkThickness': 'Link thickness',
 };
 
 export type Messages = {

@@ -247,7 +247,6 @@ const ptBR = {
 
   'controls3d.openSettings': 'Abrir configurações de gráfico',
   'controls3d.close': 'Fechar',
-  'controls3d.labelsSection': 'Rótulos',
   'controls3d.perspectiveLabels': 'Rótulos em perspectiva',
   'controls3d.perspectiveLabelsTooltip': 'Os rótulos aumentam ao se aproximar. Desativado: mesmo tamanho em qualquer distância.',
   'controls3d.labelSize': 'Tamanho do rótulo',
@@ -258,6 +257,21 @@ const ptBR = {
   'controls3d.repelForce': 'Força de repulsão',
   'controls3d.linkForce': 'Força dos links',
   'controls3d.linkDistance': 'Distância dos links',
+  'controls3d.restoreAll': 'Restaurar configurações padrão',
+  'controls3d.filtersSection': 'Filtros',
+  'controls3d.searchPlaceholder': 'Procurar arquivos...',
+  'controls3d.attachments': 'Anexos',
+  'controls3d.attachmentsTooltip': 'Mostrar anexos provenientes de arquivos',
+  'controls3d.existingOnly': 'Apenas arquivos existentes',
+  'controls3d.existingOnlyTooltip': 'Quando marcada, links para arquivos não existentes não serão mostrados',
+  'controls3d.orphans': 'Órfãos',
+  'controls3d.orphansTooltip': 'Mostrar arquivos que não possuem links com os demais',
+  'controls3d.displaySection': 'Tela',
+  'controls3d.arrows': 'Setas',
+  'controls3d.arrowsTooltip': 'Mostrar setas nos links das notas. Links de hierarquia sempre mostram setas.',
+  'controls3d.textFadeThreshold': 'Limite para a visibilidade textual',
+  'controls3d.nodeSize': 'Tamanho dos nódulos',
+  'controls3d.linkThickness': 'Grossura dos links',
 } satisfies Messages;
 
 export default ptBR;

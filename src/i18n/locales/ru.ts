@@ -273,7 +273,6 @@ const ru = {
 
   'controls3d.openSettings': 'Настройки графа',
   'controls3d.close': 'Закрыть',
-  'controls3d.labelsSection': 'Подписи',
   'controls3d.perspectiveLabels': 'Перспективные подписи',
   'controls3d.perspectiveLabelsTooltip': 'Подписи увеличиваются при приближении. Выкл.: одинаковый размер на любом расстоянии.',
   'controls3d.labelSize': 'Размер подписей',
@@ -284,6 +283,21 @@ const ru = {
   'controls3d.repelForce': 'Сила отталкивания',
   'controls3d.linkForce': 'Сила связи',
   'controls3d.linkDistance': 'Расстояние между узлами',
+  'controls3d.restoreAll': 'Восстановить настройки по умолчанию',
+  'controls3d.filtersSection': 'Фильтры',
+  'controls3d.searchPlaceholder': 'Искать в...',
+  'controls3d.attachments': 'Вложения',
+  'controls3d.attachmentsTooltip': 'Показывать содержащиеся в заметках вложения',
+  'controls3d.existingOnly': 'Только созданные заметки',
+  'controls3d.existingOnlyTooltip': 'Исключает отображение ссылок на не созданные заметки',
+  'controls3d.orphans': 'Объекты без связей',
+  'controls3d.orphansTooltip': 'Отображать объекты, у которых нет связей',
+  'controls3d.displaySection': 'Отображение',
+  'controls3d.arrows': 'Направление связей',
+  'controls3d.arrowsTooltip': 'Показывать стрелки на связях заметок. Иерархические связи всегда со стрелками.',
+  'controls3d.textFadeThreshold': 'Порог исчезания текста',
+  'controls3d.nodeSize': 'Размер узла',
+  'controls3d.linkThickness': 'Толщина линий',
 } satisfies Messages;
 
 export default ru;

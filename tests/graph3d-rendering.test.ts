@@ -8,6 +8,7 @@ import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as settings from '../src/settings.ts';
 import * as geometry from '../src/geometry3d.ts';
+import * as filter3d from '../src/filter3d.ts';
 import * as i18n from '../src/i18n/index.ts';
 
 interface Node { id: string; x: number; y: number; z: number; radius: number }
@@ -17,16 +18,21 @@ interface Renderer {
   draw(operation: string): void; setVisible(visible: boolean): void; pendingDraw?: string;
   links: { source: string | Node; target: string | Node; kind: string }[];
   lines: THREE.LineSegments; dashes: THREE.LineSegments; cone: THREE.ConeGeometry; arrowMaterial: THREE.MeshLambertMaterial;
-  arrows: THREE.InstancedMesh; buildLinks(): void; placeLinks(): void;
+  arrows: THREE.InstancedMesh; pointed?: unknown[]; thickLinks?: THREE.InstancedMesh;
+  cylinder?: THREE.CylinderGeometry; thickLinkMaterial?: THREE.MeshLambertMaterial;
+  dotsDirty?: boolean; linksDirty?: boolean;
+  buildLinks(): void; placeLinks(): void; colorLinks(): void; frame(): void; sync3d(change: string): void; onunload(): void;
 }
 async function setup(owner: object = {}) {
   const context = createContext({ performance: { now: () => 0 }, window: { setTimeout: () => 0, clearTimeout: () => {} } });
   const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Setting: class {}, debounce() {}, setIcon() {}, setTooltip() {} }
+    const exports = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Setting: class {}, TFile: class {}, debounce: () => Object.assign(() => {}, { cancel() {}, run() {} }), setIcon() {}, setTooltip() {} }
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() {} }
+      : specifier === './controls3d.ts' ? { Controls3D: class { sync() {} refreshLocale() {} destroy() {} } }
+      : specifier === './filter3d.ts' ? { ...filter3d }
       : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
       : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : specifier === './i18n/index.ts' ? { ...i18n } : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () { for (const [name, value] of Object.entries(exports)) this.setExport(name, value); }, { context });
@@ -147,26 +153,51 @@ async function openCanvas(opts: {
       await m.link(() => { throw new Error('unexpected'); }); await m.evaluate(); return m;
     },
   });
-  const toggles = new Map<string, (value: boolean) => void>(), toggleValues = new Map<string, unknown>(), buttons = new Map<string, () => void>();
+  const toggles = new Map<string, (value: unknown) => void>(), toggleValues = new Map<string, unknown>(), buttons = new Map<string, () => void>();
   const control = (name: string) => {
     const api = {
+      setPlaceholder() { return api; },
       setValue(value: unknown) { toggleValues.set(name, value); return api; },
       setLimits() { return api; }, setInstant() { return api; },
-      onChange(fn: (value: boolean) => void) { toggles.set(name, fn); return api; },
+      onChange(fn: (value: unknown) => void) { toggles.set(name, fn); return api; },
       setButtonText(label: string) { name = label; return api; },
       onClick(fn: () => void) { buttons.set(name, fn); return api; },
     };
     return api;
   };
+  class TFile { path = ''; extension = ''; }
+  const obsidianExports = {
+    Component: class { register() {} registerEvent() {} registerDomEvent(el: El, type: string, fn: (e?: unknown) => void) { el.addEventListener(type, fn); } },
+    ItemView: class {},
+    TFile,
+    Setting: class {
+      name = ''; nameEl = new El(); settingEl = new El();
+      setName(name: string) { this.name = name; return this; }
+      addSearch(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name || 'search')); return this; }
+      addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; }
+      addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; }
+      addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; }
+    },
+    debounce: (fn: () => void) => Object.assign(() => fn(), { cancel() {}, run() {} }),
+    setIcon(el: El, id: string) { el.attrs.icon = id; },
+    setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
+  };
+  const controlsCode = await transform(readFileSync(new URL('../src/controls3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
+  const controlsModule = new SourceTextModule(controlsCode.code, { context });
+  await controlsModule.link(specifier => {
+    const exports = specifier === 'obsidian' ? obsidianExports
+      : specifier === './settings.ts' ? { ...settings }
+      : specifier === './i18n/index.ts' ? { ...i18n }
+      : {};
+    return new SyntheticModule(Object.keys(exports), function () { for (const [k, v] of Object.entries(exports)) this.setExport(k, v); }, { context });
+  });
+  await controlsModule.evaluate();
   await module.link(specifier => {
-    const exports = specifier === 'obsidian' ? {
-      Component: class { register() {} registerEvent() {} registerDomEvent(el: El, type: string, fn: (e?: unknown) => void) { el.addEventListener(type, fn); } },
-      ItemView: class {},
-      Setting: class { name = ''; nameEl = new El(); settingEl = new El(); setName(name: string) { this.name = name; return this; } addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } },
-      debounce: (fn: () => void) => fn, setIcon(el: El, id: string) { el.attrs.icon = id; }, setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
-    }
+    const exports = specifier === 'obsidian' ? obsidianExports
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
+      : specifier === './controls3d.ts' ? controlsModule.namespace as Record<string, unknown>
+      : specifier === './filter3d.ts' ? { ...filter3d }
       : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
       : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : specifier === './i18n/index.ts' ? { ...i18n } : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () { for (const [k, v] of Object.entries(exports)) this.setExport(k, v); }, { context });
@@ -178,7 +209,7 @@ async function openCanvas(opts: {
   const canvas = new Canvas(root, opts.owner, {});
   canvas.setVisible(true);
   await canvas.open();
-  return { canvas, root, toggles, toggleValues, buttons };
+  return { canvas, root, toggles, toggleValues, buttons, TFile };
 }
 
 test('recenter button tracks 3D focus, tween arrival, user camera change, wheel interrupt, fit, and expand', async () => {
@@ -277,8 +308,8 @@ test('recenter button tracks 3D focus, tween arrival, user camera change, wheel 
   assert.equal(alphaMin, 0.001, 'restores alphaMin after post-drag tick');
 
   const sections = root.all().filter(el => el.classes.has('graph-control-section'));
-  assert.equal(sections.length, 2);
-  assert.ok(sections.every(el => !el.classes.has('is-collapsed')), 'Labels and Forces sections open expanded by default');
+  assert.equal(sections.length, 3);
+  assert.ok(sections.every(el => !el.classes.has('is-collapsed')), 'Filters, Display, and Forces sections open expanded by default');
   // With dragTension3d off, dragging stops the simulation and pins the released node to spring back cleanly.
   toggles.get('Drag tension')!(false);
   assert.equal(owner.settings.dragTension3d, false);
@@ -653,11 +684,251 @@ test('3D control panel localizes labels and preserves open/collapsed state acros
     (canvas as unknown as { refreshLocale(): void }).refreshLocale();
     assert.equal(panel.hasClass('is-close'), false, 'open panel stays open across locale switches');
     const sections = panel.all().filter(el => el.classes.has('graph-control-section'));
+    assert.equal(sections.length, 3);
     assert.equal(sections[0]!.hasClass('is-collapsed'), true, 'collapsed section stays collapsed');
-    assert.equal(sections[0]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '라벨');
-    assert.equal(sections[1]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '장력');
+    assert.equal(sections[0]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '필터');
+    assert.equal(sections[1]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '표시');
+    assert.equal(sections[2]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '장력');
     canvas.onunload();
   } finally {
     i18n.setLocale('en');
   }
+});
+
+function stubGraph() {
+  const scene = Object.assign(new THREE.Scene(), { fog: undefined as THREE.Fog | undefined, onBeforeRender: undefined as (() => void) | undefined });
+  let onClick: ((item: unknown) => void) | undefined;
+  const graph = {
+    backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
+    nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
+    onNodeClick(fn: (item: unknown) => void) { onClick = fn; return this; },
+    onNodeDrag() { return this; }, onNodeDragEnd() { return this; }, onEngineTick() { return this; },
+    cooldownTime() { return this; }, cooldownTicks() { return this; }, d3AlphaMin() { return this; },
+    width() { return this; }, height() { return this; },
+    d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
+    d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
+    scene: () => scene,
+    camera: () => ({ position: new THREE.Vector3(0, 0, 450), fov: 90, aspect: 1, matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] }, getWorldDirection: (v: THREE.Vector3) => v.set(0, 0, -1) }),
+    controls: () => ({ target: new THREE.Vector3(0, 0, 0), addEventListener() {}, removeEventListener() {} }),
+    cameraPosition() { return { x: 0, y: 0, z: 450 }; },
+    graphData() { return this; },
+    renderer: () => ({ forceContextLoss() {}, dispose() {} }),
+    _destructor() {},
+  };
+  return { graph, scene, triggerClick: (item: unknown) => onClick?.(item) };
+}
+
+test('display3d.arrows includes note links in pointed arrows while keeping related links arrowless', async () => {
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const { graph } = stubGraph();
+  const owner = {
+    model,
+    settings: structuredClone(settings.DEFAULT_SETTINGS),
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {}, getLeaf: () => ({ openFile: async () => {} }) }, vault: { getAbstractFileByPath: () => null } },
+    graphData: () => ({
+      nodes: {
+        'A.md': { type: '', links: { '#root': true, 'B.md': true } },
+        'B.md': { type: '', links: {} },
+        '#root': { type: 'tag', links: {} },
+      },
+      numLinks: 0,
+    }),
+  };
+  owner.settings.expanded = ['root'];
+  const { canvas, toggles } = await openCanvas({ owner, fakeGraph: graph });
+  canvas.links = [
+    { source: { id: '#root', x: 0, y: 0, z: 0, radius: 1 }, target: { id: '#child', x: 20, y: 0, z: 0, radius: 1 }, kind: 'broader' },
+    { source: { id: 'A.md', x: 0, y: 0, z: 0, radius: 1 }, target: { id: '#root', x: 15, y: 5, z: 0, radius: 1 }, kind: 'note' },
+    { source: { id: '#root', x: 0, y: 0, z: 0, radius: 1 }, target: { id: '#other', x: 10, y: 10, z: 0, radius: 1 }, kind: 'related' },
+  ];
+  canvas.nodes = new Map([
+    ['#root', { id: '#root', x: 0, y: 0, z: 0, radius: 1 }],
+    ['#child', { id: '#child', x: 20, y: 0, z: 0, radius: 1 }],
+    ['A.md', { id: 'A.md', x: 0, y: 0, z: 0, radius: 1 }],
+    ['#other', { id: '#other', x: 10, y: 10, z: 0, radius: 1 }],
+  ]);
+  canvas.buildLinks();
+  assert.equal(canvas.arrows.count, 1, 'default arrows=false points only broader links');
+
+  toggles.get('Arrows')!(true);
+  assert.equal(owner.settings.display3d.arrows, true);
+  assert.equal(canvas.arrows.count, 2, 'arrows=true includes note links and excludes related links');
+  canvas.onunload();
+});
+
+test('display3d.linkThickness switches between thin line opacity and InstancedMesh cylinders, and disposes resources', async () => {
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const { graph } = stubGraph();
+  const owner = {
+    model,
+    settings: structuredClone(settings.DEFAULT_SETTINGS),
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => ({ nodes: { '#root': { type: 'tag', links: {} } }, numLinks: 0 }),
+  };
+  const { canvas, toggles } = await openCanvas({ owner, fakeGraph: graph });
+  canvas.nodes = new Map([
+    ['a', { id: 'a', x: 0, y: 0, z: 0, radius: 1 }],
+    ['b', { id: 'b', x: 20, y: 0, z: 0, radius: 1 }],
+    ['c', { id: 'c', x: 0, y: 20, z: 0, radius: 1 }],
+  ]);
+  canvas.links = [
+    { source: 'a', target: 'b', kind: 'broader' },
+    { source: 'b', target: 'c', kind: 'related' },
+  ];
+  canvas.buildLinks();
+  canvas.colorLinks();
+  assert.equal(canvas.lines.visible, true);
+  assert.equal(canvas.dashes.visible, true);
+  assert.equal(canvas.thickLinks?.visible, false);
+  assert.equal((canvas.lines.material as THREE.LineBasicMaterial).opacity, 0.8);
+
+  toggles.get('Link thickness')!(0.25);
+  assert.equal((canvas.lines.material as THREE.LineBasicMaterial).opacity, 0.25);
+  assert.equal(canvas.thickLinks?.visible, false);
+
+  toggles.get('Link thickness')!(3);
+  assert.equal(canvas.lines.visible, false);
+  assert.equal(canvas.dashes.visible, false);
+  assert.equal(canvas.thickLinks?.visible, true);
+  assert.equal(canvas.thickLinks?.count, 2);
+  const m0 = new THREE.Matrix4(), m1 = new THREE.Matrix4();
+  const s0 = new THREE.Vector3(), s1 = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Quaternion();
+  canvas.thickLinks!.getMatrixAt(0, m0); m0.decompose(p, q, s0);
+  canvas.thickLinks!.getMatrixAt(1, m1); m1.decompose(p, q, s1);
+  assert.ok(Math.abs(s1.x / s0.x - 0.65) < 1e-5, 'related links use 0.65 radius factor when thick');
+  const arrowM = new THREE.Matrix4(), arrowS = new THREE.Vector3();
+  canvas.arrows.getMatrixAt(0, arrowM); arrowM.decompose(p, q, arrowS);
+  assert.ok(Math.abs(arrowS.x - (1 + (3 - 1) * 0.15)) < 1e-5, 'arrows scale up gently for thick links');
+  assert.equal(canvas.arrowMaterial.opacity, 1);
+
+  toggles.get('Link thickness')!(0.5);
+  assert.equal(canvas.thickLinks?.visible, false);
+  assert.equal(canvas.lines.visible, true);
+  assert.equal(canvas.dashes.visible, true);
+  assert.equal(canvas.arrowMaterial.opacity, 0.5);
+  canvas.arrows.getMatrixAt(0, arrowM); arrowM.decompose(p, q, arrowS);
+  assert.ok(Math.abs(arrowS.x - 1) < 1e-5, 'arrows reset to unit scale when switching thick -> thin');
+
+  const disposed = new Set<object>();
+  for (const res of [canvas.cylinder, canvas.thickLinkMaterial, canvas.thickLinks]) {
+    if (!res) continue;
+    const orig = res.dispose.bind(res);
+    res.dispose = () => { disposed.add(res); orig(); };
+  }
+  canvas.onunload();
+  assert.equal(disposed.size, 3, 'onunload disposes cylinder geometry, material, and InstancedMesh');
+});
+
+test('display3d.nodeSize updates radii live and display3d.textFadeThreshold scales label visibility distance', async () => {
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const { graph } = stubGraph();
+  class SpriteTextStub extends THREE.Sprite {
+    text: string; fontSize = 48; fontFace = 'sans-serif'; color = '#fff';
+    center = new THREE.Vector2();
+    constructor(text: string) { super(new THREE.SpriteMaterial()); this.text = text; }
+  }
+  let graphDataCalls = 0;
+  const owner = {
+    model,
+    settings: structuredClone(settings.DEFAULT_SETTINGS),
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => { graphDataCalls++; return { nodes: { '#root': { type: 'tag', links: {} } }, numLinks: 0 }; },
+  };
+  const { canvas, toggles } = await openCanvas({ owner, fakeGraph: graph, SpriteText: SpriteTextStub });
+  const node = canvas.nodes.get('#root')!;
+  (canvas as unknown as { nodeObject(item: Node): unknown }).nodeObject(node);
+  node.x = 0; node.y = 0; node.z = 0;
+  const beforeRadius = node.radius;
+  const beforeCalls = graphDataCalls;
+  toggles.get('Node size')!(2.4);
+  assert.equal(graphDataCalls, beforeCalls, 'nodeSize does not rebuild base graphData');
+  assert.ok(Math.abs(node.radius - beforeRadius * 3) < 1e-6);
+
+  // Camera is at z=450, so distance is 450 (inside default 300..650 range).
+  // Threshold +1 shifts range to 150..325 (hides label at 450); -1 shifts to 600..1300 (fully visible).
+  toggles.get('Text fade threshold')!(1);
+  canvas.frame();
+  const label = (node as Node & { label?: SpriteTextStub }).label;
+  assert.equal(label?.visible ?? false, false);
+
+  toggles.get('Text fade threshold')!(-1);
+  canvas.frame();
+  assert.equal((node as Node & { label?: SpriteTextStub }).label?.visible, true);
+  assert.equal((node as Node & { label?: SpriteTextStub }).label?.material.opacity, 1);
+  canvas.onunload();
+});
+
+test('filters3d filters nodes, requests attachments/unresolved from graphData, opens attachments on click, and ignores unresolved', async () => {
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const { graph, triggerClick } = stubGraph();
+  const requests: unknown[] = [];
+  const opened: unknown[] = [];
+  let TFileCtor!: new () => { path: string };
+  const owner = {
+    model,
+    settings: structuredClone(settings.DEFAULT_SETTINGS),
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {}, openNote() {} },
+    tagColor: () => '#123456',
+    app: {
+      workspace: { on: () => () => {}, getLeaf: () => ({ openFile: async (f: unknown) => { opened.push(f); } }) },
+      vault: { getAbstractFileByPath: (path: string) => path === 'pic.png' ? Object.assign(new TFileCtor(), { path }) : null },
+    },
+    graphData: (opts?: unknown) => {
+      requests.push(opts);
+      return {
+        nodes: {
+          'notes/a.md': { type: '', links: { '#root': true, 'pic.png': true, 'Missing': true } },
+          'notes/orphan.md': { type: '', links: {} },
+          '#root': { type: 'tag', links: {} },
+          ...(owner.settings.filters3d.attachments ? { 'pic.png': { type: 'attachment', links: {} } } : {}),
+          ...(!owner.settings.filters3d.existingOnly ? { Missing: { type: 'unresolved', links: {} } } : {}),
+        },
+        numLinks: 0,
+      };
+    },
+  };
+  const { canvas, toggles, TFile } = await openCanvas({ owner, fakeGraph: graph });
+  TFileCtor = TFile;
+
+  toggles.get('Attachments')!(true);
+  toggles.get('Existing files only')!(false);
+  assert.equal(canvas.nodes.has('pic.png'), true);
+  assert.equal(canvas.nodes.has('Missing'), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(requests.at(-1))), { attachments: true, existingOnly: false });
+
+  toggles.get('Orphans')!(false);
+  assert.equal(canvas.nodes.has('notes/orphan.md'), false, 'orphans=false hides unlinked notes');
+  assert.equal(canvas.nodes.has('#root'), true);
+
+  toggles.get('search')!('path:notes');
+  assert.equal(canvas.nodes.has('notes/a.md'), true);
+  toggles.get('search')!('-path:notes');
+  assert.equal(canvas.nodes.has('notes/a.md'), false);
+  assert.equal(canvas.nodes.has('#root'), false, 'negated path filter does not leak excluded note tags');
+
+  toggles.get('search')!('');
+  assert.equal(canvas.nodes.has('#root'), true);
+  assert.equal(canvas.arrows.count, 0);
+  canvas.setVisible(false);
+  owner.settings.display3d = { ...owner.settings.display3d, arrows: true };
+  canvas.sync3d('reset');
+  canvas.setVisible(true);
+  assert.equal(canvas.arrows.count, 3);
+
+  triggerClick({ id: 'Missing', type: 'unresolved' });
+  assert.equal(opened.length, 0, 'clicking unresolved node does nothing');
+
+  triggerClick({ id: 'pic.png', type: 'attachment' });
+  assert.equal(opened.length, 1, 'clicking attachment opens file in a tab');
+  canvas.onunload();
 });
