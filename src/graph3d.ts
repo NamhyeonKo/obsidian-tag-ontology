@@ -615,14 +615,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
-  // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
+  // Frames the bulk of all visible nodes, matching 2D fit so a lone related link among collapsed roots doesn't zoom onto two nodes.
   // The library's own zoomToFit frames every last node from a box corner, which left the graph small in the middle.
   fit() {
     window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (!graph) return;
-    const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
-    const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
+    const points = [...this.nodes.values()].map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
     if (!points.length) return;
     this.flyDest = undefined;
     if (!this.moved) { this.moved = true; this.syncRecenter(); }

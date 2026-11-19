@@ -573,3 +573,43 @@ test('3D uses lightweight sphere geometry, defers hidden recolors, skips redunda
   c.onunload();
   assert.equal(unloadPrevented, false, 'intentional forceContextLoss during onunload does not preventDefault');
 });
+
+test('3D fit frames all visible nodes even when only a few roots share a link', async () => {
+  let fittedPos: { x: number; y: number; z: number } | undefined;
+  const fakeGraph = {
+    backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
+    nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
+    onNodeClick() { return this; }, onNodeDrag() { return this; }, onNodeDragEnd() { return this; }, onEngineTick() { return this; },
+    cooldownTime() { return this; }, cooldownTicks() { return this; }, d3AlphaMin() { return this; },
+    width() { return this; }, height() { return this; },
+    d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
+    d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
+    scene: () => Object.assign(new THREE.Scene(), { fog: undefined, onBeforeRender: undefined }),
+    camera: () => ({ position: { x: 0, y: 0, z: 200 }, fov: 90, aspect: 1, matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] } }),
+    controls: () => ({ target: { x: 0, y: 0, z: 0 }, addEventListener() {}, removeEventListener() {} }),
+    cameraPosition(pos?: { x: number; y: number; z: number }) { if (pos) fittedPos = pos; return { x: 0, y: 0, z: 200 }; },
+    graphData() { return this; },
+    renderer: () => ({ forceContextLoss() {}, dispose() {} }),
+    _destructor() {},
+  };
+  const roots = Object.fromEntries([...Array(18)].map((_, i) => [`r${i}`, { description: '', broader: [] as string[], ...(i === 0 ? { related: ['r1'] } : {}) }]));
+  const model = new Ontology(roots, []);
+  const owner = {
+    model, settings: { ...settings.DEFAULT_SETTINGS, showNotes: false, showRelated: true },
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => ({ nodes: Object.fromEntries(Object.keys(roots).map(tag => [`#${tag}`, { type: 'tag', links: {} }])), numLinks: 0 }),
+  };
+  const { canvas: c } = await openCanvas({ owner, fakeGraph });
+  let i = 0;
+  for (const node of c.nodes.values()) {
+    if (i < 2) { node.x = i === 0 ? -5 : 5; node.y = 0; node.z = 0; }
+    else { const angle = (i - 2) * Math.PI / 8; node.x = Math.cos(angle) * 150; node.y = Math.sin(angle) * 150; node.z = 0; }
+    i++;
+  }
+  c.fit();
+  assert.ok(fittedPos && fittedPos.z > 100, `expected camera distance to frame all 18 roots, got z=${fittedPos?.z}`);
+  c.onunload();
+});
