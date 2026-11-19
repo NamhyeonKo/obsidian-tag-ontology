@@ -424,14 +424,44 @@ test('3D node labels are created lazily when visible, ignore pointer raycasts, a
     assert.deepEqual(ray.intersectObject(group, true), [], `${item.type} label ignores raycasts`);
   }
 
-  // Removing a node on redraw disposes its lazy label texture/material without disposing shared pickMaterial.
-  let disposedPickMaterials = 0;
+  // Focus splits nodes between lit and faded instanced meshes and updates fadedDots.instanceColor cleanly.
+  const painted = c as unknown as { paint(): void };
+  owner.settings.focus = true;
+  (owner.native as { selectedTag?: string }).selectedTag = 'tag';
+  c.setVisible(true);
+  c.draw('refresh');
+  // Simulate ThreeDigest's recursive child deallocation when a node leaves graphData().
+  let disposedBall = 0, disposedPickMaterials = 0;
+  const origBallDispose = internal.ball.dispose.bind(internal.ball);
+  internal.ball.dispose = () => { disposedBall++; origBallDispose(); };
   const origPickDispose = internal.pickMaterial.dispose.bind(internal.pickMaterial);
   internal.pickMaterial.dispose = () => { disposedPickMaterials++; origPickDispose(); };
+  const removedGroup = groups.get('Note.md')!;
+  c.graph.graphData = () => {
+    removedGroup.traverse(obj => {
+      const mesh = obj as THREE.Object3D & { geometry?: { dispose(): void }; material?: { dispose(): void } };
+      mesh.geometry?.dispose(); mesh.material?.dispose();
+    });
+  };
+  // Put coordinates back on the freshly mapped nodes so paint()/placeDots() populates both instanced meshes.
+  for (const [id, pos] of [['#tag', [0, 0, 0]], ['Note.md', [0, 0, 0]], ['#far', [0, 0, -900]]] as const) {
+    const node = internal.nodes.get(id)!; node.x = pos[0]; node.y = pos[1]; node.z = pos[2];
+  }
+  painted.paint();
+  assert.equal(internal.litDots!.count, 2, 'focused tag and its note stay in litDots');
+  assert.equal(internal.fadedDots!.count, 1, 'unfocused node moves to fadedDots');
+  assert.ok(internal.fadedDots!.instanceColor, 'fadedDots acquires instanceColor when populated');
+  owner.settings.focus = false;
+  painted.paint();
+  assert.equal(internal.litDots!.count, 3);
+  assert.equal(internal.fadedDots!.count, 0, 'clearing focus empties fadedDots');
+
+  // Removing a node detaches dot/label before graphData() so ThreeDigest never disposes shared geometry/material.
   owner.settings.showNotes = false;
-  c.setVisible(true);
   c.draw('filter');
-  assert.equal(disposedPickMaterials, 0, 'shared pick material stays alive across redraws');
+  assert.equal(removedGroup.children.length, 0, 'removed node detaches pick sphere and label before graphData');
+  assert.equal(disposedBall, 0, 'shared sphere geometry stays alive across node removals');
+  assert.equal(disposedPickMaterials, 0, 'shared pick material stays alive across node removals');
   assert.equal(disposedMaps, 1, 'removed node label texture is disposed');
   assert.equal(disposedLabelMaterials, 1, 'removed node label material is disposed');
   assert.equal(internal.litDots!.count, 2, 'instanced dots rebuild to match remaining nodes');
@@ -467,9 +497,16 @@ test('3D uses lightweight sphere geometry, defers hidden recolors, skips redunda
     controls: () => ({ target: { x: 0, y: 0, z: 0 }, addEventListener() {}, removeEventListener() {} }),
     cameraPosition: () => ({ x: 0, y: 0, z: 200 }),
     graphData() { return this; },
-    renderer: () => ({ domElement: canvasEl, forceContextLoss() {}, dispose() {} }),
+    renderer: () => ({
+      domElement: canvasEl,
+      forceContextLoss() {
+        for (const fn of canvasEl.events.get('webglcontextlost') ?? []) fn({ preventDefault() { unloadPrevented = true; } });
+      },
+      dispose() {},
+    }),
     _destructor() {},
   };
+  let unloadPrevented = false;
   const model = new Ontology({ root: { description: '', broader: [] } }, []);
   const owner = {
     model, settings: { ...settings.DEFAULT_SETTINGS },
@@ -508,6 +545,14 @@ test('3D uses lightweight sphere geometry, defers hidden recolors, skips redunda
   assert.equal(labelColorSets, 1, 'deferred recolor updates text color once visible');
   assert.equal(bgCalls, bgBefore + 1);
 
+  // Font change updates fontFace and refreshes unscaled label base size without touching text color.
+  rootNode.label.scale.set(9, 2.5, 1);
+  cssVars = { ...cssVars, '--font-interface': 'Pretendard' };
+  mutationCb!();
+  assert.equal(labelFontSets, 1, 'font change updates existing SpriteText fontFace');
+  assert.equal(labelColorSets, 1, 'font-only change does not re-set text color');
+  assert.deepEqual({ ...(rootNode.label.userData.base as { x: number; y: number }) }, { x: 9, y: 2.5 });
+
   // WebGL context loss prevents default and pauses animation; restore resumes only when visible.
   let prevented = false;
   const lostListeners = canvasEl.events.get('webglcontextlost') ?? [];
@@ -526,4 +571,5 @@ test('3D uses lightweight sphere geometry, defers hidden recolors, skips redunda
   restoredListeners[0]();
   assert.equal(resumed, resumedHidden, 'context restore while hidden does not resume animation');
   c.onunload();
+  assert.equal(unloadPrevented, false, 'intentional forceContextLoss during onunload does not preventDefault');
 });

@@ -187,7 +187,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.controls.addEventListener('change', this.onControlChange);
     const canvas = (graph.renderer() as { domElement?: HTMLElement }).domElement;
     if (canvas) {
-      const onLost = (event: Event) => { event.preventDefault(); graph.pauseAnimation(); };
+      const onLost = (event: Event) => { if (this.closed) return; event.preventDefault(); graph.pauseAnimation(); };
       const onRestored = () => { if (!this.closed) { this.paint(); if (this.isVisible()) graph.resumeAnimation(); } };
       canvas.addEventListener('webglcontextlost', onLost);
       canvas.addEventListener('webglcontextrestored', onRestored);
@@ -268,6 +268,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       });
       this.ball?.dispose(); this.pickMaterial?.dispose();
       this.litDotMaterial?.dispose(); this.fadedDotMaterial?.dispose();
+      this.cone?.dispose(); this.arrowMaterial?.dispose();
       this.litDots?.dispose(); this.fadedDots?.dispose(); this.arrows?.dispose();
       graph.renderer().forceContextLoss(); graph.renderer().dispose();
       graph._destructor();
@@ -319,7 +320,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     for (const [id, old] of this.nodes) {
       if (next.has(id)) continue;
-      if (old.label) { old.label.material.map?.dispose(); old.label.material.dispose(); }
+      // Detach before graphData() so three-forcegraph's ThreeDigest doesn't dispose the shared sphere geometry/pick material or render a disposed label.
+      old.dot?.removeFromParent();
+      if (old.label) { old.label.removeFromParent(); old.label.material.map?.dispose(); old.label.material.dispose(); }
     }
     this.nodes = next;
     // Notes are edited far more often than their tags and links change. Handing the library the same graph again would heat
@@ -476,6 +479,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (!three || !litDots || !fadedDots || (!this.dotsDirty && !moved)) return;
     this.dotsDirty = false;
     const placed = this.arrowTransform ??= new three.Object3D(), color = this.dotColor ??= new three.Color();
+    placed.quaternion.identity();
     let litCount = 0, fadedCount = 0;
     for (const item of this.nodes.values()) {
       if (item.x === undefined) { this.dotsDirty = true; continue; }

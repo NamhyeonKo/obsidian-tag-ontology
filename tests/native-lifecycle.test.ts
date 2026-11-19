@@ -801,6 +801,10 @@ test('embedded modes reuse their canvases and preserve the underlying map and zo
   assert.equal(t.renderer.scale, 3); assert.equal(map.data!.root, 'cs');
   assert.ok(map.data!.nodes.some(node => node.tag === 'ml'));
   assert.equal(explorer.visible, false); assert.equal(t.contentEl.classes.has('has-embedded-graph'), false);
+  await t.controller.switchMode(leaf, '3d');
+  assert.equal(map.el.hidden, true);
+  await t.controller.switchMode(leaf, 'force');
+  assert.equal(map.el.hidden, true, 'keeps mind map hidden when switching from 3D directly to Force');
   t.controller.destroy();
   assert.ok(t.canvases.every(canvas => canvas.unloaded && canvas.root.removed));
 });
