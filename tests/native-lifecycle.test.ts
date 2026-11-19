@@ -163,7 +163,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       return new SourceTextModule(code.code, { context });
     }
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
-        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
+        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string, opts?: { placement?: string }) => { el.attrs.tooltip = el.attrs['aria-label'] = text; if (opts?.placement) el.attrs['data-tooltip-position'] = opts.placement; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
       : specifier === './graph3d.ts' ? { Graph3DCanvas: Canvas }
       : specifier === './explorer.ts' ? { ExplorerCanvas: Canvas }
@@ -1937,18 +1937,26 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
   assert.equal(legend().hidden, false);
   assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
+  assert.equal(legend().attrs['data-tooltip-position'], 'right');
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
   assert.equal(swatches()[0].css['--legend-color'], '#ef4444');
   assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')));
   const picker = swatches()[0].children[0];
   assert.equal(picker.attrs.type, 'color');
-  assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
+  assert.equal(picker.attrs['aria-label'], undefined, 'swatch picker omits aria-label so Obsidian does not show a blocking black hover tooltip');
+  assert.equal(picker.attrs.title, 'Change root · 0 color', 'swatch picker preserves native Chromium title tooltip');
+  picker.events.get('mouseover')!();
+  assert.equal(legend().attrs['aria-label'], undefined, 'hovering a swatch suppresses the parent Obsidian tooltip while title is shown');
+  picker.events.get('mouseout')!();
+  assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
   picker.value = '#112233'; picker.events.get('change')!();
   assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
   assert.ok(legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'editing a swatch reveals the save action');
-  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
-  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
+  const rows = () => legend().all().filter(el => el.tag === 'li');
+  assert.ok(rows().every(el => el.attrs['aria-label'] === undefined), 'rows omit aria-label so hovering the depth list shows the legend tooltip');
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Root · 0'));
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Level 7 and deeper'));
   t.owner.settings.expanded = [];
   t.controller.refresh();
   assert.equal(swatches().length, 8);
@@ -1971,7 +1979,7 @@ test('the depth legend expands to match a longer palette', async () => {
   t.controller.attach();
   const legend = t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
   assert.equal(legend.all().filter(el => el.classes.has('tag-ontology-legend-swatch')).length, 12);
-  assert.ok(legend.all().some(el => el.attrs['aria-label'] === 'Level 11 and deeper'));
+  assert.ok(legend.all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Level 11 and deeper'));
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });
 
@@ -2224,6 +2232,7 @@ test('graph palette picker lists named snapshots and working copy, and save open
   const picker = () => legend().all().find(el => el.classes.has('tag-ontology-legend-palette'))!;
   assert.ok(picker());
   assert.equal(picker().attrs.icon, 'palette');
+  assert.equal(picker().attrs['data-tooltip-position'], 'right');
   assert.equal(picker().text, '');
   assert.equal(picker().attrs['aria-haspopup'], 'menu');
   assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'presets hide the save icon');
@@ -2250,6 +2259,7 @@ test('graph palette picker lists named snapshots and working copy, and save open
   assert.equal(t.owner.settings.hierarchyPalette[0], '#654321');
   const save = legend().all().find(el => el.classes.has('tag-ontology-legend-save'))!;
   assert.equal(save.attrs.icon, 'bookmark-plus');
+  assert.equal(save.attrs['data-tooltip-position'], 'right');
   assert.equal(save.text, '');
   assert.match(picker().attrs['aria-label'], /unsaved/);
   t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
