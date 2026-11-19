@@ -4,6 +4,7 @@ import { t } from './i18n/index.ts';
 import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export type DisplayChangeKind = 'arrows' | 'fade' | 'nodeSize' | 'linkThickness' | 'labels' | 'reset';
+export type Sync3dChange = 'filters' | 'forces' | 'dragTension' | DisplayChangeKind;
 type SectionKey = 'filters' | 'display' | 'forces';
 type FilterToggleKey = 'attachments' | 'existingOnly' | 'orphans';
 
@@ -62,10 +63,10 @@ export class Controls3D {
     this.render();
   }
 
-  /** Cancel pending debounced filter/save timers on view teardown. */
+  /** Flush pending state saves and cancel pending debounced filter redraws on teardown. */
   destroy() {
     this.debouncedFilter.cancel();
-    this.debouncedSave.cancel();
+    this.debouncedSave.run();
   }
 
   private saveNow() {

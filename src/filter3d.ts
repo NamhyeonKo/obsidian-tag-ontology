@@ -40,19 +40,24 @@ const stemOf = (path: string): string => {
 };
 
 const tagMatches = (tag: string, query: string): boolean => tag === query || tag.startsWith(`${query}/`);
+const matchAnyTag = (tag: string, query: string): boolean =>
+  query.startsWith('#') ? query.length > 1 && tagMatches(tag, query.slice(1)) : tag.includes(query);
 
 function noteMatchesTerm(id: string, tags: readonly string[], term: QueryTerm): boolean {
   if (term.field === 'path') return id.toLowerCase().includes(term.value);
   if (term.field === 'file') return stemOf(id).includes(term.value);
   if (term.field === 'tag') return tags.some(tag => tagMatches(tag, term.value));
-  return id.toLowerCase().includes(term.value) || tags.some(tag => tag.includes(term.value));
+  return id.toLowerCase().includes(term.value) || tags.some(tag => matchAnyTag(tag, term.value));
 }
 
 function tagMatchesDirect(tagName: string, terms: readonly QueryTerm[]): boolean {
+  const hasPositiveTag = terms.some(term => !term.negate && (term.field === 'tag' || term.field === 'any'));
+  const hasPositiveScope = terms.some(term => !term.negate && (term.field === 'path' || term.field === 'file'));
+  if (!hasPositiveTag || hasPositiveScope) return false;
   for (const term of terms) {
     const matched = term.field === 'tag'
       ? tagMatches(tagName, term.value)
-      : term.field === 'any' && tagName.includes(term.value);
+      : term.field === 'any' && matchAnyTag(tagName, term.value);
     if (term.negate ? matched : !matched) return false;
   }
   return true;

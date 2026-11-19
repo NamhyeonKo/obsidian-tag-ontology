@@ -263,7 +263,7 @@ const fr = {
   'controls3d.attachments': 'Pièces jointes',
   'controls3d.attachmentsTooltip': 'Afficher les pièces jointes incluses dans les notes',
   'controls3d.existingOnly': 'Fichiers existants uniquement',
-  'controls3d.existingOnlyTooltip': 'Si cochés, les liens vers des fichiers inexistants ne seront pas affichés',
+  'controls3d.existingOnlyTooltip': 'Si coché, les liens vers des fichiers inexistants ne seront pas affichés',
   'controls3d.orphans': 'Orphelins',
   'controls3d.orphansTooltip': 'Afficher les fichiers qui ne sont liés à aucun autre fichier',
   'controls3d.displaySection': 'Afficher',

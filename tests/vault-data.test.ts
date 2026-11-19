@@ -44,3 +44,18 @@ test('includes unresolved link targets when includeUnresolved is enabled', () =>
   assert.deepEqual(nodes['A.md'], { type: '', links: { 'Future Note': true } });
   assert.deepEqual(nodes['Future Note'], { type: 'unresolved', links: {} });
 });
+
+test('handles Object.prototype key names and ignores __proto__ in unresolved and attachment targets', () => {
+  const { nodes } = vaultData(
+    [{ path: 'A.md', tags: [], links: ['valueOf'], unresolved: ['constructor', 'toString', '__proto__'] }],
+    { includeAttachments: true, attachments: ['valueOf'], includeUnresolved: true },
+  );
+  assert.equal(Object.hasOwn(nodes, 'constructor'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'constructor')?.value?.type, 'unresolved');
+  assert.equal(Object.hasOwn(nodes, 'toString'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'toString')?.value?.type, 'unresolved');
+  assert.equal(Object.hasOwn(nodes, 'valueOf'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'valueOf')?.value?.type, 'attachment');
+  assert.equal(Object.hasOwn(nodes, '__proto__'), false);
+  assert.deepEqual(nodes['A.md'].links, { valueOf: true, constructor: true, toString: true });
+});

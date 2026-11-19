@@ -100,13 +100,19 @@ export default class TagOntologyPlugin extends Plugin {
         : this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile; } catch { notify = false; }
       await this.refreshViews({ notify });
     }); });
+    const isAttachmentFile = (file: { path: string; children?: unknown }) => this.settings.filters3d.attachments
+      && !('children' in file) && !isHiddenPath(file.path) && !file.path.toLowerCase().endsWith('.md');
     const relevant = (path: string) => this.isDictionaryFile(path) || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
+    const changedOrAttachment = (file: { path: string; children?: unknown }) => {
+      if (relevant(file.path) || isAttachmentFile(file)) this.scheduleRefresh(file.path);
+    };
     this.registerEvent(this.app.vault.on('modify', changed));
-    this.registerEvent(this.app.vault.on('create', changed));
-    this.registerEvent(this.app.vault.on('delete', changed));
+    this.registerEvent(this.app.vault.on('create', changedOrAttachment));
+    this.registerEvent(this.app.vault.on('delete', changedOrAttachment));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-      if (relevant(file.path) || relevant(oldPath)) this.scheduleRefresh(file.path, oldPath);
+      const attachmentRenamed = isAttachmentFile(file) || (this.settings.filters3d.attachments && !isHiddenPath(oldPath) && !oldPath.toLowerCase().endsWith('.md'));
+      if (relevant(file.path) || relevant(oldPath) || attachmentRenamed) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
     // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
@@ -264,7 +270,7 @@ export default class TagOntologyPlugin extends Plugin {
     const resolved = this.app.metadataCache.resolvedLinks;
     const unresolved = includeUnresolved ? this.app.metadataCache.unresolvedLinks : undefined;
     const attachments = includeAttachments
-      ? (this.app.vault.getFiles?.() ?? []).filter(file => file.extension !== 'md' && !isHiddenPath(file.path)).map(file => file.path)
+      ? (this.app.vault.getFiles?.() ?? []).filter(file => file.extension.toLowerCase() !== 'md' && !isHiddenPath(file.path)).map(file => file.path)
       : undefined;
     return vaultData(
       this.notes().map(note => ({

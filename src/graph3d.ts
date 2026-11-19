@@ -10,7 +10,7 @@ import { DOUBLE_CLICK_MS, coveredEdges, type LinkedGraph } from './native.ts';
 import { DEFAULT_SETTINGS, cssColorToHex } from './settings.ts';
 import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 import { applySearchFilter, removeOrphans } from './filter3d.ts';
-import { Controls3D, type DisplayChangeKind } from './controls3d.ts';
+import { Controls3D, type DisplayChangeKind, type Sync3dChange } from './controls3d.ts';
 import { t } from './i18n/index.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
@@ -117,6 +117,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private visible = false;
   private pendingDraw?: string;
   private pendingRecolor = false;
+  private pendingSync3d = false;
   private controlsPanel?: Controls3D;
   private syncModes = () => {};
   private get app() { return this.owner.app; }
@@ -150,18 +151,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // The same mode controls as the core graph and ontology explorer.
     tools.createDiv('tag-ontology-separator');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
+    const change3d = (kind: Sync3dChange) => { this.apply3d(kind); this.owner.native.sync3d?.(this, kind); };
     this.controlsPanel = new Controls3D(root, this.owner, {
-      onFilters: () => this.draw('settings'),
-      onDisplay: kind => this.applyDisplay(kind),
-      onForces: () => { this.applyForces(); this.graph?.d3ReheatSimulation(); },
-      onDragTension: () => this.syncDragMode(),
-      onResetAll: () => {
-        this.draw('settings');
-        this.applyDisplay('reset');
-        this.syncDragMode();
-        this.applyForces();
-        this.graph?.d3ReheatSimulation();
-      },
+      onFilters: () => change3d('filters'),
+      onDisplay: kind => change3d(kind),
+      onForces: () => change3d('forces'),
+      onDragTension: () => change3d('dragTension'),
+      onResetAll: () => change3d('reset'),
     });
     this.colors = this.readColors(); this.font = this.readFont();
     this.status.setText('Loading the graph…');
@@ -254,6 +250,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   setVisible(visible: boolean) {
     this.visible = visible;
+    if (visible) this.controlsPanel?.sync();
     this.flushDraw();
     if (visible && this.stage?.clientWidth && this.stage.clientHeight) this.graph?.width(this.stage.clientWidth).height(this.stage.clientHeight).resumeAnimation();
     else this.graph?.pauseAnimation();
@@ -265,8 +262,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private flushDraw() {
     if (!this.isVisible()) return;
     if (this.pendingRecolor) this.recolor();
-    if (!this.pendingDraw) return;
-    const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
+    let reshaped = false;
+    if (this.pendingDraw) {
+      const prevShape = this.shape;
+      const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
+      reshaped = this.shape !== prevShape;
+    }
+    if (this.pendingSync3d) {
+      this.pendingSync3d = false;
+      if (!reshaped) this.applyDisplay('reset');
+      this.syncDragMode();
+      this.applyForces();
+    }
   }
 
   // The WebGL context and GPU resources go with the graph tab.
@@ -295,7 +302,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.thickLinks = undefined;
     this.cylinder = undefined; this.thickLinkMaterial = undefined; this.baseKey = undefined;
     this.nodes.clear(); this.links = []; this.shape = undefined;
-    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false;
+    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false; this.pendingSync3d = false;
     this.controlsPanel?.destroy(); this.controlsPanel = undefined;
     this.contentEl.empty();
   }
@@ -431,7 +438,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     else if (item.type === 'attachment' && !double) {
       const file = this.app.vault.getAbstractFileByPath(item.id);
-      if (file instanceof TFile) void this.app.workspace.getLeaf('tab').openFile(file);
+      if (file instanceof TFile) void Promise.resolve(this.app.workspace.getLeaf('tab').openFile(file)).catch(error => console.error('Tag Ontology:', error));
     }
     else if (item.type === '' && !double) native.openNote(item.id);
   }
@@ -631,7 +638,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const three = this.three, arrows = this.arrows;
     if (!three || !arrows) return;
     this.syncLinkAppearance();
-    const color = new three.Color();
+    const color = this.dotColor ??= new three.Color();
     if (this.displaySettings.linkThickness > 1 && this.thickLinks) {
       this.links.forEach((link, index) => {
         const base = this.lineColor(link);
@@ -838,6 +845,33 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.controlsPanel?.refreshLocale();
   }
 
+  /** Apply a 3D settings change initiated in another 3D tab. */
+  sync3d(change: Sync3dChange) {
+    this.apply3d(change, true);
+  }
+
+  private apply3d(change: Sync3dChange, syncControls = false) {
+    if (syncControls) this.controlsPanel?.sync();
+    if (!this.isVisible()) {
+      if (change === 'filters' || change === 'reset') this.pendingDraw = this.pendingDraw === 'refresh' ? 'refresh' : 'settings';
+      if (change !== 'filters' && change !== 'fade' && change !== 'labels') this.pendingSync3d = true;
+      return;
+    }
+    if (change === 'filters') { this.draw('settings'); return; }
+    if (change === 'forces') { this.applyForces(); this.graph?.d3ReheatSimulation(); return; }
+    if (change === 'dragTension') { this.syncDragMode(); return; }
+    if (change === 'reset') {
+      const prevShape = this.shape;
+      this.draw('settings');
+      if (this.shape === prevShape) this.applyDisplay('reset');
+      this.syncDragMode();
+      this.applyForces();
+      this.graph?.d3ReheatSimulation();
+      return;
+    }
+    this.applyDisplay(change);
+  }
+
   private syncLinkAppearance() {
     const thickness = this.displaySettings.linkThickness, thick = thickness > 1;
     const opacity = thick ? 1 : Math.max(0.1, Math.min(1, thickness));
@@ -875,7 +909,6 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     if (kind === 'nodeSize') {
       this.applyNodeSize();
-      this.colorLinks();
       return;
     }
     if (kind === 'linkThickness') {

@@ -3,6 +3,7 @@ import { mindmapPositions } from './mindmap-layout.ts';
 import { renderDepthLegend } from './legend.ts';
 import { graphModeBar, modeEnabled, type GraphMode } from './graph-modes.ts';
 import { Graph3DCanvas } from './graph3d.ts';
+import type { Sync3dChange } from './controls3d.ts';
 import { ExplorerCanvas } from './explorer.ts';
 import { ItemView, Modal, Notice, TFile, setIcon, setTooltip, type App, type WorkspaceLeaf } from 'obsidian';
 import { treePositions } from './layout.ts';
@@ -95,6 +96,8 @@ export interface LinkedGraph {
   fit?(): void;
   // Re-render localized UI controls inside the linked view.
   refreshLocale?(): void;
+  // Apply a 3D settings change initiated in another 3D tab.
+  sync3d?(change: Sync3dChange): void;
   // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
   renamed?(from: string, to: string): void;
 }
@@ -499,6 +502,14 @@ export class NativeGraphs {
   drawLinked(operation: string) {
     for (const view of this.linked) {
       try { view.draw(operation); } catch (error) { console.error('Tag Ontology:', error); }
+    }
+  }
+
+  // Forward a 3D settings panel change to every other open 3D view.
+  sync3d(source: LinkedGraph, change: Sync3dChange) {
+    for (const view of this.linked) {
+      if (view === source) continue;
+      try { view.sync3d?.(change); } catch (error) { console.error('Tag Ontology:', error); }
     }
   }
 

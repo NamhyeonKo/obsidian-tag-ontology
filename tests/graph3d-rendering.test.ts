@@ -21,14 +21,14 @@ interface Renderer {
   arrows: THREE.InstancedMesh; pointed?: unknown[]; thickLinks?: THREE.InstancedMesh;
   cylinder?: THREE.CylinderGeometry; thickLinkMaterial?: THREE.MeshLambertMaterial;
   dotsDirty?: boolean; linksDirty?: boolean;
-  buildLinks(): void; placeLinks(): void; colorLinks(): void; frame(): void; onunload(): void;
+  buildLinks(): void; placeLinks(): void; colorLinks(): void; frame(): void; sync3d(change: string): void; onunload(): void;
 }
 async function setup(owner: object = {}) {
   const context = createContext({ performance: { now: () => 0 }, window: { setTimeout: () => 0, clearTimeout: () => {} } });
   const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
-    const exports = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Setting: class {}, TFile: class {}, debounce: () => Object.assign(() => {}, { cancel() {} }), setIcon() {}, setTooltip() {} }
+    const exports = specifier === 'obsidian' ? { Component: class {}, ItemView: class {}, Setting: class {}, TFile: class {}, debounce: () => Object.assign(() => {}, { cancel() {}, run() {} }), setIcon() {}, setTooltip() {} }
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() {} }
       : specifier === './controls3d.ts' ? { Controls3D: class { sync() {} refreshLocale() {} destroy() {} } }
@@ -178,7 +178,7 @@ async function openCanvas(opts: {
       addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; }
       addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; }
     },
-    debounce: (fn: () => void) => Object.assign(() => fn(), { cancel() {} }),
+    debounce: (fn: () => void) => Object.assign(() => fn(), { cancel() {}, run() {} }),
     setIcon(el: El, id: string) { el.attrs.icon = id; },
     setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
   };
@@ -797,6 +797,23 @@ test('display3d.linkThickness switches between thin line opacity and InstancedMe
   assert.equal(canvas.dashes.visible, false);
   assert.equal(canvas.thickLinks?.visible, true);
   assert.equal(canvas.thickLinks?.count, 2);
+  const m0 = new THREE.Matrix4(), m1 = new THREE.Matrix4();
+  const s0 = new THREE.Vector3(), s1 = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Quaternion();
+  canvas.thickLinks!.getMatrixAt(0, m0); m0.decompose(p, q, s0);
+  canvas.thickLinks!.getMatrixAt(1, m1); m1.decompose(p, q, s1);
+  assert.ok(Math.abs(s1.x / s0.x - 0.65) < 1e-5, 'related links use 0.65 radius factor when thick');
+  const arrowM = new THREE.Matrix4(), arrowS = new THREE.Vector3();
+  canvas.arrows.getMatrixAt(0, arrowM); arrowM.decompose(p, q, arrowS);
+  assert.ok(Math.abs(arrowS.x - (1 + (3 - 1) * 0.15)) < 1e-5, 'arrows scale up gently for thick links');
+  assert.equal(canvas.arrowMaterial.opacity, 1);
+
+  toggles.get('Link thickness')!(0.5);
+  assert.equal(canvas.thickLinks?.visible, false);
+  assert.equal(canvas.lines.visible, true);
+  assert.equal(canvas.dashes.visible, true);
+  assert.equal(canvas.arrowMaterial.opacity, 0.5);
+  canvas.arrows.getMatrixAt(0, arrowM); arrowM.decompose(p, q, arrowS);
+  assert.ok(Math.abs(arrowS.x - 1) < 1e-5, 'arrows reset to unit scale when switching thick -> thin');
 
   const disposed = new Set<object>();
   for (const res of [canvas.cylinder, canvas.thickLinkMaterial, canvas.thickLinks]) {
@@ -897,6 +914,16 @@ test('filters3d filters nodes, requests attachments/unresolved from graphData, o
   assert.equal(canvas.nodes.has('notes/a.md'), true);
   toggles.get('search')!('-path:notes');
   assert.equal(canvas.nodes.has('notes/a.md'), false);
+  assert.equal(canvas.nodes.has('#root'), false, 'negated path filter does not leak excluded note tags');
+
+  toggles.get('search')!('');
+  assert.equal(canvas.nodes.has('#root'), true);
+  assert.equal(canvas.arrows.count, 0);
+  canvas.setVisible(false);
+  owner.settings.display3d = { ...owner.settings.display3d, arrows: true };
+  canvas.sync3d('reset');
+  canvas.setVisible(true);
+  assert.equal(canvas.arrows.count, 3);
 
   triggerClick({ id: 'Missing', type: 'unresolved' });
   assert.equal(opened.length, 0, 'clicking unresolved node does nothing');

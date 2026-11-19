@@ -47,6 +47,21 @@ test('filters notes and tags cleanly by path, file, tag, text, and negation', ()
   const byPlainTag = applySearchFilter(data, 'html');
   assert.deepEqual(Object.keys(byPlainTag.nodes), ['#html']);
 
+  const byHash = applySearchFilter(data, '#ml');
+  assert.deepEqual(Object.keys(byHash.nodes).sort(), ['#ml', '#ml/dl', 'archive/old.md', 'notes/alpha.md']);
+
+  const byNegatedHash = applySearchFilter(data, '-#draft');
+  assert.deepEqual(Object.keys(byNegatedHash.nodes).sort(), ['#ml', 'archive/old.md', 'assets/diagram.png', 'notes/alpha.md']);
+
+  const byNegatedPath = applySearchFilter(data, '-path:notes');
+  assert.deepEqual(Object.keys(byNegatedPath.nodes).sort(), ['#ml', 'archive/old.md', 'assets/diagram.png']);
+
+  const byNegatedAll = applySearchFilter(data, '-tag:draft -tag:ml');
+  assert.deepEqual(Object.keys(byNegatedAll.nodes), ['assets/diagram.png']);
+
+  const byEmptyScope = applySearchFilter(data, 'path:missing #ml');
+  assert.deepEqual(Object.keys(byEmptyScope.nodes), []);
+
   assert.equal(applySearchFilter(data, ''), data);
 });
 

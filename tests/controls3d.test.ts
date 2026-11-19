@@ -153,6 +153,7 @@ async function setup(initial?: Partial<settings.Settings>) {
       Setting,
       debounce: (fn: () => void) => Object.assign(() => { pending.add(fn); }, {
         cancel: () => { if (pending.delete(fn)) cancelled++; },
+        run: () => { if (pending.delete(fn)) fn(); },
       }),
       setIcon: (el: El, id: string) => { el.attrs.icon = id; },
       setTooltip: (el: El, text: string) => { el.attrs['aria-label'] = text; },
@@ -299,7 +300,12 @@ test('sync updates controls on open, refreshLocale preserves panel/collapse stat
     i18n.setLocale('en');
   }
 
+  const savesBeforeDestroy = t.owner.saves;
+  t.calls.length = 0;
   t.records.find(r => r.kind === 'search')!.fire('unsaved');
   t.controls.destroy();
   assert.ok(t.cancelled() >= 1);
+  assert.equal(t.owner.saves, savesBeforeDestroy + 1, 'destroy flushes pending debouncedSave');
+  t.flush();
+  assert.deepEqual(t.calls, [], 'destroy cancels pending debouncedFilter');
 });
