@@ -12,6 +12,7 @@ import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
 import { groupNonCanonical, groupRedundant } from './check.ts';
 import { TAKE_OUT, relativeTime } from './explorer-layout.ts';
+import { t, tPlural, translateTagNameError } from './i18n/index.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -92,6 +93,8 @@ export interface LinkedGraph {
   focusOn(tag: string): void;
   // Frame everything currently shown in this graph.
   fit?(): void;
+  // Re-render localized UI controls inside the linked view.
+  refreshLocale?(): void;
   // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
   renamed?(from: string, to: string): void;
 }
@@ -134,7 +137,6 @@ const sameSet = (a?: Set<string>, b?: Set<string>) => a === b || (!!a && !!b && 
 // The renderer's color format. The core graph redraws for every node whose color is a different object, so each color is made once.
 const colors = new Map<string, NodeColor>();
 const hexColor = (hex: string): NodeColor => colors.get(hex) ?? colors.set(hex, { a: 1, rgb: parseInt(hex.slice(1), 16) }).get(hex)!;
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 // The draft with the alias still being typed, so typing one and pressing Save keeps it.
 function typed(mode: Mode): Draft {
   const alias = mode.alias?.trim();
@@ -212,10 +214,10 @@ export class NativeGraphs {
     if (this.saving) return;
     const mode = this.mode, changes = mode?.kind === 'edit' ? changedFields(mode.base, mode.tag, typed(mode)) : 0;
     if (mode?.kind !== 'edit' || !changes) { this.mode = undefined; next(); return; }
-    new ChoiceModal(this.owner.app, `${count(changes, 'change', 'changes')} to #${mode.tag} ${changes === 1 ? 'is' : 'are'} not saved`, [], [
-      { text: 'Keep editing', action: () => {} },
-      { text: 'Discard', action: () => { this.mode = undefined; next(); } },
-      { text: 'Save', cls: 'mod-cta', action: () => { void this.save().then(saved => { if (saved) next(); }); } },
+    new ChoiceModal(this.owner.app, tPlural('sidebar.unsavedModalTitle', changes, { tag: mode.tag }), [], [
+      { text: t('sidebar.keepEditing'), action: () => {} },
+      { text: t('sidebar.discard'), action: () => { this.mode = undefined; next(); } },
+      { text: t('common.save'), cls: 'mod-cta', action: () => { void this.save().then(saved => { if (saved) next(); }); } },
     ]).open();
   }
 
@@ -231,7 +233,7 @@ export class NativeGraphs {
       const view = leaf.view as unknown as NativeView, r = view.renderer;
       if (!r || typeof r.setData !== 'function' || typeof r.onNodeClick !== 'function'
         || !r.worker || !Array.isArray(r.nodes) || !Array.isArray(r.links)) {
-        new Notice('Could not attach to the core graph in this Obsidian version.');
+        new Notice(t('notice.attachCoreFailed'));
         this.failed.add(leaf);
         continue;
       }
@@ -370,7 +372,7 @@ export class NativeGraphs {
   // The tab goes back to the core graph and stays with it until the plugin loads again.
   private fail(leaf: WorkspaceLeaf, error: unknown) {
     this.failed.add(leaf); this.detach(leaf, true);
-    new Notice(`Detached the tag ontology from the graph: ${String(error)}`);
+    new Notice(t('notice.detachedGraph', { error: String(error) }));
   }
 
   // Note edits only change counts and note lists; the core graph re-sends its own data for them, so only redraw for the dictionary or settings.
@@ -423,7 +425,7 @@ export class NativeGraphs {
   async switchMode(leaf: WorkspaceLeaf, mode: GraphMode | '2d'): Promise<void> {
     const session = this.sessions.get(leaf);
     if (!session) {
-      if (leaf.view.getViewType() === 'graph') new Notice('The graph is not ready. Try switching modes again.');
+      if (leaf.view.getViewType() === 'graph') new Notice(t('notice.graphNotReady'));
       else await this.owner.openView(mode, false, leaf);
       return;
     }
@@ -460,7 +462,7 @@ export class NativeGraphs {
       if (!session.active || session.canvases.get(mode) !== entry) return;
       entry.graph.unload(); entry.root.remove(); session.canvases.delete(mode);
       if (session.mode === mode) session.mode = '2d';
-      new Notice(`Could not open the graph: ${String(error)}`);
+      new Notice(t('notice.openGraphFailed', { error: String(error) }));
     }
     if (session.active) this.showMode(session);
   }
@@ -504,9 +506,9 @@ export class NativeGraphs {
   mount(el: HTMLElement) {
     el.empty(); el.addClass('tag-ontology-sidebar');
     const bar = el.createDiv('tag-ontology-nav');
-    this.nav.back = this.navButton(bar, 'arrow-left', 'Back', () => this.step(-1));
-    this.nav.forward = this.navButton(bar, 'arrow-right', 'Forward', () => this.step(1));
-    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => {
+    this.nav.back = this.navButton(bar, 'arrow-left', t('sidebar.back'), () => this.step(-1));
+    this.nav.forward = this.navButton(bar, 'arrow-right', t('sidebar.forward'), () => this.step(1));
+    this.nav.home = this.navButton(bar, 'home', t('sidebar.home'), () => this.leave(() => {
       window.clearTimeout(this.centerTimer);
       this.go({ kind: 'roots' });
       this.showSelection();
@@ -514,10 +516,10 @@ export class NativeGraphs {
       for (const view of this.linked) if (view.isVisible?.() !== false) view.fit?.();
     }));
     bar.createDiv('tag-ontology-spacer');
-    this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
-    this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
+    this.nav.add = this.navButton(bar, 'plus', t('sidebar.newTag'), () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
+    this.nav.edit = this.navButton(bar, 'pencil', t('sidebar.editTag'), () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
     // With no graph on screen, expanding would change a graph nobody sees, so the button opens one instead.
-    this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
+    this.nav.expand = this.navButton(bar, 'circle-small', t('sidebar.expandInGraph'), () => {
       const tag = this.selected;
       if (!this.graphShown()) { void this.owner.openView().then(() => { if (!this.destroyed && tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
       if (tag) {
@@ -526,20 +528,46 @@ export class NativeGraphs {
       }
     });
     this.nav.expand.addClass('tag-ontology-expand');
-    const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+    const placeholder = t('sidebar.searchPlaceholder');
+    const search = this.searchBox = el.createEl('input', { type: 'search', placeholder, attr: { 'aria-label': placeholder } });
     new TagSuggest(this.owner.app, search, query => this.owner.model?.suggest(query) ?? [], tag => this.reveal(tag));
     search.addEventListener('keydown', e => {
       // An open popover handles Enter first and clears the input; this covers a closed popover (e.g. after Escape).
       // Enter that commits an IME composition (e.g. Korean) is not a submit; Obsidian's own suggest skips it too.
       if (e.key !== 'Enter' || e.isComposing || !search.value.trim()) return;
       const [first] = this.owner.model?.suggest(search.value) ?? [];
-      if (!first) { new Notice('No matching dictionary tag.'); return; }
+      if (!first) { new Notice(t('notice.noMatchingTag')); return; }
       search.value = '';
       this.reveal(first.tag);
     });
     this.panel = el.createDiv('tag-ontology-panel');
     // Obsidian mounts again when the tab is reopened; an open form comes back with it.
     if (this.mode) this.drawForm(); else this.renderPanel();
+  }
+
+  refreshLocale() {
+    for (const [button, key] of [
+      ['back', 'sidebar.back'], ['forward', 'sidebar.forward'], ['home', 'sidebar.home'], ['add', 'sidebar.newTag'], ['edit', 'sidebar.editTag'],
+    ] as const) {
+      if (this.nav[button]) setTooltip(this.nav[button], t(key), { placement: 'bottom' });
+    }
+    if (this.searchBox) {
+      const placeholder = t('sidebar.searchPlaceholder');
+      this.searchBox.setAttribute('placeholder', placeholder);
+      this.searchBox.setAttribute('aria-label', placeholder);
+    }
+    this.syncNav();
+    if (this.mode) this.drawForm(false);
+    else this.renderPanel();
+    const refreshed = new Set<object>();
+    for (const view of this.linked) { refreshed.add(view); view.refreshLocale?.(); }
+    for (const session of this.sessions.values()) {
+      for (const entry of session.canvases.values()) {
+        if (refreshed.has(entry.graph)) continue;
+        refreshed.add(entry.graph);
+        (entry.graph as { refreshLocale?(): void }).refreshLocale?.();
+      }
+    }
   }
 
   // The panel is a sidebar tab the user can drag to either side; Obsidian reuses it wherever it is.
@@ -842,12 +870,12 @@ export class NativeGraphs {
   private reveal(tag: string) {
     if (this.mode) { this.leave(() => this.reveal(tag)); return; }
     // Suggestions can outlive a dictionary reload that removed the tag.
-    if (!this.owner.model?.entries.has(tag)) { new Notice('That tag is no longer in the dictionary.'); return; }
+    if (!this.owner.model?.entries.has(tag)) { new Notice(t('notice.tagGone')); return; }
     this.go({ kind: 'tag', tag });
     // Expansion is shared by every graph tab; with no graph open it is saved for the next one.
     const sessions = [...this.sessions.values()], linked = [...this.linked];
     if (sessions.length + linked.length && !sessions.some(s => s.resolved?.range.has(tag)) && !linked.some(view => view.has(tag))) {
-      new Notice('Not in the current graph.'); this.showSelection(); return;
+      new Notice(t('notice.notInGraph')); this.showSelection(); return;
     }
     // An expanded ancestor can still sit under a collapsed one, so walk every ancestor.
     const session = this.activeSession(), expanded = new Set(session?.mode === '2d' ? this.settingsFor(session).expanded : this.owner.settings.expanded), pending = [tag], seen = new Set<string>();
@@ -944,11 +972,11 @@ export class NativeGraphs {
   }
 
   private home(panel: HTMLElement, model: Ontology) {
-    panel.createEl('h4', { text: `Root tags (${model.roots.length})` });
+    panel.createEl('h4', { text: t('sidebar.rootTags', { count: model.roots.length }) });
     this.tagLinks(panel, model.roots);
     panel.createEl('hr');
     const tags = [...model.entries.keys()].sort((a, b) => a.localeCompare(b));
-    panel.createEl('h4', { text: `All tags (${tags.length})` });
+    panel.createEl('h4', { text: t('sidebar.allTags', { count: tags.length }) });
     // Digits share one group; anything else that is not a-z (another script) goes under its own first letter.
     const groups = new Map<string, string[]>();
     for (const tag of tags) {
@@ -970,18 +998,17 @@ export class NativeGraphs {
 
   // Creating is left to the user: a file that is still syncing looks missing too, and it shows up here on its own when it arrives.
   private notFound(panel: HTMLElement) {
-    panel.createEl('h4', { text: 'Tag dictionary not found' });
-    panel.createEl('p', { text: `${this.owner.dictionaryPath} is not in the vault. If the vault is still syncing, the dictionary appears here once the file arrives. You can change the path in the plugin settings.` });
-    const create = panel.createEl('button', { text: 'Create empty dictionary', cls: 'mod-cta' });
+    panel.createEl('h4', { text: t('sidebar.notFoundTitle') });
+    panel.createEl('p', { text: t('sidebar.notFoundBody', { path: this.owner.dictionaryPath }) });
+    const create = panel.createEl('button', { text: t('sidebar.createEmpty'), cls: 'mod-cta' });
     create.addEventListener('click', () => { create.disabled = true; void this.owner.createDictionary().finally(() => { create.disabled = false; }); });
   }
 
   // A dictionary that stops loading leaves the last version that loaded on show, under the reason; fixing the file reloads it.
   private loadError(panel: HTMLElement, error: string) {
-    panel.createEl('h4', { text: 'Could not load the tag dictionary' });
+    panel.createEl('h4', { text: t('sidebar.loadErrorTitle') });
     panel.createEl('p', { text: error, cls: 'tag-ontology-error' });
-    const shown = this.owner.model ? 'The graph and this panel show the last version that loaded. ' : '';
-    panel.createEl('p', { text: `${shown}Fix the file and this updates on its own. New tag and Edit tag are off until then.`, cls: 'tag-ontology-muted' });
+    panel.createEl('p', { text: t(this.owner.model ? 'sidebar.loadErrorHintWithLast' : 'sidebar.loadErrorHint'), cls: 'tag-ontology-muted' });
     if (this.owner.model) panel.createEl('hr');
   }
 
@@ -999,15 +1026,22 @@ export class NativeGraphs {
     panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
     const counts = model.counts(tag);
-    panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
-    for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', model.related(tag)]] as const) {
+    panel.createEl('h4', { text: t('sidebar.directAndRollup', { direct: counts.direct, rollup: counts.rollup }) });
+    for (const [key, label, tags] of [
+      ['parents', t('sidebar.parentsSection', { count: (entry.broader ?? []).length }), entry.broader ?? []],
+      ['children', t('sidebar.childrenSection', { count: (model.children.get(tag) ?? []).length }), model.children.get(tag) ?? []],
+      ['related', t('sidebar.relatedSection', { count: model.related(tag).length }), model.related(tag)],
+    ] as const) {
       if (!tags.length) continue;
-      this.tagLinks(this.details(panel, label, `${label} ${tags.length}`), tags);
+      this.tagLinks(this.details(panel, key, label), tags);
     }
     panel.createEl('hr');
-    for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
+    for (const [rollup, key, labelKey] of [
+      [false, 'tagged-notes', 'sidebar.taggedNotesSection'],
+      [true, 'descendant-notes', 'sidebar.includingDescendantsSection'],
+    ] as const) {
       const paths = model.notesFor(tag, rollup);
-      this.noteLinks(this.details(panel, label, `${label} (${paths.length})`), paths);
+      this.noteLinks(this.details(panel, key, t(labelKey, { count: paths.length })), paths);
     }
   }
 
@@ -1016,7 +1050,7 @@ export class NativeGraphs {
     panel.createEl('p', { text: path, cls: 'tag-ontology-muted' });
     const tags = model.tagsOf(path);
     if (tags.length) this.tagLinks(panel, tags);
-    panel.createEl('button', { text: 'Open note', cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
+    panel.createEl('button', { text: t('sidebar.openNote'), cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
   }
 
   // A group's notes, newest first: filter them by name, tick some to take out, or take the latest out.
@@ -1024,8 +1058,9 @@ export class NativeGraphs {
     const state = this.groupState?.key === tag ? this.groupState : (this.groupState = { key: tag, query: '', checked: new Set() });
     const present = new Set(notes.map(note => note.path));
     for (const path of state.checked) if (!present.has(path)) state.checked.delete(path);
-    panel.createEl('h3', { text: `${count(notes.length, 'note', 'notes')} · #${tag}` });
-    const filter = panel.createEl('input', { type: 'search', placeholder: 'Filter notes', attr: { 'aria-label': 'Filter notes' } });
+    panel.createEl('h3', { text: tPlural('sidebar.groupTitle', notes.length, { tag }) });
+    const filterLabel = t('sidebar.filterNotes');
+    const filter = panel.createEl('input', { type: 'search', placeholder: filterLabel, attr: { 'aria-label': filterLabel } });
     filter.value = state.query;
     const list = panel.createEl('ul', { cls: 'tag-ontology-group' }), now = Date.now();
     let rows: { input: HTMLInputElement; path: string }[] = [];
@@ -1047,46 +1082,46 @@ export class NativeGraphs {
     filter.addEventListener('input', () => { state.query = filter.value; draw(); });
     draw();
     const buttons = panel.createDiv('tag-ontology-group-buttons');
-    buttons.createEl('button', { text: 'Take out selected', cls: 'mod-cta' }).addEventListener('click', () => {
+    buttons.createEl('button', { text: t('sidebar.takeOutSelected'), cls: 'mod-cta' }).addEventListener('click', () => {
       const picked = rows.filter(row => row.input.checked).map(row => row.path);
       for (const path of picked) state.checked.delete(path);
       if (picked.length) source.takeOut(tag, picked);
     });
-    buttons.createEl('button', { text: `Take out latest ${TAKE_OUT}` }).addEventListener('click', () => source.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
+    buttons.createEl('button', { text: t('sidebar.takeOutLatest', { count: TAKE_OUT }) }).addEventListener('click', () => source.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
   }
 
   private inventory(panel: HTMLElement, model: Ontology) {
     const found = this.owner.checkUsage();
-    panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
-    panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
+    panel.createEl('h3', { text: t('sidebar.notInDict', { count: model.unregistered.size }) });
+    panel.createEl('p', { text: t('sidebar.checkIntro') });
     for (const [tag, paths] of model.unregistered) {
-      const details = this.details(panel, `unregistered:${tag}`, `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}`);
+      const details = this.details(panel, `unregistered:${tag}`, tPlural('sidebar.unregisteredSummary', paths.length, { tag }));
       const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
-      if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
+      if (similar?.length) details.createEl('p', { text: t('sidebar.similar', { tags: similar.map(name => '#' + name).join(', ') }), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
     }
     if (found) {
       const aliases = groupNonCanonical(found.nonCanonical);
       if (aliases.length) {
-        const details = this.details(panel, 'aliases', `Written as an alias or in another case (${aliases.length})`);
-        details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
+        const details = this.details(panel, 'aliases', t('sidebar.aliasHeading', { count: aliases.length }));
+        details.createEl('p', { text: t('sidebar.aliasIntro') });
         for (const group of aliases) {
-          const nested = this.details(details, `alias:${group.tag}->${group.canonical}`, `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
+          const nested = this.details(details, `alias:${group.tag}->${group.canonical}`, tPlural('sidebar.aliasGroupSummary', group.notes.length, { tag: group.tag, canonical: group.canonical }));
           this.noteLinks(nested, group.notes);
         }
       }
       const broader = groupRedundant(found.redundant);
       if (broader.length) {
-        const details = this.details(panel, 'broader', `Broader tag next to a narrower tag (${broader.length})`);
-        details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
+        const details = this.details(panel, 'broader', t('sidebar.broaderHeading', { count: broader.length }));
+        details.createEl('p', { text: t('sidebar.broaderIntro') });
         for (const group of broader) {
-          const nested = this.details(details, `broader:${group.tag}`, `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
+          const nested = this.details(details, `broader:${group.tag}`, tPlural('sidebar.broaderSummary', group.notes.length, { tag: group.tag }));
           this.noteLinks(nested, group.notes);
         }
       }
     }
-    const unused = this.details(panel, 'unused', `Unused dictionary tags (${model.unused.length})`);
-    unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
+    const unused = this.details(panel, 'unused', t('sidebar.unusedHeading', { count: model.unused.length }));
+    unused.createEl('p', { text: t('sidebar.unusedIntro') });
     this.tagLinks(unused, model.unused);
   }
 
@@ -1127,14 +1162,14 @@ export class NativeGraphs {
     const { tag, base } = mode, { parents, children, roots, related } = deletionPreview(base, tag), notes = model.counts(tag).direct;
     const tags = (list: string[]) => list.map(item => '#' + item).join(', ');
     const lines = [
-      ...children.length && parents.length ? [`${count(children.length, 'child moves', 'children move')} under ${tags(parents)}`] : [],
-      ...roots.length && !parents.length ? [count(roots.length, 'child becomes a root tag', 'children become root tags')] : [],
-      ...related.length ? [`Removed from related of ${tags(related)}`] : [],
-      ...notes ? [`${count(notes, 'note keeps', 'notes keep')} #${tag}; it will show as not in the dictionary.`] : [],
+      ...children.length && parents.length ? [tPlural('sidebar.deleteChildrenMove', children.length, { parents: tags(parents) })] : [],
+      ...roots.length && !parents.length ? [tPlural('sidebar.deleteChildrenRoots', roots.length)] : [],
+      ...related.length ? [t('sidebar.deleteRemovedRelated', { tags: tags(related) })] : [],
+      ...notes ? [tPlural('sidebar.deleteNotesKeep', notes, { tag })] : [],
     ];
-    new ChoiceModal(this.owner.app, `Delete #${tag}?`, lines, [
-      { text: 'Cancel', action: () => {} },
-      { text: 'Delete', cls: 'mod-warning', action: () => { void this.remove(tag, base, parents); } },
+    new ChoiceModal(this.owner.app, t('sidebar.deleteTagTitle', { tag }), lines, [
+      { text: t('common.cancel'), action: () => {} },
+      { text: t('common.delete'), cls: 'mod-warning', action: () => { void this.remove(tag, base, parents); } },
     ]).open();
   }
 
@@ -1166,18 +1201,20 @@ export class NativeGraphs {
 
   // Obsidian's tag rules, plus kebab-case names while that setting is on.
   private nameProblem(name: string, base: RawDictionary, current?: string): string | undefined {
-    return nameError(name, base, current)
-      ?? (this.owner.settings.kebabNames && !isKebabName(name) ? 'Use lowercase letters and digits joined by hyphens (kebab-case tag names are on in settings).' : undefined);
+    const baseError = nameError(name, base, current);
+    if (baseError) return translateTagNameError(baseError);
+    return this.owner.settings.kebabNames && !isKebabName(name) ? t('sidebar.errKebabCase') : undefined;
   }
 
-  private drawForm() {
+  private drawForm(focusInput = true) {
     const panel = this.panel, mode = this.mode, model = this.owner.model;
     if (!panel || !mode || !model) return;
     panel.empty(); this.syncNav();
     const { base, draft } = mode, tag = mode.kind === 'edit' ? mode.tag : undefined, form = panel.createDiv('tag-ontology-form');
-    if (tag === undefined) form.createEl('h3', { text: 'New tag' });
-    form.createEl('label', { text: 'Name' });
-    const name = form.createEl('input', { type: 'text', attr: { 'aria-label': 'Name' } });
+    if (tag === undefined) form.createEl('h3', { text: t('sidebar.newTagTitle') });
+    const nameLabel = t('sidebar.name');
+    form.createEl('label', { text: nameLabel });
+    const name = form.createEl('input', { type: 'text', attr: { 'aria-label': nameLabel } });
     name.value = draft.name;
     const note = form.createDiv();
     name.addEventListener('input', () => { draft.name = normalizeName(name.value); this.syncForm(); });
@@ -1190,16 +1227,18 @@ export class NativeGraphs {
       name.addEventListener('focus', () => { if (!name.value) name.dispatchEvent(new Event('input')); });
     }
     const describe = () => {
-      form.createEl('label', { text: 'Description' });
-      const description = form.createEl('textarea', { attr: { 'aria-label': 'Description', rows: '3', ...tag === undefined ? { placeholder: 'Optional' } : {} } });
+      const descLabel = t('sidebar.description');
+      form.createEl('label', { text: descLabel });
+      const description = form.createEl('textarea', { attr: { 'aria-label': descLabel, rows: '3', ...tag === undefined ? { placeholder: t('common.optional') } : {} } });
       description.value = draft.description;
       description.addEventListener('input', () => { draft.description = description.value; this.syncForm(); });
     };
     const aliases = () => {
-      form.createEl('label', { text: 'Aliases' });
+      form.createEl('label', { text: t('sidebar.aliases') });
       const list = this.chips(form, draft.aliases, item => item, item => { draft.aliases = draft.aliases.filter(a => a !== item); });
-      if (!this.opener(list, 'aliases', 'Add an alias')) return;
-      const alias = form.createEl('input', { type: 'text', attr: { placeholder: 'Add an alias' } });
+      const aliasPlaceholder = t('sidebar.addAlias');
+      if (!this.opener(list, 'aliases', aliasPlaceholder)) return;
+      const alias = form.createEl('input', { type: 'text', attr: { placeholder: aliasPlaceholder } });
       alias.value = mode.alias ?? '';
       alias.addEventListener('input', () => { mode.alias = alias.value; this.syncForm(); });
       alias.addEventListener('keydown', e => {
@@ -1209,11 +1248,12 @@ export class NativeGraphs {
         mode.alias = '';
         this.drawForm();
       });
-      alias.focus();
+      if (focusInput) alias.focus();
     };
     const facet = () => {
-      form.createEl('label', { text: 'Facet' });
-      const input = form.createEl('input', { type: 'text', attr: { 'aria-label': 'Facet', placeholder: 'Optional, for example language' } });
+      const facetLabel = t('sidebar.facet');
+      form.createEl('label', { text: facetLabel });
+      const input = form.createEl('input', { type: 'text', attr: { 'aria-label': facetLabel, placeholder: t('sidebar.facetPlaceholder') } });
       input.value = draft.facet ?? '';
       input.addEventListener('input', () => {
         const facet = input.value.trim();
@@ -1223,23 +1263,23 @@ export class NativeGraphs {
         this.syncForm();
       });
     };
-    const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder); };
+    const list = (kind: ListKey, label: string, placeholder: string) => { form.createEl('label', { text: label }); this.picker(form, kind, placeholder, focusInput); };
     if (tag === undefined) {
-      list('parents', 'Parents', 'Add a parent');
-      if (!draft.parents.length) form.createDiv({ cls: 'tag-ontology-hint', text: 'No parent: it becomes a root tag.' });
-      list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
+      list('parents', t('sidebar.parentsLabel'), t('sidebar.addParent'));
+      if (!draft.parents.length) form.createDiv({ cls: 'tag-ontology-hint', text: t('sidebar.noParentHint') });
+      list('children', t('sidebar.childrenLabel'), t('sidebar.addChild')); list('related', t('sidebar.relatedLabel'), t('sidebar.addRelated'));
       describe(); aliases(); facet();
     } else {
       describe(); aliases(); facet();
-      list('parents', 'Parents', 'Add a parent'); list('children', 'Children', 'Add a child'); list('related', 'Related', 'Add a related tag');
+      list('parents', t('sidebar.parentsLabel'), t('sidebar.addParent')); list('children', t('sidebar.childrenLabel'), t('sidebar.addChild')); list('related', t('sidebar.relatedLabel'), t('sidebar.addRelated'));
     }
     const status = panel.createDiv('tag-ontology-count'), footer = panel.createDiv('tag-ontology-footer');
-    const remove = tag === undefined ? undefined : footer.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+    const remove = tag === undefined ? undefined : footer.createEl('button', { text: t('common.delete'), cls: 'mod-warning' });
     remove?.addEventListener('click', () => this.confirmDelete());
     footer.createDiv('tag-ontology-spacer');
-    const cancel = footer.createEl('button', { text: 'Cancel' });
+    const cancel = footer.createEl('button', { text: t('common.cancel') });
     cancel.addEventListener('click', () => this.cancel());
-    const save = footer.createEl('button', { text: tag === undefined ? 'Add' : 'Save', cls: 'mod-cta' });
+    const save = footer.createEl('button', { text: t(tag === undefined ? 'common.add' : 'common.save'), cls: 'mod-cta' });
     save.addEventListener('click', () => { void this.save(); });
     const notes = tag === undefined ? 0 : model.counts(tag).direct;
     this.syncForm = () => {
@@ -1248,11 +1288,11 @@ export class NativeGraphs {
       const error = tag === undefined ? draft.name ? this.nameProblem(draft.name, base) : undefined : draft.name === tag ? undefined : this.nameProblem(draft.name, base, tag);
       const changes = mode.kind === 'edit' ? changedFields(base, mode.tag, typed(mode)) : 0;
       // Notes match dictionary tags ignoring case, so a case-only rename keeps them.
-      const hint = tag === undefined ? 'Pick one, or type a new name.'
-        : draft.name.toLowerCase() !== tag.toLowerCase() && notes ? `${notes} note${notes === 1 ? ' uses' : 's use'} #${tag}. ${notes === 1 ? 'It keeps' : 'They keep'} it and it will show as not in the dictionary.` : '';
+      const hint = tag === undefined ? t('sidebar.pickOrTypeHint')
+        : draft.name.toLowerCase() !== tag.toLowerCase() && notes ? tPlural('sidebar.renameKeepWarning', notes, { tag }) : '';
       note.toggleClass('tag-ontology-error', !!error); note.toggleClass('tag-ontology-hint', !error);
       note.setText(error ?? hint);
-      status.setText(`${count(changes, 'change', 'changes')} not saved`); status.hidden = !changes;
+      status.setText(tPlural('sidebar.unsavedChanges', changes)); status.hidden = !changes;
       save.disabled = (tag === undefined ? !draft.name : !changes) || !!error || this.saving;
       // Neither can run while a save is writing, so their buttons say so instead of opening a dialog that does nothing.
       cancel.disabled = this.saving;
@@ -1267,7 +1307,7 @@ export class NativeGraphs {
     for (const item of items) {
       const chip = asTag ? list.createEl('a', { text: text(item), cls: 'tag tag-ontology-chip' }) : list.createSpan({ text: text(item), cls: 'tag-ontology-chip' });
       if (asTag && this.owner.settings.customColors) chip.setCssProps({ '--tag-ontology-tags': this.owner.tagColor(item) });
-      const button = chip.createEl('button', { cls: 'clickable-icon tag-ontology-remove', attr: { 'aria-label': `Remove ${text(item)}` } });
+      const button = chip.createEl('button', { cls: 'clickable-icon tag-ontology-remove', attr: { 'aria-label': t('sidebar.removeItem', { item: text(item) }) } });
       setIcon(button, 'x');
       button.addEventListener('click', () => { remove(item); this.drawForm(); });
     }
@@ -1290,7 +1330,7 @@ export class NativeGraphs {
     return open;
   }
 
-  private picker(parent: HTMLElement, kind: ListKey, placeholder: string) {
+  private picker(parent: HTMLElement, kind: ListKey, placeholder: string, focusInput = true) {
     const mode = this.mode!;
     const list = this.chips(parent, mode.draft[kind], tag => '#' + tag, tag => { mode.draft[kind] = mode.draft[kind].filter(t => t !== tag); }, true);
     if (!this.opener(list, kind, placeholder)) return;
@@ -1302,7 +1342,7 @@ export class NativeGraphs {
       // The model can already hold tags added to the file after the form opened; the draft only knows the base.
       return (this.owner.model?.suggest(query, 50) ?? []).filter(s => Object.hasOwn(mode.base, s.tag) && !skip.has(s.tag)).slice(0, 10);
     }, tag => { mode.draft[kind] = [...mode.draft[kind], tag]; mode.query = ''; this.drawForm(); });
-    input.focus();
+    if (focusInput) input.focus();
   }
 
   // Saves the open form; false leaves it open with the draft for another try.
@@ -1363,7 +1403,7 @@ export class NativeGraphs {
     disable(add, !this.owner.model || blocked); add.toggleClass('is-active', this.mode?.kind === 'new');
     disable(edit, !tag || blocked); edit.toggleClass('is-active', this.mode?.kind === 'edit');
     setIcon(expand, !shown ? 'git-fork' : expanded || leaf ? 'waypoints' : 'circle-small');
-    setTooltip(expand, !shown ? 'Open graph' : leaf ? 'No child tags' : expanded ? 'Collapse in graph' : 'Expand in graph', { placement: 'bottom' });
+    setTooltip(expand, t(!shown ? 'sidebar.openGraph' : leaf ? 'sidebar.noChildTags' : expanded ? 'sidebar.collapseInGraph' : 'sidebar.expandInGraph'), { placement: 'bottom' });
   }
   private iconButton(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
@@ -1392,8 +1432,8 @@ export class NativeGraphs {
 
   openNote(path: string) {
     const file = this.owner.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) { new Notice('The note was moved or deleted. Reload the dictionary and try again.'); return; }
-    void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(`Could not open the note: ${String(error)}`));
+    if (!(file instanceof TFile)) { new Notice(t('notice.noteMissing')); return; }
+    void this.owner.app.workspace.getLeaf('tab').openFile(file).catch(error => new Notice(t('notice.openNoteFailed', { error: String(error) })));
   }
 
   // Repeats a move every frame for a while (two seconds while the force layout settles) and passes how far along it is,

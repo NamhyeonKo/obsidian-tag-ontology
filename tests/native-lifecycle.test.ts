@@ -10,6 +10,7 @@ import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
 import * as explorerLayout from '../src/explorer-layout.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
@@ -44,7 +45,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; refreshLocale(): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
@@ -173,6 +174,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
       : specifier === './explorer-layout.ts' ? { ...explorerLayout }
+      : specifier === './i18n/index.ts' ? { ...i18n }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -2496,4 +2498,105 @@ test('attach and recolor refresh 2D renderer CSS colors safely, in order, and de
   t.controller.destroy();
   t.controller.recolor();
   assert.equal(secondCalls, 2, 'detached sessions ignore recolor');
+});
+
+test('refreshLocale updates sidebar labels, preserves inspect details state, translates tag errors, and notifies linked views', async () => {
+  const t = await setup();
+  const linked = {
+    refreshed: 0,
+    has: () => true,
+    draw() {},
+    paint() {},
+    focusOn() {},
+    refreshLocale() { this.refreshed++; },
+  };
+  t.controller.link(linked as unknown as LinkedGraph);
+  try {
+    t.controller.clickTag('ml', false);
+    const details = t.sidebar.all().filter(el => el.tag === 'details');
+    assert.ok(details.length >= 2);
+    // Collapse the Parents details section before switching language.
+    details[0]!.open = false;
+    details[0]!.events.get('toggle')?.();
+
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    const searchInput = t.sidebar.all().find(el => el.events.has('keydown'))!;
+    assert.equal(searchInput.attrs.placeholder, '태그 또는 별칭 검색');
+    assert.equal(linked.refreshed, 1);
+    const updatedDetails = t.sidebar.all().filter(el => el.tag === 'details');
+    assert.equal(updatedDetails[0]!.open, false, 'collapsed details section stays collapsed across locale switches');
+    assert.match(updatedDetails[0]!.children[0]!.text, /^상위 태그/);
+
+    // Edit form and kebab/name validation errors localize too.
+    t.click('태그 편집');
+    const nameInput = t.sidebar.all().find(el => el.tag === 'input' && el.attrs['aria-label'] === '이름')!;
+    nameInput.value = 'has space';
+    nameInput.events.get('input')?.();
+    const err = t.sidebar.all().find(el => el.classes.has('tag-ontology-error'));
+    assert.equal(err?.text, i18n.CATALOGS.ko['sidebar.errSpaces']);
+  } finally {
+    i18n.setLocale('en');
+  }
+});
+
+test('refreshLocale updates nav tooltips, group relative times, ChoiceModal text, deduplicates embedded 3D canvas, and keeps alias input unfocused', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const now = Date.now();
+  t.controller.explorer = {
+    groupNotes: tag => tag === 'ml' ? [0, 1, 2].map(d => ({ path: `N${d}.md`, mtime: now - d * 864e5 })) : undefined,
+    takeOut() {},
+  };
+  await t.controller.switchMode(t.leaves[0], '3d');
+  const three = t.canvases[0];
+  let canvasRefreshed = 0;
+  Object.assign(three, {
+    has: () => false,
+    draw() {},
+    paint() {},
+    focusOn() {},
+    refreshLocale() { canvasRefreshed++; },
+  });
+  t.controller.link(three as unknown as LinkedGraph);
+
+  try {
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    assert.equal(canvasRefreshed, 1, 'embedded and linked Graph3DCanvas refreshes only once');
+    for (const key of ['sidebar.back', 'sidebar.forward', 'sidebar.home', 'sidebar.newTag', 'sidebar.editTag'] as const) {
+      assert.ok(navButton(t, i18n.CATALOGS.ko[key]), `missing localized nav button for ${key}`);
+    }
+
+    t.controller.showGroup('ml');
+    const times = t.sidebar.all().filter(el => el.tag === 'li').map(li => li.all().find(el => el.tag === 'small')!.text);
+    assert.deepEqual(times, ['오늘', '1일 전', '2일 전']);
+    assert.ok(t.sidebar.all().some(el => el.text === '노트 3개 · #ml'));
+
+    t.search('ml');
+    t.click(i18n.CATALOGS.ko['sidebar.editTag']);
+    t.click(i18n.CATALOGS.ko['sidebar.addAlias']);
+    const openAlias = t.sidebar.all().find(el => el.attrs.placeholder === i18n.CATALOGS.ko['sidebar.addAlias'])!;
+    assert.equal(openAlias.focused, true);
+    openAlias.focused = false;
+    i18n.setLocale('en');
+    t.controller.refreshLocale();
+    const rerenderedAlias = t.sidebar.all().find(el => el.attrs.placeholder === i18n.CATALOGS.en['sidebar.addAlias'])!;
+    assert.equal(rerenderedAlias.focused, false);
+
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    type(field(t, i18n.CATALOGS.ko['sidebar.description']), 'edited');
+    t.click(i18n.CATALOGS.ko['sidebar.home']);
+    const modal = t.modals.at(-1)!;
+    assert.equal(modal.titleEl.text, i18n.tPlural('sidebar.unsavedModalTitle', 1, { tag: 'ml' }));
+    const buttons = modal.contentEl.all().filter(el => el.tag === 'button').map(el => el.text);
+    for (const expected of [
+      i18n.CATALOGS.ko['sidebar.keepEditing'],
+      i18n.CATALOGS.ko['common.save'],
+      i18n.CATALOGS.ko['sidebar.discard'],
+    ]) assert.ok(buttons.includes(expected), `missing modal button: ${expected}`);
+  } finally {
+    i18n.setLocale('en');
+  }
 });

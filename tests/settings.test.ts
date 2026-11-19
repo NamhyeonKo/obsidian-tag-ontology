@@ -24,7 +24,7 @@ test('sanitizes saved settings to the supported fields', () => {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, tagListStyle: 'chips', focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
-    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 }, dragTension3d: true,
+    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 }, dragTension3d: true, language: 'auto',
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -163,4 +163,14 @@ test('saved custom palettes and their explicit selection are validated independe
   assert.equal(sanitizeSettings({ hierarchyPalettePreset: 'missing' }, '.obsidian').hierarchyPalettePreset, '');
   assert.deepEqual(sanitizeSettings({ customHierarchyPalette: ['bad'] }, '.obsidian').customHierarchyPalette, []);
   assert.deepEqual(sanitizeSettings({ hierarchyPalette: Array(2) }, '.obsidian').hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette);
+});
+
+test('sanitizes language setting to auto or a supported locale', () => {
+  assert.equal(DEFAULT_SETTINGS.language, 'auto');
+  assert.equal(sanitizeSettings({}, '.obsidian').language, 'auto');
+  assert.equal(sanitizeSettings({ language: 'ko' }, '.obsidian').language, 'ko');
+  assert.equal(sanitizeSettings({ language: 'zh-TW' }, '.obsidian').language, 'zh-TW');
+  assert.equal(sanitizeSettings({ language: 'pt-BR' }, '.obsidian').language, 'pt-BR');
+  assert.equal(sanitizeSettings({ language: 'klingon' }, '.obsidian').language, 'auto');
+  assert.equal(sanitizeSettings({ language: 123 }, '.obsidian').language, 'auto');
 });

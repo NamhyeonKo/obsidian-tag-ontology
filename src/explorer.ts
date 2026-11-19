@@ -9,6 +9,7 @@ import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardHeight, cardImage, type Card, type CardTheme } from './explorer-card.ts';
 import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { t } from './i18n/index.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -17,7 +18,7 @@ export class ExplorerView extends ItemView {
   private canvas?: ExplorerCanvas;
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType() { return VIEW_EXPLORER; }
-  getDisplayText() { return 'Ontology explorer'; }
+  getDisplayText() { return t('views.explorerTitle'); }
   getIcon() { return 'waypoints'; }
   async onOpen() {
     if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }

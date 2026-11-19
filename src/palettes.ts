@@ -1,5 +1,14 @@
 import { PALETTE_PRESETS, paletteFor, samePalette } from './colors.ts';
+import { t, translatePaletteSource } from './i18n/index.ts';
 import { isPaletteName, type Settings } from './settings.ts';
+
+export class PaletteValidationError extends Error {
+  readonly code: 'invalid-name' | 'duplicate-name';
+  constructor(code: 'invalid-name' | 'duplicate-name', message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 export function paletteSelection(settings: Settings): string {
   return settings.hierarchyPalettePreset || Object.keys(PALETTE_PRESETS).find(key =>
@@ -8,10 +17,12 @@ export function paletteSelection(settings: Settings): string {
 
 export function paletteGroups(settings: Settings): { label: string; options: { value: string; label: string }[] }[] {
   return [
-    { label: 'Examples', options: Object.entries(PALETTE_PRESETS).map(([value, preset]) => ({ value, label: preset.name })) },
-    { label: 'Working copy', options: settings.customHierarchyPalette.length || paletteSelection(settings) === 'custom'
-      ? [{ value: 'custom', label: 'Working copy' + (settings.workingPaletteSource ? ' · ' + settings.workingPaletteSource : '') }] : [] },
-    { label: 'My palettes', options: settings.savedHierarchyPalettes.map(palette => ({ value: 'saved:' + palette.name, label: palette.name })) },
+    { label: t('palettes.examples'), options: Object.entries(PALETTE_PRESETS).map(([value, preset]) => ({ value, label: translatePaletteSource(preset.name) })) },
+    { label: t('palettes.workingCopy'), options: settings.customHierarchyPalette.length || paletteSelection(settings) === 'custom'
+      ? [{ value: 'custom', label: settings.workingPaletteSource
+        ? t('palettes.workingCopyFrom', { source: translatePaletteSource(settings.workingPaletteSource) })
+        : t('palettes.workingCopy') }] : [] },
+    { label: t('palettes.myPalettes'), options: settings.savedHierarchyPalettes.map(palette => ({ value: 'saved:' + palette.name, label: palette.name })) },
   ];
 }
 
@@ -49,9 +60,9 @@ export function editPalette(settings: Settings, colors: readonly string[]): Pick
 }
 
 export function savePalette(settings: Settings, input: string): Pick<Settings, 'savedHierarchyPalettes' | 'hierarchyPalettePreset' | 'customHierarchyPalette' | 'workingPaletteSource'> {
-  if (!isPaletteName(input)) throw new Error('Enter a palette name of 1–80 characters, without line breaks.');
+  if (!isPaletteName(input)) throw new PaletteValidationError('invalid-name', 'Enter a palette name of 1–80 characters, without line breaks.');
   const name = input.trim();
-  if (settings.savedHierarchyPalettes.some(palette => palette.name.toLowerCase() === name.toLowerCase())) throw new Error('A palette with this name already exists. Choose another name.');
+  if (settings.savedHierarchyPalettes.some(palette => palette.name.toLowerCase() === name.toLowerCase())) throw new PaletteValidationError('duplicate-name', 'A palette with this name already exists. Choose another name.');
   const working = paletteSelection(settings) === 'custom';
   return { savedHierarchyPalettes: [...settings.savedHierarchyPalettes, { name, colors: [...settings.hierarchyPalette] }],
     hierarchyPalettePreset: 'saved:' + name, customHierarchyPalette: working ? [] : [...settings.customHierarchyPalette],

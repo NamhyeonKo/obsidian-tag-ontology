@@ -7,6 +7,7 @@ import { Ontology } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
 import * as card from '../src/explorer-card.ts';
 import * as layout from '../src/explorer-layout.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { hierarchyColor, PALETTE } from '../src/colors.ts';
 
 async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partial<typeof layout>; cytoscape?: (opts: object) => object } = {}) {
@@ -35,7 +36,9 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
       : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
       : specifier === './legend.ts' ? { renderDepthLegend() {} } : specifier === './settings.ts' ? { ...settings }
       : specifier === './explorer-card.ts' ? { ...card, ...over.card }
-      : specifier === './explorer-layout.ts' ? { ...layout, ...over.layout } : { TagSuggest: class {} };
+      : specifier === './explorer-layout.ts' ? { ...layout, ...over.layout }
+      : specifier === './i18n/index.ts' ? { ...i18n }
+      : { TagSuggest: class {} };
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });
   await module.evaluate();

@@ -8,6 +8,7 @@ import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as settings from '../src/settings.ts';
 import * as geometry from '../src/geometry3d.ts';
+import * as i18n from '../src/i18n/index.ts';
 
 interface Node { id: string; x: number; y: number; z: number; radius: number }
 interface Renderer {
@@ -27,7 +28,7 @@ async function setup(owner: object = {}) {
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() {} }
       : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
-      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : { ...layer };
+      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : specifier === './i18n/index.ts' ? { ...i18n } : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () { for (const [name, value] of Object.entries(exports)) this.setExport(name, value); }, { context });
   });
   await module.evaluate();
@@ -104,7 +105,7 @@ class El {
   events = new Map<string, ((e?: unknown) => void)[]>();
   doc = { body: { style: '' }, addEventListener() {} };
   createDiv(cls = '') { const child = new El(); for (const c of cls.split(' ')) if (c) child.classes.add(c); this.children.push(child); return child; }
-  createEl(_tag: string, opts?: { cls?: string }) { return this.createDiv(opts?.cls); }
+  createEl(_tag: string, opts?: { cls?: string; text?: string }) { const child = this.createDiv(opts?.cls); if (opts?.text !== undefined) child.text = opts.text; return child; }
   setText(t: string) { this.text = t; }
   setAttribute(k: string, v: string) { this.attrs[k] = v; }
   setCssProps() {}
@@ -167,7 +168,7 @@ async function openCanvas(opts: {
       : specifier === './legend.ts' ? { renderDepthLegend() {} }
       : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
       : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
-      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : { ...layer };
+      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : specifier === './i18n/index.ts' ? { ...i18n } : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () { for (const [k, v] of Object.entries(exports)) this.setExport(k, v); }, { context });
   });
   await module.evaluate();
@@ -612,4 +613,51 @@ test('3D fit frames all visible nodes even when only a few roots share a link', 
   c.fit();
   assert.ok(fittedPos && fittedPos.z > 100, `expected camera distance to frame all 18 roots, got z=${fittedPos?.z}`);
   c.onunload();
+});
+
+test('3D control panel localizes labels and preserves open/collapsed state across refreshLocale', async () => {
+  const fakeGraph = {
+    backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
+    nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
+    onNodeClick() { return this; }, onNodeDrag() { return this; }, onNodeDragEnd() { return this; }, onEngineTick() { return this; },
+    cooldownTime() { return this; }, cooldownTicks() { return this; }, d3AlphaMin() { return this; },
+    width() { return this; }, height() { return this; },
+    d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
+    d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
+    scene: () => Object.assign(new THREE.Scene(), { fog: undefined, onBeforeRender: undefined }),
+    camera: () => ({ position: { x: 0, y: 0, z: 200 }, fov: 90, aspect: 1, matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] } }),
+    controls: () => ({ target: { x: 0, y: 0, z: 0 }, addEventListener() {}, removeEventListener() {} }),
+    cameraPosition() { return { x: 0, y: 0, z: 200 }; },
+    graphData() { return this; },
+    renderer: () => ({ forceContextLoss() {}, dispose() {} }),
+    _destructor() {},
+  };
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const owner = {
+    model, settings: { ...settings.DEFAULT_SETTINGS }, saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456', app: { workspace: { on: () => () => {} } },
+    graphData: () => ({ nodes: { '#root': { type: 'tag', links: {} } }, numLinks: 0 }),
+  };
+  try {
+    const { canvas, root } = await openCanvas({ owner, fakeGraph });
+    const panel = root.all().find(el => el.classes.has('tag-ontology-3d-controls'))!;
+    // Open the panel and collapse the first section before switching locale.
+    panel.all().find(el => el.classes.has('mod-open'))!.events.get('click')?.[0]?.();
+    assert.equal(panel.hasClass('is-close'), false);
+    const firstSection = panel.all().find(el => el.classes.has('graph-control-section'))!;
+    firstSection.all().find(el => el.classes.has('mod-collapsible'))!.events.get('click')?.[0]?.();
+    assert.equal(firstSection.hasClass('is-collapsed'), true);
+
+    i18n.setLocale('ko');
+    (canvas as unknown as { refreshLocale(): void }).refreshLocale();
+    assert.equal(panel.hasClass('is-close'), false, 'open panel stays open across locale switches');
+    const sections = panel.all().filter(el => el.classes.has('graph-control-section'));
+    assert.equal(sections[0]!.hasClass('is-collapsed'), true, 'collapsed section stays collapsed');
+    assert.equal(sections[0]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '라벨');
+    assert.equal(sections[1]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '장력');
+    canvas.onunload();
+  } finally {
+    i18n.setLocale('en');
+  }
 });
