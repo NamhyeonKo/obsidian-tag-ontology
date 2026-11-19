@@ -3,7 +3,7 @@ import { Component, ItemView, Setting, debounce, setIcon, setTooltip, type Slide
 import { graphModeBar } from './graph-modes.ts';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type SpriteText from 'three-spritetext';
-import type { BufferGeometry, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
+import type { BufferGeometry, Color, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Material, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PerspectiveCamera, SphereGeometry, Texture, Vector3 } from 'three';
 import type TagOntologyPlugin from './main.ts';
 import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData } from './layer.ts';
 import { DOUBLE_CLICK_MS, coveredEdges, type LinkedGraph } from './native.ts';
@@ -29,7 +29,7 @@ export class Graph3DView extends ItemView {
 interface Node3D {
   id: string; type: string; tag?: string; name: string; degree: number; radius: number;
   x?: number; y?: number; z?: number; fx?: number; fy?: number; fz?: number;
-  dot?: Mesh<SphereGeometry, MeshLambertMaterial>; label?: SpriteText;
+  dot?: Mesh<SphereGeometry, MeshBasicMaterial>; label?: SpriteText;
 }
 interface Link3D { source: string | Node3D; target: string | Node3D; kind: EdgeKind | 'note' }
 type Graph = ForceGraph3DInstance<Node3D, Link3D>;
@@ -68,7 +68,7 @@ const radiusOf = (degree: number) => (1.4 + Math.sqrt(degree) * 0.3) * NODE_SIZE
 // The tag hierarchy in three dimensions. It layers the same shared state as the 2D graph, through NativeGraphs.
 export class Graph3DCanvas extends Component implements LinkedGraph {
   private graph?: Graph;
-  private three?: Three; private ball?: SphereGeometry; private closed = false;
+  private three?: Three; private ball?: SphereGeometry; private pickMaterial?: MeshBasicMaterial; private closed = false;
   // Where the camera looks, refreshed every frame.
   private forward?: Vector3;
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private recenter?: HTMLElement;
@@ -100,8 +100,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
   // Without drag tension, where each grabbed node came from and active return springs.
   private homes = new Map<Node3D, Point>(); private springs = new Map<Node3D, { from: Point; start: number }>();
-  // Every link is drawn by three objects, solid lines, dashed related lines and the hierarchy arrows, instead of one object
-  // each: with thousands of links, one draw call per link was most of a frame.
+  // Nodes are drawn in two instanced meshes (lit opaque and faded transparent), while each node keeps an invisible pick sphere
+  // for 3d-force-graph pointer events. Links are drawn by three objects (solid, dashed, arrows) instead of one draw call each.
+  private litDots?: InstancedMesh<SphereGeometry, MeshLambertMaterial>; private fadedDots?: InstancedMesh<SphereGeometry, MeshLambertMaterial>;
+  private litDotMaterial?: MeshLambertMaterial; private fadedDotMaterial?: MeshLambertMaterial;
+  private dotsDirty = true; private dotColor?: Color;
   private lines?: LineSegments<BufferGeometry, LineBasicMaterial>; private dashes?: LineSegments<BufferGeometry, LineDashedMaterial>;
   private arrows?: InstancedMesh<ConeGeometry, MeshLambertMaterial>; private cone?: ConeGeometry; private arrowMaterial?: MeshLambertMaterial;
   private solid: Link3D[] = []; private related: Link3D[] = []; private pointed: Link3D[] = [];
@@ -111,6 +114,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private visible = false;
   private pendingDraw?: string;
+  private pendingRecolor = false;
   private syncModes = () => {};
   private get app() { return this.owner.app; }
   constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
@@ -154,7 +158,10 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       this.status.setText('Could not start the graph. It needs hardware acceleration, which is in the advanced settings.');
       return;
     }
-    this.ball = new three.SphereGeometry(1, 48, 32);
+    this.ball = new three.SphereGeometry(1, 16, 12);
+    this.pickMaterial = new three.MeshBasicMaterial({ visible: false });
+    this.litDotMaterial = new three.MeshLambertMaterial();
+    this.fadedDotMaterial = new three.MeshLambertMaterial({ transparent: true, opacity: FADED_NODE });
     this.forward = new three.Vector3();
     const graph = this.graph = created
       .backgroundColor(this.colors.background)
@@ -178,6 +185,17 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.applyForces();
     this.controls = graph.controls() as ControlsLike;
     this.controls.addEventListener('change', this.onControlChange);
+    const canvas = (graph.renderer() as { domElement?: HTMLElement }).domElement;
+    if (canvas) {
+      const onLost = (event: Event) => { if (this.closed) return; event.preventDefault(); graph.pauseAnimation(); };
+      const onRestored = () => { if (!this.closed) { this.paint(); if (this.isVisible()) graph.resumeAnimation(); } };
+      canvas.addEventListener('webglcontextlost', onLost);
+      canvas.addEventListener('webglcontextrestored', onRestored);
+      this.register(() => {
+        canvas.removeEventListener('webglcontextlost', onLost);
+        canvas.removeEventListener('webglcontextrestored', onRestored);
+      });
+    }
     graph.d3Force('gravity', this.gravity());
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
     // Related links are dashed, as in 2D. Hierarchy links always show their direction with an arrow. The objects span the whole
@@ -227,7 +245,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   isVisible() { return this.visible && this.contentEl.isShown(); }
 
   private flushDraw() {
-    if (!this.pendingDraw || !this.isVisible()) return;
+    if (!this.isVisible()) return;
+    if (this.pendingRecolor) this.recolor();
+    if (!this.pendingDraw) return;
     const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
   }
 
@@ -246,12 +266,15 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
         geometry?.dispose();
         for (const each of [material ?? []].flat()) { (each as Material & { map?: Texture }).map?.dispose(); each.dispose(); }
       });
-      this.ball?.dispose(); this.arrows?.dispose();
+      this.ball?.dispose(); this.pickMaterial?.dispose();
+      this.litDotMaterial?.dispose(); this.fadedDotMaterial?.dispose();
+      this.cone?.dispose(); this.arrowMaterial?.dispose();
+      this.litDots?.dispose(); this.fadedDots?.dispose(); this.arrows?.dispose();
       graph.renderer().forceContextLoss(); graph.renderer().dispose();
       graph._destructor();
     }
-    this.graph = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
-    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false;
+    this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
+    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false;
     this.contentEl.empty();
   }
 
@@ -295,11 +318,17 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
         item.x = anchor.x + jitter(); item.y = (anchor.y ?? 0) + jitter(); item.z = (anchor.z ?? 0) + jitter();
       }
     }
+    for (const [id, old] of this.nodes) {
+      if (next.has(id)) continue;
+      // Detach before graphData() so three-forcegraph's ThreeDigest doesn't dispose the shared sphere geometry/pick material or render a disposed label.
+      old.dot?.removeFromParent();
+      if (old.label) { old.label.removeFromParent(); old.label.material.map?.dispose(); old.label.material.dispose(); }
+    }
     this.nodes = next;
     // Notes are edited far more often than their tags and links change. Handing the library the same graph again would heat
     // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
     const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
-    if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
+    if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildDots(); this.buildLinks(); }
     if (operation.startsWith('expand:')) this.moved = true;
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
@@ -333,8 +362,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       this.center = layer.resolved.idOf.get(tag);
       this.lit = focusIds(layer.data, layer.resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes });
     }
-    for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
-    if (graph) this.colorLinks();
+    this.dotsDirty = true;
+    if (graph) { this.placeDots(); this.colorLinks(); }
     this.syncRecenter();
   }
 
@@ -400,11 +429,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private nodeObject(item: Node3D): Object3D {
     const three = this.three!, group = new three.Object3D();
-    const dot = item.dot = new three.Mesh(this.ball, new three.MeshLambertMaterial({ color: this.colorOf(item), transparent: true }));
+    // Invisible pick sphere keeps 3d-force-graph hover, click and drag working with zero draw calls; visible spheres are instanced.
+    const dot = item.dot = new three.Mesh(this.ball, this.pickMaterial);
     group.add(dot);
-    // ponytail: every node is still its own sphere and label, two draw calls each (links are drawn together, see placeLinks).
-    // With 999 tags and 730 notes all expanded a frame takes about 4 ms; with many thousands of notes shown an instanced sphere
-    // mesh and a label atlas would be next.
+    this.size(item);
+    return group;
+  }
+
+  // Labels are built only when a node comes into range (or focus), avoiding hundreds of off-screen 2D canvases.
+  private ensureLabel(item: Node3D) {
+    if (item.label) return item.label;
+    const three = this.three, group = item.dot?.parent;
+    if (!three || !group) return undefined;
     const label = item.label = new three.SpriteText(item.name, TEXT_HEIGHT, this.colors.text);
     label.fontFace = this.font; label.fontSize = FONT_SIZE;
     label.material.depthWrite = false; label.material.transparent = true;
@@ -414,14 +450,52 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     label.userData.base = { x: label.scale.x, y: label.scale.y };
     // Only the node sphere handles pointer events; labels pass hover, drag, and clicks through like in 2D.
     label.raycast = () => {};
+    label.position.set(0, -(item.radius + 0.6), 0);
     group.add(label);
-    this.size(item);
-    return group;
+    return label;
   }
 
   private size(item: Node3D) {
     item.dot?.scale.setScalar(item.radius);
     item.label?.position.set(0, -(item.radius + 0.6), 0);
+  }
+
+  private buildDots() {
+    const three = this.three, scene = this.graph?.scene();
+    if (!three || !scene || !this.ball || !this.litDotMaterial || !this.fadedDotMaterial) return;
+    const count = Math.max(1, this.nodes.size);
+    for (const old of [this.litDots, this.fadedDots]) if (old) { scene.remove(old); old.dispose(); }
+    this.litDots = new three.InstancedMesh(this.ball, this.litDotMaterial, count);
+    this.fadedDots = new three.InstancedMesh(this.ball, this.fadedDotMaterial, count);
+    for (const mesh of [this.litDots, this.fadedDots]) {
+      mesh.count = 0; mesh.frustumCulled = false; mesh.raycast = () => {};
+      scene.add(mesh);
+    }
+    this.dotsDirty = true;
+  }
+
+  private placeDots(moved = false) {
+    const three = this.three, litDots = this.litDots, fadedDots = this.fadedDots;
+    if (!three || !litDots || !fadedDots || (!this.dotsDirty && !moved)) return;
+    this.dotsDirty = false;
+    const placed = this.arrowTransform ??= new three.Object3D(), color = this.dotColor ??= new three.Color();
+    placed.quaternion.identity();
+    let litCount = 0, fadedCount = 0;
+    for (const item of this.nodes.values()) {
+      if (item.x === undefined) { this.dotsDirty = true; continue; }
+      placed.position.set(item.x, item.y ?? 0, item.z ?? 0);
+      placed.scale.setScalar(item.radius);
+      placed.updateMatrix();
+      color.set(this.colorOf(item));
+      if (!this.lit || this.lit.has(item.id)) {
+        litDots.setMatrixAt(litCount, placed.matrix); litDots.setColorAt(litCount, color); litCount++;
+      } else {
+        fadedDots.setMatrixAt(fadedCount, placed.matrix); fadedDots.setColorAt(fadedCount, color); fadedCount++;
+      }
+    }
+    litDots.count = litCount; fadedDots.count = fadedCount;
+    litDots.instanceMatrix.needsUpdate = true; if (litDots.instanceColor) litDots.instanceColor.needsUpdate = true;
+    fadedDots.instanceMatrix.needsUpdate = true; if (fadedDots.instanceColor) fadedDots.instanceColor.needsUpdate = true;
   }
 
   // New buffers for a new set of links: one segment each in the solid or the dashed lines, and an arrow for each hierarchy link.
@@ -445,9 +519,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   }
 
   // Every frame, as the layout moves the nodes.
-  private placeLinks() {
+  private placeLinks(): boolean {
     const three = this.three, arrows = this.arrows;
-    if (!three || !arrows) return;
+    if (!three || !arrows) return false;
     let changed = this.linksDirty;
     if (this.linkPositions.length !== this.nodes.size * 3) { this.linkPositions = new Float64Array(this.nodes.size * 3); changed = true; }
     let offset = 0;
@@ -457,7 +531,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       this.linkPositions[offset++] = x; this.linkPositions[offset++] = y; this.linkPositions[offset++] = z;
     }
     // Orbit and zoom move the camera, not the links; reuse their GPU buffers until nodes move.
-    if (!changed) return;
+    if (!changed) return false;
     this.linksDirty = false;
     const at = (end: string | Node3D) => (typeof end === 'string' ? this.nodes.get(end) : end) ?? { x: 0, y: 0, z: 0, radius: 0 };
     for (const [object, list] of [[this.lines!, this.solid], [this.dashes!, this.related]] as const) {
@@ -485,6 +559,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       arrows.setMatrixAt(index, placed.matrix);
     });
     arrows.instanceMatrix.needsUpdate = true;
+    return true;
   }
 
   // Link colors follow the highlight, like the nodes'.
@@ -540,14 +615,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
-  // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
+  // Frames the bulk of all visible nodes, matching 2D fit so a lone related link among collapsed roots doesn't zoom onto two nodes.
   // The library's own zoomToFit frames every last node from a box corner, which left the graph small in the middle.
   fit() {
     window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (!graph) return;
-    const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
-    const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
+    const points = [...this.nodes.values()].map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
     if (!points.length) return;
     this.flyDest = undefined;
     if (!this.moved) { this.moved = true; this.syncRecenter(); }
@@ -612,22 +686,25 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       object?.position.set(at.x, at.y, at.z); object?.updateMatrixWorld();
       if (done) { item.fx = item.fy = item.fz = undefined; this.springs.delete(item); this.homes.delete(item); }
     }
-    this.placeLinks();
+    const moved = this.placeLinks();
+    this.placeDots(moved);
     for (const item of this.nodes.values()) {
       if (item.x === undefined) continue;
       radius = Math.max(radius, Math.hypot(item.x - target.x, (item.y ?? 0) - target.y, (item.z ?? 0) - target.z));
       const lit = !this.lit || this.lit.has(item.id);
-      if (item.dot) item.dot.material.opacity = lit ? 1 : FADED_NODE;
-      if (!item.label) continue;
       const distance = Math.hypot(camera.x - item.x, camera.y - (item.y ?? 0), camera.z - (item.z ?? 0));
       const far = Math.min(1, Math.max(0, (LABEL_FAR - distance) / (LABEL_FAR - LABEL_NEAR)));
-      // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't drawn at all.
-      item.label.material.opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
-      item.label.visible = item.label.material.opacity > 0;
+      // While something is highlighted, its labels stay readable at any distance. A label faded out entirely isn't built or drawn.
+      const opacity = !lit ? FADED_LABEL * far : this.lit ? 1 : far;
+      if (opacity <= 0) { if (item.label) item.label.visible = false; continue; }
+      const label = this.ensureLabel(item);
+      if (!label) continue;
+      label.material.opacity = opacity;
+      label.visible = true;
       // The size on screen follows the depth along the view, not the straight distance, which is longer off to the side.
       const depth = forward ? Math.max(0.001, cameraDepth(camera, forward, { x: item.x, y: item.y ?? 0, z: item.z ?? 0 })) : distance;
-      const base = item.label.userData.base as { x: number; y: number }, scale = labelScale(pixels / depth, bounds.min, bounds.max);
-      item.label.scale.set(base.x * scale, base.y * scale, 1);
+      const base = label.userData.base as { x: number; y: number }, scale = labelScale(pixels / depth, bounds.min, bounds.max);
+      label.scale.set(base.x * scale, base.y * scale, 1);
     }
     // The fog follows the zoom and the graph's size: what is in front of the orbit center stays clear, the back fades.
     const fog = graph.scene().fog as Fog | null;
@@ -650,15 +727,23 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private recolor() {
     const graph = this.graph;
     if (!graph) return;
-    this.colors = this.readColors();
+    if (!this.isVisible()) { this.pendingRecolor = true; return; }
+    this.pendingRecolor = false;
+    const prev = this.colors, next = this.readColors();
     const font = this.readFont(), refont = font !== this.font;
-    this.font = font;
-    graph.backgroundColor(this.colors.background);
-    (graph.scene().fog as Fog | null)?.color.set(this.colors.background);
-    for (const item of this.nodes.values()) {
+    const textChanged = next.text !== prev.text;
+    const changed = refont || next.note !== prev.note || next.tag !== prev.tag || next.line !== prev.line
+      || textChanged || next.background !== prev.background || next.accent !== prev.accent;
+    if (!changed) return;
+    this.colors = next; this.font = font;
+    if (next.background !== prev.background) {
+      graph.backgroundColor(next.background);
+      (graph.scene().fog as Fog | null)?.color.set(next.background);
+    }
+    if (textChanged || refont) for (const item of this.nodes.values()) {
       const label = item.label;
       if (!label) continue;
-      label.color = this.colors.text;
+      if (textChanged) label.color = next.text;
       // A new font redraws the label at a new width, so its unscaled size is read again.
       if (refont) { label.fontFace = font; label.userData.base = { x: label.scale.x, y: label.scale.y }; }
     }

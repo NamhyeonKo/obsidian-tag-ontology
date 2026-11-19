@@ -484,6 +484,7 @@ export class NativeGraphs {
       if (session.choice !== 'mindmap') session.renderer.changed();
     }
     session.view.contentEl.toggleClass('has-embedded-graph', session.mode !== '2d');
+    if (session.mindmap) session.mindmap.el.hidden = session.mode !== '2d' || session.choice !== 'mindmap';
     for (const [mode, entry] of session.canvases) {
       entry.root.hidden = mode !== session.mode;
       entry.graph.setVisible(mode === session.mode);
