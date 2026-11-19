@@ -83,16 +83,14 @@ export function canvasEdges(model: Ontology, on: OnCanvas): EdgeDef[] {
       // Tag names may contain "--", so the pair is written as JSON to keep every pair's id apart.
       if (tag < other && on.tags.has(other)) edges.push({ id: `r:${JSON.stringify([tag, other])}`, kind: 'related', source: `tag:${tag}`, target: `tag:${other}` });
     }
-    for (const path of model.direct.get(tag) ?? []) {
-      if (on.notes.has(path)) edges.push({ id: `n:${tag}->${path}`, kind: 'note', source: `tag:${tag}`, target: `note:${path}` });
-    }
     if (on.groups.has(tag)) edges.push({ id: `g:${tag}`, kind: 'note', source: `tag:${tag}`, target: `group:${tag}` });
   }
+  for (const path of on.notes) {
+    for (const tag of model.tagsOf(path)) {
+      if (on.tags.has(tag)) edges.push({ id: `n:${tag}->${path}`, kind: 'note', source: `tag:${tag}`, target: `note:${path}` });
+    }
+  }
   return edges;
-}
-
-export function tagsOfNote(model: Ontology, path: string): string[] {
-  return [...model.direct].filter(([, paths]) => paths.includes(path)).map(([tag]) => tag).sort();
 }
 
 // Facets are free text, so each takes the palette color of its place in name order.

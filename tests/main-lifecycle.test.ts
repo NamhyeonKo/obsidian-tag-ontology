@@ -27,13 +27,16 @@ function deferred<T>() {
 
 class NativeGraphs {
   calls: string[] = [];
+  linkedCalls: string[] = [];
+  recolors = 0;
   // Like the real one, a redraw reads the tag color (the sidebar title and the graph's tags take it).
   owner?: { tagColor(): string; settings?: settings.Settings };
   savedExpandedOverride?: string[];
   get savedExpanded() { return this.savedExpandedOverride ?? this.owner?.settings?.expanded ?? []; }
   constructor(owner?: { tagColor(): string; settings?: settings.Settings }) { this.owner = owner; }
   attach() { this.calls.push('attach'); }
-  refresh(redraw = true) { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); }
+  refresh(redraw = true, linked = 'refresh') { this.owner?.tagColor(); this.calls.push(`refresh:${redraw}`); this.linkedCalls.push(linked); }
+  recolor() { this.recolors++; }
   showPanel(reveal: boolean) { this.calls.push(`panel:${reveal}`); }
   renderPanel() { this.calls.push('render-panel'); }
   drawLinked() { this.calls.push('draw-linked'); }
@@ -168,12 +171,15 @@ async function setup(saved?: Promise<unknown>) {
   const metaEvents = new Map<string, () => void>();
   const metadataCache = { on(name: string, callback: () => void) { metaEvents.set(name, callback); return { name }; }, offref(ref: { name: string }) { metaEvents.delete(ref.name); },
     getFileCache: () => ({}), resolvedLinks: {} as Record<string, Record<string, number>> };
+  const workspaceEvents = new Map<string, () => void>();
   const workspace = {
     getActiveViewOfType: () => undefined,
     getLeavesOfType: (type: string) => open.get(type) ?? [], getLeaf: () => leaf,
     async revealLeaf() { ui.push('reveal'); },
     setActiveLeaf(_leaf: unknown, { focus }: { focus: boolean }) { ui.push(focus ? 'focus' : 'active'); },
-    on() {}, onLayoutReady(callback: () => void) { ready = callback; },
+    on(name: string, callback: () => void) { workspaceEvents.set(name, callback); },
+    trigger(name: string) { workspaceEvents.get(name)?.(); },
+    onLayoutReady(callback: () => void) { ready = callback; },
   };
   const app = { vault, workspace, metadataCache, fileManager: { async renameFile(file: { path: string }, path: string) {
     vault.renames.push([file.path, path]);
@@ -206,7 +212,7 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: () => [],
+      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: (cache?: { tags?: string[] }) => cache?.tags ?? [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './colors.ts' ? { ...colors }
       : specifier === './palettes.ts' ? { ...palettes }
@@ -226,7 +232,7 @@ async function setup(saved?: Promise<unknown>) {
   if (!saved) { await loaded; ui.length = 0; }
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
-  const restyle = (accent: string) => { theme.accent = accent; observers.forEach(observer => observer()); };
+  const restyle = (accent: string, viaCss = false) => { theme.accent = accent; if (viaCss) workspace.trigger('css-change'); else observers.forEach(observer => observer()); };
   return { modals, plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
     legacySettings: () => { modernSettings = false; }, restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
@@ -470,14 +476,20 @@ test('a pending manual reload does not report its failure after unload', async (
   assert.deepEqual(t.errors, []);
 });
 
-test('note edits still skip graph redraws and a coalesced dictionary edit still redraws', async () => {
+test('note edits still skip graph redraws and dictionary reads, while a coalesced dictionary edit still reloads and redraws', async () => {
   const t = await setup();
   t.ready(); await settle();
+  let tags: string[] = [];
+  (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'Notes/A.md' }];
+  (t.metadataCache as { getFileCache: () => { tags?: string[] } }).getFileCache = () => ({ tags });
+  tags = ['#root'];
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
+  assert.deepEqual(t.plugin.model!.notesFor('root', false), ['Notes/A.md']);
+  assert.equal(t.reads(), 1);
   t.events.get('modify')!({ path: 'Tag-Dictionary.json' });
   t.events.get('modify')!({ path: 'Notes/A.md' }); t.runTimers(); await settle();
   assert.deepEqual(t.plugin.native.calls, ['refresh:true', 'refresh:false', 'refresh:true']);
-  assert.equal(t.reads(), 3);
+  assert.equal(t.reads(), 2);
 });
 
 test('each metadata resolution refreshes the views', async () => {
@@ -1099,6 +1111,7 @@ test('a tag color left to the accent redraws when the accent color changes, and 
   assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'another style change on <body> leaves the graph alone');
   t.plugin.settings.tagColor = '#12ab3c'; t.restyle('hsl(0, 100%, 50%)');
   assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'a picked color ignores the accent');
+  assert.equal(t.plugin.native.recolors, 2, '2D focus/highlight CSS refreshes on body accent changes even with a picked tag color');
   assert.equal(t.watching(), 1);
   t.unload();
   assert.equal(t.watching(), 0);
@@ -1116,6 +1129,42 @@ test('the accent the graph was last drawn with is the one compared, even after a
   t.plugin.native.calls.length = 0;
   t.restyle('hsl(258, 88%, 66%)');
   assert.deepEqual(t.plugin.native.calls, ['refresh:true'], 'the accent going back is a change from what is drawn');
+});
+
+test('followAccent skips unchanged body style mutations from startup and under depth coloring, and passes settings to linked views', async () => {
+  const t = await setup();
+  t.ready(); await settle();
+  Object.assign(t.plugin.settings, { customColors: true, hierarchyColors: true, tagColor: '' });
+  t.plugin.native.calls.length = 0; t.plugin.native.linkedCalls.length = 0;
+
+  // Startup initialized the tracked accent, so an unrelated body.style mutation never calls refresh().
+  t.restyle('hsl(258, 88%, 66%)');
+  assert.deepEqual(t.plugin.native.calls, []);
+  assert.equal(t.plugin.native.recolors, 0);
+
+  // Even when depth colors keep tagColor() from reading fallback accent, followAccent updates its baseline and skips repeats.
+  t.restyle('hsl(353, 81%, 55%)');
+  t.restyle('hsl(353, 81%, 55%)');
+  assert.deepEqual(t.plugin.native.calls, ['refresh:true']);
+  assert.deepEqual(t.plugin.native.linkedCalls, ['settings']);
+  assert.equal(t.plugin.native.recolors, 1);
+
+  // Obsidian css-change already refreshes GraphRenderer colors natively, so only the baseline updates without redundant recolor().
+  t.restyle('hsl(258, 88%, 66%)', true);
+  assert.equal(t.plugin.native.recolors, 1);
+  t.restyle('hsl(258, 88%, 66%)');
+  assert.equal(t.plugin.native.recolors, 1);
+
+  // Even when customColors is off or CSS uses oklch(), body.style accent changes still recolor 2D highlights without full refresh.
+  t.plugin.settings.customColors = false;
+  t.plugin.native.calls.length = 0;
+  t.restyle('oklch(0.6 0.2 25)');
+  assert.equal(t.plugin.native.recolors, 2);
+  assert.deepEqual(t.plugin.native.calls, []);
+
+  t.plugin.native.linkedCalls.length = 0;
+  await t.plugin.saveSettings();
+  assert.deepEqual(t.plugin.native.linkedCalls, ['settings']);
 });
 
 

@@ -35,7 +35,7 @@ class Element {
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 async function setup(closeBeforeLoad = false, color: (tag: string) => string | undefined = () => undefined) {
   let width = 0, height = 0, fits = 0, zoom = 1, disconnected = false, destroyed = false, resize = () => {};
-  let pan = { x: 0, y: 0 }, min = 0.000001;
+  let pan = { x: 0, y: 0 }, min = 0.000001, moves = 0;
   const handlers = new Map<string, () => void>();
   let options: { minZoom: number; autoungrabify?: boolean } | undefined;
   const positions = new Map<string, { x: number; y: number }>();
@@ -52,7 +52,9 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
       return { x1, y1, w: Math.max(...xs) + 20 - x1, h: Math.max(...ys) + 10 - y1 };
     } }),
     viewport(value: { zoom: number; pan: { x: number; y: number } }) { fits++; zoom = Math.max(min, Math.min(2.5, value.zoom)); pan = value.pan; },
-    pan: () => pan, animate() {}, destroy() { destroyed = true; } };
+    pan: (value?: { x: number; y: number }) => { if (value) { pan = value; handlers.get('pan')?.(); } return pan; },
+    animate(_spec: unknown, opts?: { complete?: () => void }) { handlers.get('pan')?.(); opts?.complete?.(); },
+    destroy() { destroyed = true; } };
   const context = createContext({ console, window: { setTimeout, clearTimeout }, ResizeObserver: class {
     constructor(callback: () => void) { resize = callback; } observe() {} disconnect() { disconnected = true; }
   } });
@@ -63,14 +65,14 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   await search.link(() => { throw new Error('Unexpected import'); }); await search.evaluate();
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
   await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
-  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined }) => {
-    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; top: number; bottom: number }): void; destroy(): void;
+  const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined; onMove?(): void }) => {
+    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; top: number; bottom: number }): void; focusOn(id: string): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
-  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color });
+  const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color, onMove: () => { moves++; } });
   if (closeBeforeLoad) map.destroy();
   await settle();
-  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan,
+  return { root, map, selected, toggled, chosen, options: () => options, zoom: () => zoom, fits: () => fits, pan: () => pan, moves: () => moves,
     viewport(x: number, y: number, scale: number) { pan = { x, y }; zoom = scale; resize(); },
     emit: (name: string) => handlers.get(name)!(), min: () => min,
     resize(w: number, h: number) { width = w; height = h; resize(); }, disconnected: () => disconnected, disposed: () => disconnected && destroyed };
@@ -196,5 +198,36 @@ test('starting tags use custom colors only while enabled, including the continue
     assert.equal(chips.find(el => el.text === '#a')!.css['--tag-ontology-tags'], enabled ? '#123456' : undefined);
     assert.equal(chips.find(el => el.text === 'Continue from #b')!.css['--tag-ontology-tags'], enabled ? '#abcdef' : undefined);
   }
+  t.map.destroy();
+});
+
+test('onMove notifies on user pan/zoom, fit, and non-selected anchor pan, not during focusOn or selected anchor hold', async () => {
+  const t = await setup();
+  t.resize(800, 600);
+  t.map.draw({ ...data, selected: '#root' });
+  assert.equal(t.moves(), 0);
+
+  t.map.focusOn('#root');
+  assert.equal(t.moves(), 0, 'focusOn animation suppresses onMove');
+
+  // Re-drawing while the selected tag is the anchor pans cleanly without triggering onMove.
+  t.map.draw({ ...data, selected: '#root', nodes: [
+    { id: '#root', tag: 'root', name: 'Root', x: 50, y: 20, expandable: true, expanded: true },
+    { id: '#other', tag: 'other', name: 'Other', x: 100, y: 40, expandable: true, expanded: false },
+  ] });
+  assert.equal(t.moves(), 0);
+
+  // Expanding a different tag moves it and holds it as anchor, shifting the selected tag away and calling onMove.
+  t.map.draw({ ...data, selected: '#root', anchor: '#other', nodes: [
+    { id: '#root', tag: 'root', name: 'Root', x: 50, y: 20, expandable: true, expanded: true },
+    { id: '#other', tag: 'other', name: 'Other', x: 120, y: 60, expandable: true, expanded: true },
+  ] });
+  const before = t.moves();
+  assert.equal(before, 1);
+
+  t.emit('pan');
+  assert.equal(t.moves(), before + 1);
+  t.map.fit();
+  assert.equal(t.moves(), before + 2);
   t.map.destroy();
 });

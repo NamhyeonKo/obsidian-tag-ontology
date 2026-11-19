@@ -4,20 +4,22 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import * as THREE from 'three';
+import { Ontology } from 'tag-ontology';
 import * as layer from '../src/layer.ts';
 import * as settings from '../src/settings.ts';
 import * as geometry from '../src/geometry3d.ts';
 
 interface Node { id: string; x: number; y: number; z: number; radius: number }
 interface Renderer {
-  three: typeof THREE; graph: { scene(): THREE.Scene; pauseAnimation(): void }; nodes: Map<string, Node>;
+  three: typeof THREE; graph: { scene(): THREE.Scene; pauseAnimation(): void; graphData?(data: unknown): void }; nodes: Map<string, Node>;
+  status?: { setText(text: string): void };
   draw(operation: string): void; setVisible(visible: boolean): void; pendingDraw?: string;
   links: { source: string | Node; target: string | Node; kind: string }[];
   lines: THREE.LineSegments; dashes: THREE.LineSegments; cone: THREE.ConeGeometry; arrowMaterial: THREE.MeshLambertMaterial;
   arrows: THREE.InstancedMesh; buildLinks(): void; placeLinks(): void;
 }
-async function setup() {
-  const context = createContext({});
+async function setup(owner: object = {}) {
+  const context = createContext({ window: { setTimeout: () => 0, clearTimeout: () => {} } });
   const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
@@ -30,8 +32,9 @@ async function setup() {
   });
   await module.evaluate();
   const Canvas = (module.namespace as unknown as { Graph3DCanvas: new(root: object, owner: object, leaf: object) => Renderer }).Graph3DCanvas;
-  const canvas = new Canvas({ isShown: () => true }, {}, {}), scene = new THREE.Scene();
-  canvas.three = THREE; canvas.graph = { scene: () => scene, pauseAnimation() {} };
+  const canvas = new Canvas({ isShown: () => true }, owner, {}), scene = new THREE.Scene();
+  canvas.three = THREE; canvas.graph = { scene: () => scene, pauseAnimation() {}, graphData() {} };
+  canvas.status = { setText() {} };
   canvas.lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial());
   canvas.dashes = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial());
   canvas.cone = new THREE.ConeGeometry(1, 1, 8); canvas.arrowMaterial = new THREE.MeshLambertMaterial();
@@ -68,4 +71,275 @@ test('hidden 3D updates are coalesced and a full refresh is flushed on return', 
   assert.deepEqual(operations, ['refresh']); assert.equal(c.pendingDraw, undefined);
   c.setVisible(false); c.setVisible(true);
   assert.deepEqual(operations, ['refresh'], 'unchanged visibility must not force another redraw');
+});
+
+test('settings redraws reuse base graphData and do not drop queued vault refreshes', async () => {
+  let baseBuilds = 0;
+  const model = new Ontology({ root: { description: '', broader: [] } }, [{ path: 'A.md', tags: ['root'] }]);
+  const owner = {
+    model,
+    settings: { ...settings.DEFAULT_SETTINGS },
+    native: { selectedTag: undefined },
+    tagColor: () => '#123456',
+    graphData: () => { baseBuilds++; return { nodes: { 'A.md': { type: '', links: { '#root': true } }, '#root': { type: 'tag', links: {} } }, numLinks: 0 }; },
+  };
+  const c = await setup(owner);
+  c.setVisible(true);
+  c.draw('refresh');
+  assert.equal(baseBuilds, 1);
+
+  c.draw('settings');
+  assert.equal(baseBuilds, 1, 'settings redraws do not rebuild vault graphData');
+
+  c.setVisible(false);
+  c.draw('refresh');
+  c.draw('settings');
+  assert.equal(c.pendingDraw, 'refresh', 'pending note/vault refresh is preserved across subsequent settings redraw');
+  c.setVisible(true);
+  assert.equal(baseBuilds, 2);
+});
+
+test('recenter button tracks 3D focus, tween arrival, user camera change, wheel interrupt, fit, and expand', async () => {
+  class El {
+    children: El[] = []; classes = new Set<string>(); attrs: Record<string, string> = {}; hidden = false; text = '';
+    events = new Map<string, ((e?: unknown) => void)[]>();
+    doc = { body: { style: '' }, addEventListener() {} };
+    createDiv(cls = '') { const child = new El(); for (const c of cls.split(' ')) if (c) child.classes.add(c); this.children.push(child); return child; }
+    createEl(_tag: string, opts?: { cls?: string }) { return this.createDiv(opts?.cls); }
+    setText(t: string) { this.text = t; }
+    setAttribute(k: string, v: string) { this.attrs[k] = v; }
+    setCssProps() {}
+    querySelectorAll() { return []; } querySelector() { return null; }
+    addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
+    hasClass(cls: string) { return this.classes.has(cls); }
+    toggleClass(cls: string, on: boolean) { if (on) this.classes.add(cls); else this.classes.delete(cls); }
+    toggle(show: boolean) { this.hidden = !show; }
+    empty() { this.children = []; } isShown() { return true; }
+    get clientWidth() { return 800; } get clientHeight() { return 600; }
+    addEventListener(type: string, fn: (e?: unknown) => void) { const list = this.events.get(type) ?? []; list.push(fn); this.events.set(type, list); }
+    all(): El[] { return [this, ...this.children.flatMap(c => c.all())]; }
+  }
+  const controlListeners = new Map<string, Set<() => void>>();
+  let camPos = { x: 0, y: 0, z: 200 }, lastTarget: { x: number; y: number; z: number } | undefined;
+  let alphaMin = 0, cooldownTicks = Infinity;
+  let onDrag: ((item: unknown, translate: { x: number; y: number; z: number }) => void) | undefined, onDragEnd: ((item: unknown) => void) | undefined, onTick: (() => void) | undefined;
+  const fakeGraph = {
+    backgroundColor() { return this; }, showNavInfo() { return this; }, nodeLabel() { return this; }, nodeRelSize() { return this; },
+    nodeVal() { return this; }, nodeThreeObject() { return this; }, linkVisibility() { return this; }, onNodeHover() { return this; },
+    onNodeClick() { return this; },
+    onNodeDrag(fn: (item: unknown, translate: { x: number; y: number; z: number }) => void) { onDrag = fn; return this; },
+    onNodeDragEnd(fn: (item: unknown) => void) { onDragEnd = fn; return this; },
+    onEngineTick(fn: () => void) { onTick = fn; return this; },
+    cooldownTime() { return this; },
+    cooldownTicks(v?: number) { if (v === undefined) return cooldownTicks; cooldownTicks = v; return this; },
+    d3AlphaMin(v?: number) { if (v === undefined) return alphaMin; alphaMin = v; return this; },
+    width() { return this; }, height() { return this; },
+    d3Force: () => ({ strength() { return this; }, distance() { return this; } }),
+    d3ReheatSimulation() {}, pauseAnimation() {}, resumeAnimation() {},
+    scene: () => Object.assign(new THREE.Scene(), { fog: undefined, onBeforeRender: undefined }),
+    camera: () => ({ position: camPos, fov: 45, aspect: 1.33, matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] } }),
+    controls: () => ({
+      target: { x: 0, y: 0, z: 0 },
+      addEventListener(type: string, fn: () => void) { const s = controlListeners.get(type) ?? new Set(); s.add(fn); controlListeners.set(type, s); },
+      removeEventListener(type: string, fn: () => void) { controlListeners.get(type)?.delete(fn); },
+    }),
+    cameraPosition(pos?: { x: number; y: number; z: number }, lookAt?: { x: number; y: number; z: number }) {
+      if (!pos) return { ...camPos };
+      lastTarget = pos; void lookAt; return this;
+    },
+    graphData() { return this; },
+    renderer: () => ({ forceContextLoss() {}, dispose() {} }), _destructor() {},
+  };
+  let now = 0;
+  let saved = 0;
+  const model = new Ontology({ root: { description: '', broader: [] }, leaf: { description: '', broader: ['root'] } }, []);
+  const owner = {
+    model,
+    settings: { ...settings.DEFAULT_SETTINGS },
+    saveState() { saved++; },
+    native: { selectedTag: 'root' as string | undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => ({ nodes: { '#root': { type: 'tag', links: {} }, '#leaf': { type: 'tag', links: {} } }, numLinks: 0 }),
+  };
+  const root = new El();
+  const context = createContext({
+    performance: { now: () => now },
+    window: { setTimeout: () => 0, clearTimeout: () => {} },
+    ResizeObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class { observe() {} disconnect() {} },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    createEl: () => ({ getContext: () => ({ fillRect() {}, measureText: () => ({ width: 20 }) }) }),
+  });
+  const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
+  const threeMock = { ...THREE, ForceGraph3D: class { constructor() { return fakeGraph; } } };
+  const module = new SourceTextModule(code.code, {
+    context,
+    importModuleDynamically: async () => {
+      const m = new SyntheticModule(Object.keys(threeMock), function () { for (const [k, v] of Object.entries(threeMock)) this.setExport(k, v); }, { context });
+      await m.link(() => { throw new Error('unexpected'); }); await m.evaluate(); return m;
+    },
+  });
+  const toggles = new Map<string, (value: boolean) => void>(), toggleValues = new Map<string, unknown>(), buttons = new Map<string, () => void>();
+  const control = (name: string) => {
+    const api = {
+      setValue(value: unknown) { toggleValues.set(name, value); return api; },
+      setLimits() { return api; }, setInstant() { return api; },
+      onChange(fn: (value: boolean) => void) { toggles.set(name, fn); return api; },
+      setButtonText(label: string) { name = label; return api; },
+      onClick(fn: () => void) { buttons.set(name, fn); return api; },
+    };
+    return api;
+  };
+  await module.link(specifier => {
+    const exports = specifier === 'obsidian' ? {
+      Component: class { register() {} registerEvent() {} registerDomEvent(el: El, type: string, fn: (e?: unknown) => void) { el.addEventListener(type, fn); } },
+      ItemView: class {},
+      Setting: class { name = ''; nameEl = new El(); settingEl = new El(); setName(name: string) { this.name = name; return this; } addToggle(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addSlider(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } addButton(fn: (c: ReturnType<typeof control>) => void) { fn(control(this.name)); return this; } },
+      debounce: (fn: () => void) => fn, setIcon(el: El, id: string) { el.attrs.icon = id; }, setTooltip(el: El, text: string) { el.attrs['aria-label'] = text; },
+    }
+      : specifier === './legend.ts' ? { renderDepthLegend() {} }
+      : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
+      : specifier === './native.ts' ? { DOUBLE_CLICK_MS: 200, coveredEdges: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }
+      : specifier === './settings.ts' ? { ...settings } : specifier === './geometry3d.ts' ? { ...geometry } : { ...layer };
+    return new SyntheticModule(Object.keys(exports), function () { for (const [k, v] of Object.entries(exports)) this.setExport(k, v); }, { context });
+  });
+  await module.evaluate();
+  const Canvas = (module.namespace as unknown as {
+    Graph3DCanvas: new(root: El, owner: object, leaf: object) => Renderer & { open(): Promise<void>; focusOn(tag: string): void; fit(): void; paint(): void; unload?(): void; onunload(): void };
+  }).Graph3DCanvas;
+  const c = new Canvas(root, owner, {});
+  c.setVisible(true);
+  await c.open();
+  const recenter = root.all().find(el => el.classes.has('tag-ontology-recenter'))!;
+  const recenterBtn = root.all().find(el => el.attrs['aria-label'] === 'Center on selected tag')!;
+  const emitChange = () => controlListeners.get('change')?.forEach(fn => fn());
+
+  assert.equal(recenter.hidden, false, 'shown initially when a tag is already selected without focusing');
+  c.nodes.get('#root')!.x = 0; c.nodes.get('#root')!.y = 0; c.nodes.get('#root')!.z = 0;
+  recenterBtn.events.get('click')![0]();
+  assert.equal(recenter.hidden, true, 'hides when clicking recenter flies to selected tag');
+
+  // Simulate mid-flight tween updates even past nominal duration until destination arrival.
+  now = 1500;
+  emitChange();
+  assert.equal(recenter.hidden, true, 'ignores late tween frames while still away from destination');
+  camPos = { ...lastTarget! };
+  emitChange();
+  assert.equal(recenter.hidden, true, 'arriving at destination completes flight without marking moved');
+
+  camPos = { x: camPos.x + 15, y: camPos.y, z: camPos.z };
+  emitChange();
+  assert.equal(recenter.hidden, false, 'user orbit or pan shows recenter');
+
+  c.focusOn('root');
+  assert.equal(recenter.hidden, true);
+  const stage = root.all().find(el => el.classes.has('tag-ontology-3d-stage'))!;
+  stage.events.get('wheel')![0]();
+  emitChange();
+  assert.equal(recenter.hidden, false, 'wheel clears active flight target and shows recenter');
+
+  c.focusOn('root');
+  assert.equal(recenter.hidden, true);
+  c.draw('expand:root');
+  assert.equal(recenter.hidden, false, 'sidebar expand marks layout moved');
+
+  owner.native.selectedTag = 'leaf';
+  c.paint();
+  assert.equal(recenter.hidden, true, 'hides when the selected tag is collapsed out of view');
+
+  // With dragTension3d on (default), dragging lifts alphaMin so settled layouts wake up and restores it on post-drag tick.
+  const dragged = c.nodes.get('#root')! as Node & { fx?: number };
+  assert.equal(alphaMin, 0.001);
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(alphaMin, 0);
+  assert.equal(cooldownTicks, Infinity);
+  onTick!();
+  assert.equal(alphaMin, 0, 'keeps alphaMin off while dragging');
+  onDragEnd!(dragged);
+  assert.equal(alphaMin, 0, 'waits for a physics tick to raise alpha before restoring alphaMin');
+  onTick!();
+  assert.equal(alphaMin, 0.001, 'restores alphaMin after post-drag tick');
+
+  const sections = root.all().filter(el => el.classes.has('graph-control-section'));
+  assert.equal(sections.length, 2);
+  assert.ok(sections.every(el => !el.classes.has('is-collapsed')), 'Labels and Forces sections open expanded by default');
+  // With dragTension3d off, dragging stops the simulation and pins the released node to spring back cleanly.
+  toggles.get('Drag tension')!(false);
+  assert.equal(owner.settings.dragTension3d, false);
+  assert.equal(saved, 1);
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(cooldownTicks, 0);
+  onDragEnd!(dragged);
+  assert.equal(cooldownTicks, Infinity);
+  assert.equal(dragged.fx, dragged.x);
+  buttons.get('Restore defaults')!();
+  assert.equal(owner.settings.dragTension3d, true);
+  assert.equal(toggleValues.get('Drag tension'), true);
+  assert.equal(dragged.fx, undefined, 're-enabling drag tension clears active return springs cleanly');
+  assert.equal(saved, 2);
+
+  // Turning tension off before release skips spring-back when no home was recorded, and turning it back on mid-drag restores cooldown.
+  const state = c as unknown as { homes: Map<unknown, unknown>; springs: Map<unknown, unknown> };
+  dragged.fx = undefined;
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(alphaMin, 0);
+  toggles.get('Drag tension')!(false);
+  assert.equal(alphaMin, 0.001);
+  onDragEnd!(dragged);
+  assert.equal(dragged.fx, undefined);
+  assert.equal(state.springs.size, 0, 'does not queue a spring without a pre-drag home');
+
+  onDrag!(dragged, { x: 10, y: 0, z: 0 });
+  assert.equal(cooldownTicks, 0);
+  toggles.get('Drag tension')!(true);
+  assert.equal(cooldownTicks, Infinity, 'restores cooldown even when tension turns on before release');
+  assert.equal(state.homes.size, 0, 'clears off-mode drag homes when tension turns on');
+  onDragEnd!(dragged);
+
+  lastTarget = undefined;
+  c.fit();
+  assert.ok(lastTarget, 'public fit() frames 3D graph for Home action');
+  c.onunload();
+});
+
+test('3D node labels ignore pointer raycasts while spheres still hit for tags and notes', async () => {
+  const c = await setup({ settings: { ...settings.DEFAULT_SETTINGS }, native: {}, tagColor: () => '#123456' });
+  const internal = c as unknown as {
+    ball: THREE.SphereGeometry;
+    nodeObject(item: { id: string; type: string; tag?: string; name: string; degree: number; radius: number; dot?: THREE.Mesh; label?: THREE.Sprite }): THREE.Object3D;
+  };
+  class SpriteTextStub extends THREE.Sprite {
+    fontFace = ''; fontSize = 0;
+    constructor() { super(new THREE.SpriteMaterial()); }
+  }
+  c.three = { ...THREE, SpriteText: SpriteTextStub } as unknown as typeof THREE;
+  internal.ball = new THREE.SphereGeometry(1, 8, 8);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+  camera.position.set(0, 0, 50);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+
+  const items: Parameters<typeof internal.nodeObject>[0][] = [
+    { id: '#tag', type: 'tag', tag: 'tag', name: 'tag', degree: 1, radius: 1.5 },
+    { id: 'Note.md', type: 'note', name: 'Note', degree: 1, radius: 1.2 },
+  ];
+  for (const item of items) {
+    const group = internal.nodeObject(item);
+    item.label!.scale.set(12, 2.2, 1);
+    group.updateMatrixWorld(true);
+
+    const ray = new THREE.Raycaster();
+    // Aiming at the sphere hits the mesh.
+    const dotNdc = new THREE.Vector3(0, 0, 0).project(camera);
+    ray.setFromCamera(new THREE.Vector2(dotNdc.x, dotNdc.y), camera);
+    const dotHits = ray.intersectObject(group, true);
+    assert.equal(dotHits[0]?.object, item.dot, `${item.type} sphere is clickable`);
+
+    // Aiming at the hanging label hits nothing (passes through).
+    const labelPos = new THREE.Vector3(0, -(item.radius + 1.5), 0).project(camera);
+    ray.setFromCamera(new THREE.Vector2(labelPos.x, labelPos.y), camera);
+    assert.deepEqual(ray.intersectObject(group, true), [], `${item.type} label ignores raycasts`);
+  }
 });

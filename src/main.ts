@@ -40,8 +40,9 @@ export default class TagOntologyPlugin extends Plugin {
   private redraw = false;
   private disposed = false;
   private settingsTab?: OntologySettingsTab;
-  // The accent last handed out for drawing, so other style changes on <body> don't redraw the graphs.
+  // The accent last handed out for drawing, and the accent last synced to Obsidian's 2D graph highlight CSS.
   private accent?: string;
+  private themeAccent?: string;
 
   async onload(): Promise<void> {
     const saved: unknown = await this.loadData();
@@ -81,8 +82,9 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on('active-leaf-change', leaf => this.native.activate(leaf)));
     // A tag color left to the accent follows it. A theme change fires css-change; the accent color setting only rewrites the
     // accent variables on <body>, so <body>'s style is watched too.
-    this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent()));
-    const accentWatch = new MutationObserver(() => this.followAccent());
+    this.registerEvent(this.app.workspace.on('css-change', () => this.followAccent(false)));
+    this.accent = this.readAccent(); this.themeAccent = this.readThemeAccent();
+    const accentWatch = new MutationObserver(() => this.followAccent(true));
     accentWatch.observe(document.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
     // A broken dictionary is reported at startup; a missing one isn't, as a sync still catching up looks the same and the sidebar explains it.
@@ -165,16 +167,13 @@ export default class TagOntologyPlugin extends Plugin {
     let raw: unknown;
     try { raw = JSON.parse(text); }
     catch (error) { throw new Error(`Invalid JSON: ${reason(error)}`); }
-    const dictionaryMs = performance.now() - start;
-    const indexStart = performance.now();
-    const notes = this.notes();
-    const model = new Ontology(raw, notes);
-    this.loadMetrics = {
-      dictionaryMs, indexMs: performance.now() - indexStart,
-      noteCount: notes.length, taggedNotes: notes.filter((note) => note.tags.length > 0).length,
-    };
-    this.raw = raw as RawDictionary;
-    this.model = model;
+    return this.buildModel(raw as RawDictionary, performance.now() - start);
+  }
+
+  private buildModel(raw = this.raw!, dictionaryMs = this.loadMetrics.dictionaryMs): Ontology {
+    const indexStart = performance.now(), notes = this.notes(), model = new Ontology(raw, notes);
+    this.loadMetrics = { dictionaryMs, indexMs: performance.now() - indexStart, noteCount: notes.length, taggedNotes: notes.filter(note => note.tags.length > 0).length };
+    this.raw = raw; this.model = model;
     return model;
   }
 
@@ -317,10 +316,21 @@ export default class TagOntologyPlugin extends Plugin {
     return cssColorToHex(getComputedStyle(document.body).getPropertyValue('--color-accent')) ?? ACCENT;
   }
 
+  private readThemeAccent(): string {
+    const style = getComputedStyle(document.body);
+    return (style.getPropertyValue('--interactive-accent') || style.getPropertyValue('--color-accent')).trim();
+  }
+
   // Every redraw takes the tag color from tagColor(), so whatever redrew last, the accent it drew with is the one compared.
-  private followAccent() {
-    if (!this.model || !this.settings.customColors || this.settings.tagColor || this.readAccent() === this.accent) return;
-    this.native.refresh();
+  // An inline style update on <body> skips Obsidian's css-change event, so open 2D renderers re-read CSS highlight colors.
+  private followAccent(restyle: boolean) {
+    const themeAccent = this.readThemeAccent();
+    if (themeAccent !== this.themeAccent) { this.themeAccent = themeAccent; if (restyle) this.native.recolor(); }
+    if (!this.model || !this.settings.customColors || this.settings.tagColor) return;
+    const accent = this.readAccent();
+    if (accent === this.accent) return;
+    this.accent = accent;
+    this.native.refresh(true, 'settings');
   }
 
   // Persists graph state (expansion, toggles) without reloading the dictionary or redrawing views.
@@ -396,7 +406,7 @@ export default class TagOntologyPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     await this.saveState();
-    await this.refreshViews({ notify: true });
+    await this.refreshViews({ notify: true, linked: 'settings' });
     this.settingsTab?.syncPaletteControls();
   }
 
@@ -451,12 +461,19 @@ export default class TagOntologyPlugin extends Plugin {
     }, 300);
   }
 
-  private async refreshViews({ redraw = true, notify = false } = {}): Promise<void> {
+  private async refreshViews({ redraw = true, notify = false, linked = 'refresh' } = {}): Promise<void> {
     if (this.disposed) return;
     // With the 3D view off, its tabs close, so the workspace doesn't bring them back (and load three.js) on the next start.
     if (!this.settings.enable3d) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_3D)) leaf.detach();
     if (!this.settings.enableExplorer) for (const leaf of this.app.workspace.getLeavesOfType(VIEW_EXPLORER)) leaf.detach();
-    try { await this.loadModel(); if (!this.disposed) this.native.refresh(redraw); }
+    try {
+      if (redraw || !this.model || !this.raw || this.error !== undefined) await this.loadModel();
+      else this.buildModel();
+      if (!this.disposed) {
+        if (redraw && !this.settings.tagColor) this.accent = this.readAccent();
+        this.native.refresh(redraw, linked);
+      }
+    }
     catch (error) {
       if (this.disposed) return;
       console.error('Tag Ontology:', error);
@@ -494,7 +511,7 @@ const OPEN_EXPLORER = 'Open ontology explorer';
 const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Explore the ontology in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the explorer canvases.' };
 const ENABLE_TREE = { name: 'Enable vertical tree', desc: 'Show the vertical tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
 const ENABLE_TREE_HORIZONTAL = { name: 'Enable horizontal tree', desc: 'Show the horizontal tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
-const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases.' };
+const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases. Drag tension can be toggled in the 3D view’s Forces settings.' };
 const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
 const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
 const FOCUS_SCOPE = [
@@ -802,14 +819,8 @@ class OntologySettingsTab extends PluginSettingTab {
     }));
     for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
     new Setting(containerEl).setName('Additional views').setHeading();
-    for (const [key, text] of [['enableTree', ENABLE_TREE], ['enableTreeHorizontal', ENABLE_TREE_HORIZONTAL]] as const) {
+    for (const [key, text] of [['enableTree', ENABLE_TREE], ['enableTreeHorizontal', ENABLE_TREE_HORIZONTAL], ['enable3d', ENABLE_3D], ['enableExplorer', ENABLE_EXPLORER]] as const) {
       new Setting(containerEl).setName(text.name).setDesc(text.desc).addToggle(toggle => toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value)));
     }
-    new Setting(containerEl).setName(ENABLE_3D.name).setDesc(ENABLE_3D.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.enable3d).onChange(value => this.setControlValue('enable3d', value));
-    });
-    new Setting(containerEl).setName(ENABLE_EXPLORER.name).setDesc(ENABLE_EXPLORER.desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings.enableExplorer).onChange(value => this.setControlValue('enableExplorer', value));
-    });
   }
 }

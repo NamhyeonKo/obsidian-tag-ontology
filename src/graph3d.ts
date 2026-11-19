@@ -33,17 +33,18 @@ interface Node3D {
 }
 interface Link3D { source: string | Node3D; target: string | Node3D; kind: EdgeKind | 'note' }
 type Graph = ForceGraph3DInstance<Node3D, Link3D>;
+interface ControlsLike { addEventListener(type: string, fn: () => void): void; removeEventListener(type: string, fn: () => void): void }
 type Layer = ReturnType<typeof buildLayer>;
 type Three = typeof import('./three.ts');
 
 // The 2D graph's Display defaults in 3D units: nodes and links start a little smaller than 2D's 1.
 const NODE_SIZE = 0.8, LINK_OPACITY = 0.8;
-// The Forces sliders take the 2D graph's units; these scale them to 3D space, where 2D's link distance of 250 is 30.
-const REPEL_SCALE = -6, DISTANCE_SCALE = 0.12, CENTER_SCALE = 0.04;
+// The gravity, repulsion, and link forces scale from 2D; cooling stops once alpha drops below this floor.
+const REPEL_SCALE = -6, DISTANCE_SCALE = 0.12, CENTER_SCALE = 0.04, ALPHA_MIN = 0.001;
 const ARROW = 1.8, DASH = 1.6, GAP = 1.2;
 // A click flies the camera this close to the tag, keeping the direction it looks from.
 const FLY_DISTANCE = 90, FLY_MS = 1000;
-// A node let go eases back home in this long, as in the 2D tree layouts.
+// Without drag tension, a dropped node eases back home over this duration.
 const SPRING_MS = 450;
 // Faded nodes and labels stay faintly visible, as in 2D.
 const FADED_NODE = 0.2, FADED_LABEL = 0.15;
@@ -70,7 +71,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private three?: Three; private ball?: SphereGeometry; private closed = false;
   // Where the camera looks, refreshed every frame.
   private forward?: Vector3;
-  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private recenter?: HTMLElement;
   private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
   private colors = FALLBACK;
   // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
@@ -80,9 +81,24 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // The node ids and links last handed to the library, to tell an edit that changes nothing it draws.
   private shape?: string;
   private fitTimer?: number; private flyTimer?: number; private resize?: ResizeObserver;
+  private controls?: ControlsLike;
+  private centeredTag?: string; private moved = false;
+  private dragging = false; private restoreAlphaMin = false;
+  // Where flyTo is sending the camera so tween frames don't mark the view as user-moved.
+  private flyDest?: { x: number; y: number; z: number; until: number };
+  private onControlChange = () => {
+    const dest = this.flyDest;
+    if (dest) {
+      const p = this.graph?.camera().position;
+      if (p && Math.hypot(p.x - dest.x, p.y - dest.y, p.z - dest.z) < 0.05) { this.flyDest = undefined; return; }
+      if (performance.now() < dest.until) return;
+      this.flyDest = undefined;
+    }
+    if (!this.moved) { this.moved = true; this.syncRecenter(); }
+  };
   // The hovered node, and what stays bright: around the hovered node, or what Focus keeps bright around the selected tag.
   private hover?: Node3D; private center?: string; private lit?: Set<string>;
-  // Where each dragged node was before it was grabbed, and the nodes let go that are easing back there.
+  // Without drag tension, where each grabbed node came from and active return springs.
   private homes = new Map<Node3D, Point>(); private springs = new Map<Node3D, { from: Point; start: number }>();
   // Every link is drawn by three objects, solid lines, dashed related lines and the hierarchy arrows, instead of one object
   // each: with thousands of links, one draw call per link was most of a frame.
@@ -103,16 +119,19 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const root = this.contentEl;
     root.empty(); root.addClass('tag-ontology-3d');
     this.stage = root.createDiv('tag-ontology-3d-stage');
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
+    recenter.hidden = true;
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+    const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    this.register(() => stopLegend?.());
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
     this.button(actions, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf), 'top');
     this.button(actions, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf), 'top');
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
-    this.button(actions, 'scan', 'Fit', () => { window.clearTimeout(this.flyTimer); this.fit(); }, 'top');
+    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
+    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = native.selectedTag; if (tag) this.focusOn(tag); }, 'top');
     for (const [key, icon, name] of TOGGLES) {
       this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
       this.toggles[key].addClass('tag-ontology-toggle');
@@ -149,14 +168,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       .linkVisibility(false)
       .onNodeHover(item => { this.hover = item ?? undefined; this.contentEl.toggleClass('is-pointing', !!item); this.paint(); })
       .onNodeClick(item => this.click(item))
-      // As in the 2D tree layouts, a drag moves only the grabbed node, and letting go eases it back.
       .onNodeDrag((item, translate) => this.grab(item, translate))
       .onNodeDragEnd(item => this.release(item))
+      .onEngineTick(() => { if (this.restoreAlphaMin && !this.dragging) { this.restoreAlphaMin = false; this.graph?.d3AlphaMin(ALPHA_MIN); } })
       // The layout stops once it has cooled down rather than after a set time on the clock, so a tab paused in the background
       // carries on where it left off when shown again.
       .cooldownTime(Infinity)
-      .d3AlphaMin(0.001);
+      .d3AlphaMin(ALPHA_MIN);
     this.applyForces();
+    this.controls = graph.controls() as ControlsLike;
+    this.controls.addEventListener('change', this.onControlChange);
     graph.d3Force('gravity', this.gravity());
     graph.scene().fog = new three.Fog(this.colors.background, 1, 1000);
     // Related links are dashed, as in 2D. Hierarchy links always show their direction with an arrow. The objects span the whole
@@ -178,7 +199,11 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.resize.observe(this.stage);
     // A fit still waiting for the layout to spread, or a flight waiting for a second click, gives way once the user moves the
     // camera, as in 2D. A second click cancels the flight with its press.
-    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer); }, { capture: true });
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => {
+      window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
+      if (type === 'wheel') this.flyDest = undefined;
+    }, { capture: true });
+    this.registerDomEvent(this.stage, 'pointermove', event => { if (event.buttons) this.flyDest = undefined; }, { capture: true });
     // Letting go of a dragged node, the library sends the page a made-up touch pointerup, which the orbit controls can't match to
     // the mouse, so they throw. The real pointerup comes right after and ends them, so the made-up one is stopped.
     this.registerDomEvent(this.contentEl.doc, 'pointerup', event => { if (!event.isTrusted && event.pointerType === 'touch') event.stopImmediatePropagation(); }, { capture: true });
@@ -211,6 +236,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.closed = true;
     this.owner.native.unlink(this);
     this.resize?.disconnect();
+    this.controls?.removeEventListener('change', this.onControlChange); this.controls = undefined; this.flyDest = undefined;
     window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (graph) {
@@ -225,6 +251,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       graph._destructor();
     }
     this.graph = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
+    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false;
     this.contentEl.empty();
   }
 
@@ -273,6 +300,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     // the layout up and rebuild every line, so an edit that changes nothing it draws leaves it still, as 2D does.
     const shape = JSON.stringify([[...next.keys()], links.map(link => [link.source, link.target, link.kind])]);
     if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildLinks(); }
+    if (operation.startsWith('expand:')) this.moved = true;
     this.paint();
     const notes = [...next.values()].filter(item => item.type !== 'tag').length;
     this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
@@ -307,6 +335,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     for (const item of this.nodes.values()) item.dot?.material.color.set(this.colorOf(item));
     if (graph) this.colorLinks();
+    this.syncRecenter();
+  }
+
+  private syncRecenter() {
+    if (!this.recenter) return;
+    const tag = this.owner.native.selectedTag, visible = !!tag && !!this.layer?.resolved.visible.has(tag);
+    this.recenter.hidden = !visible || (!this.moved && this.centeredTag === tag);
   }
 
   has(tag: string) { return !!this.layer?.resolved.range.has(tag); }
@@ -315,6 +350,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   focusOn(tag: string) {
     window.clearTimeout(this.flyTimer);
     const id = this.layer?.resolved.idOf.get(tag), started = performance.now();
+    if (id !== undefined) { this.centeredTag = tag; this.moved = false; this.syncRecenter(); }
     const attempt = () => {
       const item = id === undefined ? undefined : this.nodes.get(id);
       if (item?.x !== undefined) { this.flyTo(item); return; }
@@ -330,7 +366,10 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const native = this.owner.native, double = native.isDouble(item.id);
     if (item.tag) {
       native.clickTag(item.tag, double, this.leaf);
-      if (!double) this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
+      if (!double) {
+        this.centeredTag = item.tag; this.moved = false; this.syncRecenter();
+        this.flyTimer = window.setTimeout(() => this.flyTo(item), DOUBLE_CLICK_MS);
+      }
     }
     else if (item.type !== 'tag' && !double) native.openNote(item.id);
   }
@@ -342,7 +381,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     window.clearTimeout(this.fitTimer);
     const camera = graph.cameraPosition(), at = { x: item.x, y: item.y ?? 0, z: item.z ?? 0 };
     const dx = camera.x - at.x, dy = camera.y - at.y, dz = camera.z - at.z, length = Math.hypot(dx, dy, dz) || 1;
-    graph.cameraPosition({ x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE }, at, FLY_MS);
+    const dest = { x: at.x + dx / length * FLY_DISTANCE, y: at.y + dy / length * FLY_DISTANCE, z: at.z + dz / length * FLY_DISTANCE };
+    this.flyDest = { ...dest, until: performance.now() + FLY_MS + 1000 };
+    graph.cameraPosition(dest, at, FLY_MS);
   }
 
   private lineColor(link: Link3D) {
@@ -371,6 +412,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     label.center.set(0.5, 1);
     // Its size at TEXT_HEIGHT; every frame scales it from this to keep it readable.
     label.userData.base = { x: label.scale.x, y: label.scale.y };
+    // Only the node sphere handles pointer events; labels pass hover, drag, and clicks through like in 2D.
+    label.raycast = () => {};
     group.add(label);
     this.size(item);
     return group;
@@ -461,35 +504,53 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (arrows.instanceColor) arrows.instanceColor.needsUpdate = true;
   }
 
-  // On every drag move the library asks the layout to warm up. A settled layout stays still anyway, but one still settling (just
-  // opened or expanded) would run the whole simulation on the main thread each frame, about 10 ms with 1,700 nodes, and pull
-  // every other node along. With no steps allowed it stops before taking one, so only the grabbed node moves.
+  // With drag tension on, drop ALPHA_MIN while dragging so alphaTarget(0.3) can wake settled layouts, and restore it on the post-drag tick.
+  // With tension off: on every drag move the library asks the layout to warm up, so stopping steps moves only the grabbed node.
   private grab(item: Node3D, translate: Point) {
+    if (this.owner.settings.dragTension3d) {
+      if (!this.dragging) { this.dragging = true; this.restoreAlphaMin = true; this.graph?.d3AlphaMin(0); }
+      return;
+    }
     this.graph?.cooldownTicks(0);
     // The first move remembers where the node was; grabbed again while easing back, it keeps that place and stops easing.
     if (!this.homes.has(item)) this.homes.set(item, { x: (item.x ?? 0) - translate.x, y: (item.y ?? 0) - translate.y, z: (item.z ?? 0) - translate.z });
     this.springs.delete(item);
   }
 
-  // The library unpins a node let go; it stays pinned while it eases back, so the layout doesn't carry it off. The library
-  // then cools the layout down, and it goes on settling if it was before the drag.
+  // When tension is off, the library unpins a node let go; it stays pinned while it eases back, then cools the layout down.
   private release(item: Node3D) {
+    if (this.owner.settings.dragTension3d) { this.dragging = false; return; }
     this.graph?.cooldownTicks(Infinity);
+    if (!this.homes.has(item)) return;
     const from = { x: item.x ?? 0, y: item.y ?? 0, z: item.z ?? 0 };
     item.fx = from.x; item.fy = from.y; item.fz = from.z;
     this.springs.set(item, { from, start: performance.now() });
+  }
+
+  private syncDragMode() {
+    if (this.owner.settings.dragTension3d) {
+      for (const item of this.springs.keys()) item.fx = item.fy = item.fz = undefined;
+      this.springs.clear(); this.homes.clear();
+      this.graph?.cooldownTicks(Infinity);
+      return;
+    }
+    this.dragging = false; this.restoreAlphaMin = false;
+    this.graph?.d3AlphaMin(ALPHA_MIN);
   }
 
   private degreeOf(end: string | Node3D) { return this.nodes.get(idOf(end))?.degree ?? 1; }
 
   // Nodes with no links drift far out on repulsion alone, so the view fits the linked ones; a graph of loose nodes fits them all.
   // The library's own zoomToFit frames every last node from a box corner, which left the graph small in the middle.
-  private fit() {
+  fit() {
+    window.clearTimeout(this.fitTimer); window.clearTimeout(this.flyTimer);
     const graph = this.graph;
     if (!graph) return;
     const all = [...this.nodes.values()], linked = all.some(node => node.degree > 0);
     const points = all.filter(node => !linked || node.degree > 0).map(node => ({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 }));
     if (!points.length) return;
+    this.flyDest = undefined;
+    if (!this.moved) { this.moved = true; this.syncRecenter(); }
     // The graph fits in the part of the view the toolbar, legend, status line and settings panel leave uncovered.
     const width = this.contentEl.clientWidth || 1, height = this.contentEl.clientHeight || 1, edge = coveredEdges(this.contentEl);
     const free = { width: Math.max(1, width - edge.left - edge.right) / width, height: Math.max(1, height - edge.top - edge.bottom) / height };
@@ -615,7 +676,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
     setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open graph settings');
     // A collapsible section with its rows laid out like the core panel's: a toggle beside its name, a slider under it.
-    const section = (name: string, collapsed: boolean) => {
+    const section = (name: string) => {
       const el = panel.createDiv('tree-item graph-control-section');
       const heading = el.createDiv('tree-item-self mod-collapsible');
       const icon = heading.createDiv('tree-item-icon collapse-icon');
@@ -623,12 +684,13 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       heading.createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: name });
       const body = el.createDiv('tree-item-children');
       // As in the core panel, the icon carries the state too, which turns it.
-      const set = (value: boolean) => { el.toggleClass('is-collapsed', value); icon.toggleClass('is-collapsed', value); body.toggle(!value); };
-      heading.addEventListener('click', () => set(!el.hasClass('is-collapsed')));
-      set(collapsed);
+      heading.addEventListener('click', () => {
+        const collapsed = !el.hasClass('is-collapsed');
+        el.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
+      });
       return body;
     };
-    const labels = section('Labels', false);
+    const labels = section('Labels');
     let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
     const perspective = new Setting(labels).setName('Perspective labels').addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
       if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
@@ -640,7 +702,14 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }))
       .settingEl.addClass('mod-slider');
     // As in 2D, moving a force slider warms the layout up so it settles into the new balance.
-    const forces = section('Forces', true), sliders = new Map<keyof Forces, SliderComponent>();
+    const forces = section('Forces'), sliders = new Map<keyof Forces, SliderComponent>();
+    let tension: ToggleComponent | undefined;
+    const dragTension = new Setting(forces).setName('Drag tension').addToggle(component => (tension = component).setValue(owner.settings.dragTension3d).onChange(value => {
+      if (value === owner.settings.dragTension3d) return;
+      owner.settings.dragTension3d = value; this.syncDragMode(); save();
+    }));
+    dragTension.settingEl.addClass('mod-toggle');
+    setTooltip(dragTension.nameEl, 'Pull connected nodes when dragging. Off: only the dragged node moves.');
     for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
       const { name, min, max, step } = FORCES[key];
       new Setting(forces).setName(name).addSlider(component => { sliders.set(key, component); component.setLimits(min, max, step).setInstant(true)
@@ -652,12 +721,15 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     new Setting(forces).addButton(button => button.setButtonText('Restore defaults').onClick(() => {
       owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
+      owner.settings.dragTension3d = DEFAULT_SETTINGS.dragTension3d;
+      tension?.setValue(owner.settings.dragTension3d); this.syncDragMode();
       for (const [key, component] of sliders) component.setValue(owner.settings.forces3d[key]);
       this.applyForces(); this.graph?.d3ReheatSimulation(); save();
     }));
     // Another 3D tab may have changed the settings since this panel was built, so it shows them afresh each time it opens.
     open.addEventListener('click', () => {
       toggle?.setValue(owner.settings.perspectiveLabels); slider?.setValue(owner.settings.labelSize);
+      tension?.setValue(owner.settings.dragTension3d);
       for (const [key, component] of sliders) component.setValue(owner.settings.forces3d[key]);
       panel.removeClass('is-close');
     });

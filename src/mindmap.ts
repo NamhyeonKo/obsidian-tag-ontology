@@ -7,7 +7,7 @@ export interface MindMapNode {
   id: string; tag?: string; name: string; x: number; y: number; color?: string;
   expandable: boolean; expanded: boolean;
 }
-export interface MindMapStart { app: App; suggest(query: string): Suggestion[]; choose(tag?: string): void; color(tag: string): string | undefined }
+export interface MindMapStart { app: App; suggest(query: string): Suggestion[]; choose(tag?: string): void; color(tag: string): string | undefined; onMove?(): void }
 export interface MindMapData {
   root?: string; roots?: string[]; startFrom?: string;
   nodes: MindMapNode[];
@@ -24,6 +24,7 @@ export class MindMap {
   private data?: MindMapData;
   private closed = false;
   private pendingFit = true;
+  private centering = false;
   private cards = new Map<string, Card>();
   private layer: HTMLElement;
   private lines: SVGSVGElement;
@@ -59,8 +60,9 @@ export class MindMap {
         { selector: 'node', style: { width: 208, height: 32, opacity: 0 } },
       ] });
       stage.appendChild(this.layer);
-      this.cy.on('pan zoom', () => { this.moving(); this.transform(); });
+      this.cy.on('pan zoom', () => { this.moving(); this.transform(); if (!this.centering) this.startActions.onMove?.(); });
       this.cy.on('resize', () => this.transform());
+      for (const type of ['mousedown', 'touchstart', 'wheel']) this.el.addEventListener(type, () => { this.centering = false; }, { capture: true });
       if (this.data) this.draw(this.data);
     }).catch(error => {
       if (this.closed) return;
@@ -133,7 +135,9 @@ export class MindMap {
     if (this.pendingFit) this.fitWhenReady();
     else if (anchor && anchorId && ids.has(anchorId)) {
       const at = cy.getElementById(anchorId).position(), zoom = cy.zoom();
-      cy.pan({ x: anchor.x - at.x * zoom, y: anchor.y - at.y * zoom });
+      const hold = anchorId === data.selected;
+      if (hold) this.centering = true;
+      try { cy.pan({ x: anchor.x - at.x * zoom, y: anchor.y - at.y * zoom }); } finally { if (hold) this.centering = false; }
     }
     this.transform();
   }
@@ -180,10 +184,12 @@ export class MindMap {
     this.pendingFit = false;
     this.limitZoom();
   }
-  fit(covered = this.covered): void { this.covered = covered; this.pendingFit = true; this.fitWhenReady(); }
+  fit(covered = this.covered): void { this.centering = false; this.covered = covered; this.pendingFit = true; this.fitWhenReady(); this.startActions.onMove?.(); }
   focusOn(id: string): void {
     const node = this.cy?.getElementById(id);
-    if (node?.nonempty()) this.cy?.animate({ center: { eles: node } }, { duration: 200 });
+    if (!node?.nonempty()) return;
+    this.centering = true;
+    this.cy?.animate({ center: { eles: node } }, { duration: 200, complete: () => { this.centering = false; } });
   }
   // While the view moves, the layer is its own GPU layer: each frame only scales and shifts the bitmap it already has, instead
   // of painting every card and line again. Text blurs a little while zooming, so the layer goes back to normal painting, once

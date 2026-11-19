@@ -24,7 +24,7 @@ test('sanitizes saved settings to the supported fields', () => {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, tagListStyle: 'chips', focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
-    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 },
+    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 }, dragTension3d: true,
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -105,6 +105,12 @@ test('the 3D view is on by default and only a saved false turns it off', () => {
   for (const enable3d of ['no', 0, undefined]) assert.equal(sanitizeSettings({ enable3d }, '.obsidian').enable3d, true);
   // Up to 0.8.2 a Layout setting picked which graph the ribbon opened; it opens the 2D graph now, so the key is dropped.
   assert.equal(Object.hasOwn(sanitizeSettings({ view: '3d' }, '.obsidian'), 'view'), false);
+});
+
+test('3D drag tension defaults to on and validates saved flags', () => {
+  assert.equal(DEFAULT_SETTINGS.dragTension3d, true);
+  assert.equal(sanitizeSettings({ dragTension3d: false }, '.obsidian').dragTension3d, false);
+  for (const dragTension3d of ['no', 0, undefined]) assert.equal(sanitizeSettings({ dragTension3d }, '.obsidian').dragTension3d, true);
 });
 
 test('kebab-case names are off by default and only a saved true turns them on', () => {

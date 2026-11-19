@@ -2,11 +2,12 @@ import { renderDepthLegend } from './legend.ts';
 import { Component, ItemView, Menu, TFile, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import { graphModeBar } from './graph-modes.ts';
 import type { CollectionReturnValue, Core, EventObject, NodeSingular, StylesheetJson } from 'cytoscape';
+import type { Ontology } from 'tag-ontology';
 import type TagOntologyPlugin from './main.ts';
 import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
-import { cardImage, type Card, type CardTheme } from './explorer-card.ts';
+import { cardHeight, cardImage, type Card, type CardTheme } from './explorer-card.ts';
 import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
@@ -38,11 +39,13 @@ const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
 export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPanel {
   private cy?: Core;
   private closed = false;
-  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement;
+  private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement; private recenter?: HTMLElement;
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
+  private facets?: { model: Ontology; colors: Map<string, string> };
   // A card to center once the tab has a size: one added while the tab was hidden would otherwise sit in its top-left corner.
   private pending?: string;
+  private centeredTag?: string; private moved = false; private centering = false;
 
   private syncModes = () => {};
   private visible = false;
@@ -55,21 +58,24 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.stage = root.createDiv('tag-ontology-explorer-stage');
     // The canvas has its own right-click menu.
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
-    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions');
+    const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
+    recenter.hidden = true;
     this.legend = overlay.createDiv('tag-ontology-legend');
-    renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+    const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    this.register(() => stopLegend?.());
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     // The same buttons in the same places as the graph modes, so switching modes moves nothing; the ones the explorer has no
     // use for stay disabled.
     const unused = (button: HTMLElement) => { button.setAttribute('aria-disabled', 'true'); return button; };
     unused(this.button(actions, 'chevrons-down-up', 'Not used in the ontology explorer', () => {}, 'top'));
     unused(this.button(actions, 'chevrons-up-down', 'Not used in the ontology explorer', () => {}, 'top'));
-    this.button(actions, 'scan', 'Fit', () => { this.cy?.animate({ fit: { eles: this.cy.elements(), padding: 40 } }, { duration: 300 }); }, 'top');
+    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
     // Clearing the canvas brings back the start screen, like the mind map's Change starting tag. A group the sidebar shows goes
     // with the canvas, so the sidebar draws again.
     this.button(actions, 'home', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
       .addClass('tag-ontology-after-divider');
+    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = this.owner.native.selectedTag; if (tag) this.centerOn(tag); }, 'top');
     for (const icon of ['file-text', 'link']) unused(this.button(tools, icon, 'Not used in the ontology explorer', () => {})).addClass('tag-ontology-toggle');
     tools.createDiv('tag-ontology-separator');
     this.button(tools, 'book-open-check', 'Dictionary check', () => this.owner.native.checkDictionary());
@@ -87,7 +93,12 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const resize = new ResizeObserver(() => this.onResize());
     resize.observe(this.stage);
     this.register(() => resize.disconnect());
-    cy.on('tap', 'node[type="tag"]', event => this.owner.native.clickTag(this.tagOf(event), false, this.leaf));
+    for (const type of ['pointerdown', 'wheel'] as const) this.registerDomEvent(this.stage, type, () => { this.centering = false; }, { capture: true });
+    cy.on('pan zoom', () => { if (!this.centering && !this.moved) { this.moved = true; this.syncRecenter(); } });
+    cy.on('tap', 'node[type="tag"]', event => {
+      this.owner.native.clickTag(this.tagOf(event), false, this.leaf);
+      this.syncRecenter();
+    });
     cy.on('dbltap', 'node[type="tag"]', event => this.expand(event.target as NodeSingular, 'children'));
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
     cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
@@ -121,7 +132,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const node = this.pending ? cy.getElementById(this.pending) : undefined;
     if (!node || !cy.width()) return;
     this.pending = undefined;
-    if (node.nonempty()) cy.center(node);
+    if (node.nonempty()) { this.centering = true; cy.center(node); this.centering = false; }
   }
 
   setVisible(visible: boolean) {
@@ -149,7 +160,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const cy = this.cy, model = this.owner.model;
     if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
-    if (operation !== 'refresh' || !cy || !model) return;
+    if ((operation !== 'refresh' && operation !== 'settings') || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
     // Redrawing every card ends in changed(), which refills the groups.
@@ -160,14 +171,26 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   paint(): void {
     this.updateStart();
     const tag = this.owner.native.selectedTag, node = tag ? this.cy?.getElementById('tag:' + tag) : undefined;
-    if (!node?.nonempty() || node.selected()) return;
-    this.cy!.elements().unselect(); node.select();
+    if (node?.nonempty() && !node.selected()) { this.cy!.elements().unselect(); node.select(); }
+    this.syncRecenter();
+  }
+
+  private syncRecenter() {
+    if (!this.recenter) return;
+    const tag = this.owner.native.selectedTag, visible = !!tag && !!this.cy?.getElementById('tag:' + tag).nonempty();
+    this.recenter.hidden = !visible || (!this.moved && this.centeredTag === tag);
   }
 
   // Any dictionary tag can be brought onto the canvas.
   has(tag: string): boolean { return !!this.owner.model?.entries.has(tag); }
   // A tag picked in the sidebar search or its links joins the canvas, or comes into view if it is there.
   focusOn(tag: string): void { this.addTag(tag); }
+  fit(): void {
+    const cy = this.cy;
+    if (!cy || cy.nodes().empty()) return;
+    this.centering = false; this.moved = true; this.syncRecenter();
+    cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 300 });
+  }
 
   // The editor renamed a tag: its card and group take the new name where they stand. The reload that follows redraws them.
   renamed(from: string, to: string): void {
@@ -227,6 +250,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     if (regroup) this.regroup();
     this.syncEdges();
     this.updateStart();
+    this.syncRecenter();
     const on = this.onCanvas(), status = this.status;
     if (status) status.textContent = `${plural(on.tags.size, 'tag')} · ${plural(on.notes.size, 'note')} · ${plural(on.groups.size, 'group')}`;
   }
@@ -332,10 +356,19 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
       const card = this.tagCard(tag), first = cy.nodes().empty();
       node = this.addNode('tag:' + tag, card, { type: 'tag', tag }, placeAside(this.taken(), this.size(card)));
       this.changed();
-      if (first) { cy.zoom(1); cy.center(node); }
+      if (first) { this.centering = true; cy.zoom(1); cy.center(node); this.centering = false; }
     }
     cy.elements().unselect(); node.select();
-    if (cy.width()) cy.animate({ center: { eles: node } }, { duration: 250 }); else this.pending = node.id();
+    this.centerOn(tag, node);
+  }
+
+  private centerOn(tag: string, node = this.cy?.getElementById('tag:' + tag)) {
+    const cy = this.cy;
+    if (!cy || !node?.nonempty()) return;
+    this.centeredTag = tag; this.moved = false; this.syncRecenter();
+    if (!cy.width()) { this.pending = node.id(); return; }
+    this.centering = true;
+    cy.animate({ center: { eles: node } }, { duration: 250, complete: () => { this.centering = false; } });
   }
 
   private expand(node: NodeSingular, kind: Expand) {
@@ -353,7 +386,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.changed();
     if (!cy || added.empty()) return;
     const view = cy.extent(), box = added.boundingBox();
-    if (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2) cy.animate({ center: { eles: added } }, { duration: 250 });
+    if (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2) { this.centering = false; cy.animate({ center: { eles: added } }, { duration: 250 }); }
   }
 
   private tagMenu(event: EventObject) {
@@ -380,7 +413,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     return this.cy!.add({ group: 'nodes', data: { id, ...data, img: image.uri, w: image.width, h: image.height }, position });
   }
 
-  private size(card: Card): Size { return { w: card.width, h: cardImage(card, this.theme, () => 0).height }; }
+  private size(card: Card): Size { return { w: card.width, h: cardHeight(card.rows.length) }; }
 
   private measure(text: string, px: number, bold: boolean) {
     const ctx = this.measurer;
@@ -391,9 +424,11 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
 
   private tagCard(tag: string): Card {
     const model = this.owner.model!, entry = model.entries.get(tag), counts = model.counts(tag);
-    const facets = facetColors([...model.entries.values()].flatMap(each => each.facet ? [each.facet] : []));
+    if (!this.owner.settings.customColors && entry?.facet && this.facets?.model !== model) {
+      this.facets = { model, colors: facetColors([...model.entries.values()].flatMap(each => each.facet ?? [])) };
+    }
     const color = this.owner.settings.customColors ? this.owner.tagColor(tag)
-      : entry?.facet ? facets.get(entry.facet)! : this.colors.tag;
+      : entry?.facet ? this.facets!.colors.get(entry.facet)! : this.colors.tag;
     return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
       rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
   }

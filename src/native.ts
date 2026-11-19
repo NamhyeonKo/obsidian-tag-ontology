@@ -11,7 +11,7 @@ import { buildLayer, edgeKey, focusIds, type EdgeKind, type NativeData, type Nod
 import type { Settings } from './settings.ts';
 import { TagSuggest } from './search.ts';
 import { groupNonCanonical, groupRedundant } from './check.ts';
-import { TAKE_OUT, relativeTime, tagsOfNote } from './explorer-layout.ts';
+import { TAKE_OUT, relativeTime } from './explorer-layout.ts';
 import { changedFields, deletionPreview, draftOf, emptyDraft, excluded, isKebabName, nameError, normalizeName, type Change, type Draft, type Ontology, type RawDictionary } from 'tag-ontology';
 
 interface Texture { constructor: { from(canvas: HTMLCanvasElement): Texture }; destroy(): void }
@@ -22,7 +22,7 @@ interface NativeLink {
 interface NativeRenderer {
   setData: (data: NativeData) => unknown;
   onNodeClick: (event: MouseEvent, id: string, type: string) => void;
-  changed(): void; resetPan(): void;
+  changed(): void; resetPan(): void; testCSS?: () => void;
   width: number; height: number; scale: number; targetScale: number; panX?: number; panY?: number;
   setScale(scale: number): void; setPan(x: number, y: number): void;
   fShowArrow: boolean;
@@ -51,7 +51,7 @@ interface Session {
   links: Map<NativeLink, { render: () => void; texture?: Texture }>;
   nodeRenders: Map<RendererNode, () => void>;
   texture?: Texture; layout?: string;
-  pendingRender?: boolean;
+  pendingRender?: boolean; pendingRecolor?: boolean;
   staticPositions?: { key: string; positions: Map<string, { x: number; y: number }> };
   choice: Settings['layout']; mindmapExpanded: string[];
   viewports: Map<Settings['layout'], { scale: number; targetScale: number; x: number; y: number; positions: Map<string, { x: number; y: number }> }>;
@@ -61,7 +61,8 @@ interface Session {
   // The tag the last click picked, and when the first press of the current click sequence began.
   lastTag?: { tag: string; at: number }; firstDown?: number; pressCount: number;
   press: (event: MouseEvent) => void; double: () => void;
-  fitFrame?: number; stopFit: () => void; stopInput: () => void; repin: () => void; grab: () => void;
+  fitFrame?: number; watchFrame?: number; stopFit: () => void; stopInput: () => void; stopWatch?: () => void; stopLegend?: () => void; repin: () => void; grab: () => void;
+  recenter?: HTMLElement; centeredTag?: string; centeredView?: { scale: number; x: number; y: number }; moved?: boolean;
   // Where a tree layout put each node, for a dragged one to return to.
   home: Map<string, { x: number; y: number }>;
 }
@@ -89,6 +90,8 @@ export interface LinkedGraph {
   has(tag: string): boolean;
   // Bring a tag the sidebar revealed into view.
   focusOn(tag: string): void;
+  // Frame everything currently shown in this graph.
+  fit?(): void;
   // A tag was renamed in the editor; called before the reload, which would otherwise look like the tag going.
   renamed?(from: string, to: string): void;
 }
@@ -115,7 +118,7 @@ export function coveredEdges(view: HTMLElement) {
     const rect = el.getBoundingClientRect();
     if (rect.width) edge.left = Math.max(edge.left, rect.right - box.left + gap);
   }
-  for (const el of Array.from(view.querySelectorAll('.tag-ontology-actions, .tag-ontology-status'))) {
+  for (const el of Array.from(view.querySelectorAll('.tag-ontology-actions, .tag-ontology-recenter, .tag-ontology-status'))) {
     const rect = el.getBoundingClientRect();
     if (rect.height) edge.bottom = Math.max(edge.bottom, box.bottom - rect.top + gap);
   }
@@ -160,6 +163,7 @@ const REVEAL_MS = 350;
 // How long a single click on a 2D node waits for a second click before it moves the camera (Cytoscape's default).
 const SINGLE_CLICK_WAIT_MS = 250;
 const FOLLOW_MS = 2000;
+const viewOf = (r: NativeRenderer) => ({ scale: r.scale, x: r.panX ?? 0, y: r.panY ?? 0 });
 
 export class NativeGraphs {
   private sessions = new Map<WorkspaceLeaf, Session>();
@@ -178,6 +182,8 @@ export class NativeGraphs {
   private lastClick?: { id: string; at: number };
   // Updates the open form's count line and Save button in place.
   private syncForm = () => {};
+  private closedDetails = new Set<string>();
+  private groupState?: { key: string; query: string; checked: Set<string> };
   metrics: { operation: string; ms: number; nodes: number; visible: boolean }[] = [];
   explorer?: ExplorerPanel;
   constructor(private owner: TagOntologyPlugin) {}
@@ -189,10 +195,15 @@ export class NativeGraphs {
     const previous = this.history[this.at];
     if (view.kind === previous.kind && (view.kind === 'group' && previous.kind === 'group'
       ? view.tag === previous.tag && view.source === previous.source : JSON.stringify(view) === JSON.stringify(previous))) return;
+    this.closedDetails.clear(); this.groupState = undefined;
     this.history = [...this.history.slice(0, this.at + 1), view]; this.at = this.history.length - 1;
   }
   private step(by: number) {
-    this.leave(() => { this.at = Math.min(Math.max(this.at + by, 0), this.history.length - 1); this.showSelection(); });
+    this.leave(() => {
+      const next = Math.min(Math.max(this.at + by, 0), this.history.length - 1);
+      if (next !== this.at) { this.closedDetails.clear(); this.groupState = undefined; this.at = next; }
+      this.showSelection();
+    });
   }
   // Every way to show something else in the sidebar goes through here, so an open form is never left behind.
   // Unsaved edits are only dropped when the user says so.
@@ -227,23 +238,45 @@ export class NativeGraphs {
       // The toolbar, the legend and view actions row, and the status line stack in the overlay's grid, so a status line that
       // wraps pushes the rest up instead of covering it.
       const overlay = view.contentEl.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools');
-      const actions = overlay.createDiv('tag-ontology-actions'), legend = overlay.createDiv('tag-ontology-legend');
+      const actions = overlay.createDiv('tag-ontology-actions'), recenter = overlay.createDiv('tag-ontology-recenter'), legend = overlay.createDiv('tag-ontology-legend');
+      recenter.hidden = true;
       const status = overlay.createDiv('tag-ontology-status'); status.setAttribute('role', 'status');
       const session: Session = {
         leaf, view, renderer: r, active: true, original: r.setData, wrapped: () => {}, choice: this.owner.settings.layout, mindmapExpanded: [], viewports: new Map(),
-        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, press: () => {}, double: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
+        click: r.onNodeClick, hovered: r.getHighlightNode, overlay, status, legend, recenter, kinds: new Map(), links: new Map(), nodeRenders: new Map(), toggles: {}, mode: '2d', syncModes: () => {}, canvases: new Map(), stopFit: () => {}, stopInput: () => {}, press: () => {}, double: () => {}, repin: () => {}, grab: () => {}, home: new Map(), pressCount: 0,
       };
-      session.stopFit = () => { if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame); session.fitFrame = undefined; };
+      session.stopFit = () => {
+        if (session.fitFrame !== undefined) window.cancelAnimationFrame(session.fitFrame);
+        if (session.watchFrame !== undefined) window.cancelAnimationFrame(session.watchFrame);
+        session.fitFrame = session.watchFrame = undefined;
+      };
       // User input stops a camera move, and a single click's move still waiting to start: it must not override a pan or zoom.
       session.stopInput = () => { session.stopFit(); window.clearTimeout(this.centerTimer); };
       for (const event of ['pointerdown', 'wheel', 'keydown']) view.contentEl.addEventListener(event, session.stopInput, { capture: true });
+      const checkCamera = (watchUntil = 0) => {
+        if (session.watchFrame !== undefined) { window.cancelAnimationFrame(session.watchFrame); session.watchFrame = undefined; }
+        if (!session.active || session.choice === 'mindmap' || session.moved || session.fitFrame !== undefined || !session.centeredView) return;
+        const view = viewOf(r);
+        if (view.scale !== session.centeredView.scale || view.x !== session.centeredView.x || view.y !== session.centeredView.y) {
+          session.moved = true; this.syncRecenter(session); return;
+        }
+        if (watchUntil && performance.now() < watchUntil) session.watchFrame = window.requestAnimationFrame(() => checkCamera(watchUntil));
+      };
+      const onCameraInput = () => checkCamera(performance.now() + 250);
+      const onPointerMove = (event: unknown) => { if ((event as { buttons?: number } | undefined)?.buttons) onCameraInput(); };
+      for (const event of ['wheel', 'pointerup', 'keydown']) view.contentEl.addEventListener(event, onCameraInput, { capture: true });
+      view.contentEl.addEventListener('pointermove', onPointerMove, { capture: true });
+      session.stopWatch = () => {
+        for (const event of ['wheel', 'pointerup', 'keydown']) view.contentEl.removeEventListener(event, onCameraInput, { capture: true });
+        view.contentEl.removeEventListener('pointermove', onPointerMove, { capture: true });
+      };
       // On release the core graph unpins the node under the pointer, and the drag has restarted its simulation, which would
       // then carry the node off. The tree layouts pin it again and ease it back to its place with a slight overshoot, like
       // a spring; grabbing it again stops that. The core graph hears the release on the window in the capture phase, so
       // listening on the same window after it catches a release anywhere, such as over the sidebar. A drag starts with a
       // press on the graph, so each press listens on the window the graph is in then, which follows a tab moved to a popout.
       session.repin = () => {
-        if (!session.active || session.choice === 'force') return;
+        if (!session.active || session.choice === 'force' || session.choice === 'mindmap') return;
         const released = r.nodes.filter(node => node.fx === null).map(node => ({ node, x: node.x, y: node.y, home: session.home.get(node.id) ?? node }));
         if (!released.length) return;
         for (const { node } of released) { node.fx = node.x; node.fy = node.y; }
@@ -297,7 +330,8 @@ export class NativeGraphs {
       // A column of round icon buttons keeps the core graph settings on the right uncovered; the view actions sit in a row at the bottom.
       this.iconButton(actions, 'chevrons-down-up', 'Collapse all', () => this.collapseAll(leaf), 'top');
       this.iconButton(actions, 'chevrons-up-down', 'Expand all', () => this.expandAll(leaf), 'top');
-      this.iconButton(actions, 'scan', 'Fit', () => this.fit(session), 'top');
+      this.iconButton(actions, 'scan', 'Fit', () => { session.stopInput(); this.fit(session); }, 'top');
+      this.iconButton(recenter, 'locate-fixed', 'Center on selected tag', () => { if (this.selected) this.centerOn(session, this.selected); }, 'top');
       // The mind map's way back to its starting-tag picker sits with the view actions, shown only while a branch is open.
       session.changeRoot = this.iconButton(actions, 'home', 'Change starting tag', () => {
         session.mindmapRoot = undefined;
@@ -326,8 +360,9 @@ export class NativeGraphs {
         void this.owner.saveState();
       }
       // Ask the engine to send its data again so the first render goes through the layer.
-      try { view.update(); }
-      catch (error) { this.fail(leaf, error); }
+      // Sync Obsidian's CSS graph colors too in case body accent variables settled after the graph renderer opened.
+      this.recolorSession(session);
+      if (session.active) try { view.update(); } catch (error) { this.fail(leaf, error); }
     }
     this.syncNav();
   }
@@ -339,7 +374,7 @@ export class NativeGraphs {
   }
 
   // Note edits only change counts and note lists; the core graph re-sends its own data for them, so only redraw for the dictionary or settings.
-  refresh(redraw = true) {
+  refresh(redraw = true, linked = 'refresh') {
     this.attach();
     const model = this.owner.model!, settings = this.owner.settings;
     const kept = settings.expanded.filter(tag => model.entries.has(tag));
@@ -354,8 +389,18 @@ export class NativeGraphs {
       this.showMode(session);
     }
     if (redraw) for (const session of this.sessions.values()) this.render(session, 'refresh');
-    this.drawLinked('refresh');
+    this.drawLinked(linked);
     this.renderPanel();
+  }
+
+  // Obsidian's core graph refreshes CSS colors on theme switches, not when the accent setting rewrites <body>'s style.
+  recolor() { for (const session of [...this.sessions.values()]) this.recolorSession(session); }
+
+  private recolorSession(session: Session) {
+    if (session.mode !== '2d' || session.choice === 'mindmap') { session.pendingRecolor = true; return; }
+    session.pendingRecolor = false;
+    if (typeof session.renderer.testCSS !== 'function') return;
+    try { session.renderer.testCSS(); } catch (error) { this.fail(session.leaf, error); }
   }
 
   link(view: LinkedGraph) { this.linked.add(view); }
@@ -426,13 +471,17 @@ export class NativeGraphs {
       session.pendingRender = false; this.render(session, 'refresh');
       if (!session.active) return;
     }
+    if (session.mode === '2d' && session.pendingRecolor && session.choice !== 'mindmap') {
+      this.recolorSession(session);
+      if (!session.active) return;
+    }
     if (session.mode !== '2d' && !session.nativePaused) {
       session.stopFit(); session.nativePaused = true;
       session.renderer.worker.postMessage({ run: false });
     } else if (session.mode === '2d' && session.nativePaused) {
       session.nativePaused = false;
       if (session.choice === 'force') session.renderer.worker.postMessage({ run: true });
-      session.renderer.changed();
+      if (session.choice !== 'mindmap') session.renderer.changed();
     }
     session.view.contentEl.toggleClass('has-embedded-graph', session.mode !== '2d');
     for (const [mode, entry] of session.canvases) {
@@ -456,7 +505,13 @@ export class NativeGraphs {
     const bar = el.createDiv('tag-ontology-nav');
     this.nav.back = this.navButton(bar, 'arrow-left', 'Back', () => this.step(-1));
     this.nav.forward = this.navButton(bar, 'arrow-right', 'Forward', () => this.step(1));
-    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => { this.go({ kind: 'roots' }); this.showSelection(); }));
+    this.nav.home = this.navButton(bar, 'home', 'Home', () => this.leave(() => {
+      window.clearTimeout(this.centerTimer);
+      this.go({ kind: 'roots' });
+      this.showSelection();
+      for (const session of this.sessions.values()) if (session.view.contentEl.isShown()) { session.stopInput(); this.fit(session); }
+      for (const view of this.linked) if (view.isVisible?.() !== false) view.fit?.();
+    }));
     bar.createDiv('tag-ontology-spacer');
     this.nav.add = this.navButton(bar, 'plus', 'New tag', () => this.mode?.kind === 'new' ? this.cancel() : this.leave(() => this.startNew()));
     this.nav.edit = this.navButton(bar, 'pencil', 'Edit tag', () => this.mode?.kind === 'edit' ? this.cancel() : this.leave(() => this.startEdit()));
@@ -464,7 +519,10 @@ export class NativeGraphs {
     this.nav.expand = this.navButton(bar, 'circle-small', 'Expand in graph', () => {
       const tag = this.selected;
       if (!this.graphShown()) { void this.owner.openView().then(() => { if (!this.destroyed && tag && this.owner.model?.entries.has(tag)) this.reveal(tag); }); return; }
-      if (tag) this.toggleExpanded(tag);
+      if (tag) {
+        this.toggleExpanded(tag);
+        for (const s of this.sessions.values()) if (s.choice !== 'mindmap') { s.moved = true; this.syncRecenter(s); }
+      }
     });
     this.nav.expand.addClass('tag-ontology-expand');
     const search = this.searchBox = el.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
@@ -530,6 +588,10 @@ export class NativeGraphs {
   private render(session: Session, operation: string) {
     if (session.mode !== '2d') { session.pendingRender = true; return; }
     session.pendingRender = false;
+    if (session.pendingRecolor && session.choice !== 'mindmap') {
+      this.recolorSession(session);
+      if (!session.active) return;
+    }
     try { return this.draw(session, operation); }
     catch (error) { this.fail(session.leaf, error); }
   }
@@ -539,7 +601,7 @@ export class NativeGraphs {
     if (!model || !session.active || !session.base) return;
     if (operation !== 'update' && operation !== 'refresh') session.stopFit();
     if (session.mindmapRoot && !model.placed.has(session.mindmapRoot)) session.mindmapRoot = undefined;
-    renderDepthLegend(session.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+    session.stopLegend = renderDepthLegend(session.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
       choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
     const start = performance.now();
     // The tree layouts show the tag hierarchy alone; the saved Notes choice applies again in Force.
@@ -558,11 +620,12 @@ export class NativeGraphs {
     let result: unknown;
     try { result = session.original.call(r, layer.data); } finally { worker.postMessage = post; }
     this.paint(session);
-    if (restyled) r.changed();
+    if (restyled && settings.layout !== 'mindmap') r.changed();
     this.styleLinks(session);
     this.styleNodes(session);
     // Native updates (metadata changes, file opens) re-enter here; refitting on them would discard the user's zoom.
     const layoutChanged = session.layout !== settings.layout;
+    if (settings.layout !== 'force' && session.layout === 'force') r.worker.postMessage({ run: false });
     session.layout = settings.layout;
     if (settings.layout !== 'force') this.staticLayout(session);
     // Taking over from a tree releases its pins and restarts the simulation from the tree's positions. Otherwise the core
@@ -582,9 +645,11 @@ export class NativeGraphs {
     this.syncToolbar(session);
     const viewport = layoutChanged ? session.viewports.get(settings.layout) : undefined;
     if (viewport) {
-      r.setScale(viewport.scale); r.targetScale = viewport.targetScale; r.setPan(viewport.x, viewport.y); r.changed();
+      session.moved = true; session.centeredView = undefined;
+      r.setScale(viewport.scale); r.targetScale = viewport.targetScale; r.setPan(viewport.x, viewport.y); if (settings.layout !== 'mindmap') r.changed();
     } else if (layoutChanged || operation === 'initial' || operation === 'roots' || operation === 'expand-all') this.fit(session);
-    if (operation === 'initial' || operation === 'roots') this.follow(session, () => this.fit(session));
+    if (settings.layout === 'force' && (operation === 'initial' || operation === 'roots')) this.follow(session, () => this.fit(session));
+    this.syncRecenter(session);
     const notes = Object.values(layer.data.nodes).filter(n => n.type !== 'tag').length;
     // The core graph's Tags filter is off by default, which leaves nothing to layer the dictionary onto.
     const tagsShown = Object.values(session.base.nodes).some(n => n.type === 'tag');
@@ -681,7 +746,7 @@ export class NativeGraphs {
       node.x = node.fx = x; node.y = node.fy = y; moved = true;
     }
     // Native updates that change nothing re-enter here, and a redraw runs about a second of frames.
-    if (moved) r.changed();
+    if (moved && settings.layout !== 'mindmap') r.changed();
   }
 
   private syncMindMap(session: Session) {
@@ -699,6 +764,7 @@ export class NativeGraphs {
         this.update({ expanded: [] }, 'mindmap-root', session);
         session.mindmap?.fit();
       },
+      onMove: () => { if (session.choice === 'mindmap' && !session.moved) { session.moved = true; this.syncRecenter(session); } },
     });
     const nodes: MindMapData['nodes'] = session.renderer.nodes.map(node => {
       const tag = resolved.tagOf.get(node.id), raw = node.color;
@@ -744,6 +810,7 @@ export class NativeGraphs {
       // stays under the pointer for it; a double click moves at once.
       // Only 2D graph tabs have a session to move; the sidebar comes forward from any graph.
       const session = leaf && this.sessions.get(leaf);
+      if (session) { session.stopFit(); session.centeredTag = tag; session.centeredView = viewOf(session.renderer); session.moved = false; this.syncRecenter(session); }
       if (session && double) this.centerOn(session, tag);
       else if (session) this.centerTimer = window.setTimeout(() => { if (!this.destroyed) this.centerOn(session, tag); }, SINGLE_CLICK_WAIT_MS);
       this.showPanel(true);
@@ -800,6 +867,7 @@ export class NativeGraphs {
     if (session.mode !== '2d') return;
     const id = session.resolved?.idOf.get(tag), r = session.renderer;
     if (!id) return;
+    session.centeredTag = tag; session.centeredView = viewOf(r); session.moved = false; this.syncRecenter(session);
     if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.focusOn(id); return; }
     // One eased camera move: the node glides from where it is to the middle while the zoom goes to where the node is
     // REVEAL_SIZE on screen. Scale and pan are both set here every frame, so the core graph's own zoom easing never pulls
@@ -816,9 +884,17 @@ export class NativeGraphs {
       const t = 1 - (1 - Math.min(1, progress * FOLLOW_MS / REVEAL_MS)) ** 3, scale = from + (to - from) * t;
       const x = startX + (r.width * ratio / 2 - startX) * t, y = startY + (r.height * ratio / 2 - startY) * t;
       r.targetScale = scale; r.setScale(scale);
-      r.setPan(x - node.x * scale, y - node.y * scale); r.changed();
+      r.setPan(x - node.x * scale, y - node.y * scale);
+      session.centeredView = viewOf(r);
+      r.changed();
     };
     this.follow(session, center);
+  }
+
+  private syncRecenter(session: Session) {
+    if (!session.recenter) return;
+    const tag = this.selected, visible = !!tag && !!session.resolved?.visible.has(tag) && (session.choice !== 'mindmap' || !!session.mindmapRoot);
+    session.recenter.hidden = !visible || (!session.moved && session.centeredTag === tag);
   }
 
   // Shows the selected tag in the panel and in every graph without layering the graphs again.
@@ -837,7 +913,8 @@ export class NativeGraphs {
       ? focusIds(data, resolved, model, tag, { descendants: settings.focusDescendants, notes: settings.focusNotes }) : undefined;
     if (session.choice === 'mindmap') session.mindmap?.paint(tag ? resolved?.idOf.get(tag) : undefined, bright);
     const center = bright ? session.renderer.nodes.find(node => node.id === resolved!.idOf.get(tag!)) : undefined;
-    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; this.styleLinks(session); this.styleNodes(session); session.renderer.changed(); }
+    if (!sameSet(bright, session.focusIds) || center !== session.focusNode) { session.focusIds = bright; session.focusNode = center; this.styleLinks(session); this.styleNodes(session); if (session.choice !== 'mindmap') session.renderer.changed(); }
+    this.syncRecenter(session);
   }
 
   renderPanel() {
@@ -846,7 +923,7 @@ export class NativeGraphs {
     if (this.mode) return;
     const panel = this.panel, model = this.owner.model, error = this.owner.error;
     if (!panel) return;
-    if (this.missing()) { panel.empty(); this.notFound(panel); return; }
+    if (this.missing()) { this.closedDetails.clear(); this.groupState = undefined; panel.empty(); this.notFound(panel); return; }
     if (!model && !error) return;
     panel.empty();
     if (error) this.loadError(panel, error);
@@ -862,7 +939,7 @@ export class NativeGraphs {
       const source = (view.source ?? this.explorer)!;
       this.groupView(panel, view.tag, source.groupNotes(view.tag)!, source);
     }
-    else this.home(panel, model);
+    else { this.closedDetails.clear(); this.groupState = undefined; this.home(panel, model); }
   }
 
   private home(panel: HTMLElement, model: Ontology) {
@@ -907,6 +984,12 @@ export class NativeGraphs {
     if (this.owner.model) panel.createEl('hr');
   }
 
+  private details(parent: HTMLElement, key: string, text: string): HTMLDetailsElement {
+    const el = parent.createEl('details'); el.open = !this.closedDetails.has(key);
+    el.addEventListener('toggle', () => { if (el.open) this.closedDetails.delete(key); else this.closedDetails.add(key); });
+    el.createEl('summary', { text }); return el;
+  }
+
   private inspect(panel: HTMLElement, model: Ontology, tag: string) {
     const entry = model.entries.get(tag)!;
     const header = panel.createDiv('tag-ontology-header');
@@ -918,29 +1001,31 @@ export class NativeGraphs {
     panel.createEl('h4', { text: `${counts.direct} direct · ${counts.rollup} including descendants` });
     for (const [label, tags] of [['Parents', entry.broader ?? []], ['Children', model.children.get(tag) ?? []], ['Related', model.related(tag)]] as const) {
       if (!tags.length) continue;
-      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `${label} ${tags.length}` });
-      this.tagLinks(details, tags);
+      this.tagLinks(this.details(panel, label, `${label} ${tags.length}`), tags);
     }
     panel.createEl('hr');
     for (const [rollup, label] of [[false, 'Tagged notes'], [true, 'Including descendants']] as const) {
-      const details = panel.createEl('details'); details.open = true;
-      const paths = model.notesFor(tag, rollup); details.createEl('summary', { text: `${label} (${paths.length})` });
-      this.noteLinks(details, paths);
+      const paths = model.notesFor(tag, rollup);
+      this.noteLinks(this.details(panel, label, `${label} (${paths.length})`), paths);
     }
   }
 
   private noteView(panel: HTMLElement, model: Ontology, path: string) {
     panel.createEl('h3', { text: path.split('/').at(-1)!.replace(/\.md$/, '') });
     panel.createEl('p', { text: path, cls: 'tag-ontology-muted' });
-    const tags = tagsOfNote(model, path);
+    const tags = model.tagsOf(path);
     if (tags.length) this.tagLinks(panel, tags);
     panel.createEl('button', { text: 'Open note', cls: 'mod-cta' }).addEventListener('click', () => this.openNote(path));
   }
 
   // A group's notes, newest first: filter them by name, tick some to take out, or take the latest out.
   private groupView(panel: HTMLElement, tag: string, notes: { path: string; mtime: number }[], source: ExplorerPanel) {
+    const state = this.groupState?.key === tag ? this.groupState : (this.groupState = { key: tag, query: '', checked: new Set() });
+    const present = new Set(notes.map(note => note.path));
+    for (const path of state.checked) if (!present.has(path)) state.checked.delete(path);
     panel.createEl('h3', { text: `${count(notes.length, 'note', 'notes')} · #${tag}` });
     const filter = panel.createEl('input', { type: 'search', placeholder: 'Filter notes', attr: { 'aria-label': 'Filter notes' } });
+    filter.value = state.query;
     const list = panel.createEl('ul', { cls: 'tag-ontology-group' }), now = Date.now();
     let rows: { input: HTMLInputElement; path: string }[] = [];
     const draw = () => {
@@ -949,16 +1034,21 @@ export class NativeGraphs {
       rows = notes.filter(note => name(note.path).toLowerCase().includes(query)).map(note => {
         const label = list.createEl('li').createEl('label');
         const input = label.createEl('input', { type: 'checkbox' });
+        input.checked = state.checked.has(note.path);
+        input.addEventListener('change', () => {
+          if (input.checked) state.checked.add(note.path); else state.checked.delete(note.path);
+        });
         label.createSpan({ text: name(note.path) });
         label.createEl('small', { text: relativeTime(note.mtime, now), cls: 'tag-ontology-muted' });
         return { input, path: note.path };
       });
     };
-    filter.addEventListener('input', draw);
+    filter.addEventListener('input', () => { state.query = filter.value; draw(); });
     draw();
     const buttons = panel.createDiv('tag-ontology-group-buttons');
     buttons.createEl('button', { text: 'Take out selected', cls: 'mod-cta' }).addEventListener('click', () => {
       const picked = rows.filter(row => row.input.checked).map(row => row.path);
+      for (const path of picked) state.checked.delete(path);
       if (picked.length) source.takeOut(tag, picked);
     });
     buttons.createEl('button', { text: `Take out latest ${TAKE_OUT}` }).addEventListener('click', () => source.takeOut(tag, notes.slice(0, TAKE_OUT).map(note => note.path)));
@@ -969,7 +1059,7 @@ export class NativeGraphs {
     panel.createEl('h3', { text: `Not in dictionary (${model.unregistered.size})` });
     panel.createEl('p', { text: 'Compares tags used across the vault with the dictionary. Nothing is added, changed or deleted.' });
     for (const [tag, paths] of model.unregistered) {
-      const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}` });
+      const details = this.details(panel, `unregistered:${tag}`, `#${tag} · ${paths.length} note${paths.length === 1 ? '' : 's'}`);
       const similar = found?.unregistered.find(item => item.tag === tag)?.similar;
       if (similar?.length) details.createEl('p', { text: 'Similar: ' + similar.map(name => '#' + name).join(', '), cls: 'tag-ontology-muted' });
       this.noteLinks(details, paths);
@@ -977,26 +1067,24 @@ export class NativeGraphs {
     if (found) {
       const aliases = groupNonCanonical(found.nonCanonical);
       if (aliases.length) {
-        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Written as an alias or in another case (${aliases.length})` });
+        const details = this.details(panel, 'aliases', `Written as an alias or in another case (${aliases.length})`);
         details.createEl('p', { text: 'Obsidian does not find these notes under the dictionary tag. Rename the tag in each note to the dictionary name.' });
         for (const group of aliases) {
-          const nested = details.createEl('details'); nested.open = true;
-          nested.createEl('summary', { text: `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          const nested = this.details(details, `alias:${group.tag}->${group.canonical}`, `#${group.tag} → #${group.canonical} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
           this.noteLinks(nested, group.notes);
         }
       }
       const broader = groupRedundant(found.redundant);
       if (broader.length) {
-        const details = panel.createEl('details'); details.open = true; details.createEl('summary', { text: `Broader tag next to a narrower tag (${broader.length})` });
+        const details = this.details(panel, 'broader', `Broader tag next to a narrower tag (${broader.length})`);
         details.createEl('p', { text: 'These notes carry a tag and one of its descendants. Keep both only when the note explains each directly.' });
         for (const group of broader) {
-          const nested = details.createEl('details'); nested.open = true;
-          nested.createEl('summary', { text: `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}` });
+          const nested = this.details(details, `broader:${group.tag}`, `#${group.tag} · ${group.notes.length} note${group.notes.length === 1 ? '' : 's'}`);
           this.noteLinks(nested, group.notes);
         }
       }
     }
-    const unused = panel.createEl('details'); unused.open = true; unused.createEl('summary', { text: `Unused dictionary tags (${model.unused.length})` });
+    const unused = this.details(panel, 'unused', `Unused dictionary tags (${model.unused.length})`);
     unused.createEl('p', { text: 'These may be grouping concepts. Unused does not mean they should be deleted.' });
     this.tagLinks(unused, model.unused);
   }
@@ -1323,6 +1411,7 @@ export class NativeGraphs {
 
   private fit(session: Session) {
     if (session.mode !== '2d') return;
+    session.moved = true; session.centeredView = undefined; this.syncRecenter(session);
     if (session.choice === 'mindmap' && session.mindmap) { session.mindmap.fit(coveredEdges(session.view.contentEl)); return; }
     const r = session.renderer;
     if (!r.width || !r.height || !r.nodes.length) return;
@@ -1343,6 +1432,7 @@ export class NativeGraphs {
     for (const { graph, root } of s.canvases.values()) { graph.unload(); root.remove(); }
     s.canvases.clear();
     s.stopFit();
+    s.stopWatch?.();
     for (const event of ['pointerdown', 'wheel', 'keydown']) s.view.contentEl.removeEventListener(event, s.stopInput, { capture: true });
     s.view.contentEl.removeEventListener('pointerdown', s.grab, { capture: true });
     s.view.contentEl.removeEventListener('mousedown', s.press, { capture: true });
@@ -1358,6 +1448,7 @@ export class NativeGraphs {
     }
     s.mindmap?.destroy();
     s.texture?.destroy();
+    s.stopLegend?.();
     s.overlay.remove(); s.view.contentEl.removeClass('tag-ontology-native'); s.view.contentEl.removeClass('is-mindmap'); s.view.contentEl.removeClass('has-embedded-graph');
     this.sessions.delete(id);
     if (redraw) {

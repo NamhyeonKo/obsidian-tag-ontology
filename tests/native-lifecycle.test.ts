@@ -16,7 +16,7 @@ import * as coreModule from 'tag-ontology';
 import { apply, type Change, type RawDictionary, type Usage } from 'tag-ontology';
 
 class Element {
-  tag = ''; children: Element[] = []; text = ''; hidden = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
+  tag = ''; children: Element[] = []; text = ''; hidden = false; open = false; value = ''; removed = false; attrs: Record<string, string> = {}; classes = new Set<string>();
   events = new Map<string, (event?: unknown) => void>();
   css: Record<string, string> = {}; disabled = false; checked = false; shown = true; isShown() { return this.shown; }
   // The window the element is in, like Obsidian's Node.win.
@@ -44,9 +44,9 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
-  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean): void; expandAll(): void; collapseAll(): void;
+  link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
 interface ExplorerPanel { groupNotes(tag: string): { path: string; mtime: number }[] | undefined; takeOut(tag: string, paths: string[]): void }
 interface LinkedGraph { draw(operation: string): void; paint(): void; has(tag: string): boolean; focusOn(tag: string): void; renamed?(from: string, to: string): void }
@@ -2244,4 +2244,249 @@ test('graph palette picker lists named snapshots and working copy, and save open
   assert.equal(save.text, '');
   assert.match(picker().attrs['aria-label'], /unsaved/);
   t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
+});
+
+test('sidebar details sections keep closed state across same-view refreshes and reset when navigating', async () => {
+  const t = await setup();
+  t.owner.model = new Ontology(raw, [{ path: 'A.md', tags: ['ml'] }]);
+  t.search('ml');
+  const findSection = (prefix: string) => t.sidebar.all().find(el => el.tag === 'details' && el.children[0]?.text.startsWith(prefix))!;
+  const children = findSection('Children');
+  assert.equal(children.open, true);
+  children.open = false;
+  children.events.get('toggle')!();
+  t.controller.refresh(false);
+  assert.equal(findSection('Children').open, false);
+  assert.equal(findSection('Parents').open, true);
+  t.click('#cs');
+  assert.equal(findSection('Children').open, true);
+});
+
+test('group view keeps filter query and checked notes across filtering and same-group refreshes', async () => {
+  const t = await setup(), now = Date.now(), taken: [string, string[]][] = [];
+  let notes = [
+    { path: 'Notes/Alpha.md', mtime: now },
+    { path: 'Notes/Beta.md', mtime: now - 864e5 },
+    { path: 'Notes/Gamma.md', mtime: now - 2 * 864e5 },
+  ];
+  t.controller.explorer = { groupNotes: tag => tag === 'ml' ? notes : undefined, takeOut: (tag, paths) => { taken.push([tag, paths]); } };
+  t.controller.showGroup('ml');
+  const rows = () => t.sidebar.all().filter(el => el.tag === 'li');
+  const filter = () => t.sidebar.all().find(el => el.attrs['aria-label'] === 'Filter notes')!;
+  const firstInput = rows()[0]!.all().find(el => el.tag === 'input')!;
+  firstInput.checked = true; firstInput.events.get('change')!();
+  filter().value = 'be'; filter().events.get('input')!();
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['Beta']);
+  filter().value = 'al'; filter().events.get('input')!();
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['Alpha']);
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, true);
+  notes = [...notes, { path: 'Notes/Alpha-2.md', mtime: now - 3 * 864e5 }];
+  t.controller.renderPanel();
+  assert.equal(filter().value, 'al');
+  assert.deepEqual(rows().map(li => li.all().find(el => el.tag === 'span')!.text), ['Alpha', 'Alpha-2']);
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, true);
+  t.click('Take out selected');
+  assert.deepEqual(taken, [['ml', ['Notes/Alpha.md']]]);
+  t.controller.renderPanel();
+  assert.equal(rows()[0]!.all().find(el => el.tag === 'input')!.checked, false);
+});
+
+test('static layouts fit once without scheduling a follow loop, while force keeps following', async () => {
+  const tree = await setup({ layout: 'tree' });
+  tree.controller.attach();
+  tree.renderer.targetScale = tree.renderer.scale = 4;
+  tree.tick(16); tree.tick(2500);
+  assert.equal(tree.renderer.scale, 4, 'initial tree attach does not refit on animation frames');
+  tree.click('Collapse all');
+  tree.renderer.targetScale = tree.renderer.scale = 4;
+  tree.tick(16);
+  assert.equal(tree.renderer.scale, 4, 'tree roots action fits synchronously without a follow loop');
+
+  const mindmap = await setup({ layout: 'mindmap' });
+  mindmap.controller.attach();
+  const map = mindmaps.at(-1)!;
+  assert.equal(map.fitted, 1);
+  mindmap.tick(16); mindmap.tick(2500);
+  assert.equal(map.fitted, 1, 'mind map does not schedule repeated fit frames');
+
+  const force = await setup({ layout: 'force' });
+  force.controller.attach();
+  force.renderer.targetScale = force.renderer.scale = 4;
+  force.tick(16);
+  assert.notEqual(force.renderer.scale, 4, 'force keeps refitting during initial settling');
+});
+
+test('leaving force pauses the simulation worker, and mind map keeps the hidden native renderer idle', async () => {
+  const t = await setup({ focus: true });
+  t.controller.attach();
+  t.layout('Vertical tree');
+  assert.equal((t.renderer.worker.messages.at(-1) as { run?: boolean })?.run, false, 'switching force -> tree stops the worker');
+
+  t.layout('Force');
+  const before = t.renderer.worker.messages.length;
+  t.layout('Mind map');
+  assert.equal((t.renderer.worker.messages.slice(before).at(-1) as { run?: boolean })?.run, false, 'switching force -> mind map stops the worker');
+
+  const map = mindmaps.at(-1)!;
+  let wakes = 0;
+  t.renderer.changed = () => { wakes++; };
+  map.chooseRoot('cs'); map.toggle('cs'); await settle();
+  map.select('ml');
+  t.controller.refresh();
+  const node = t.renderer.nodes.find(n => n.id === '#cs')!;
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
+  node.fx = null; node.fy = null;
+  t.win.events.get('pointerup')?.();
+  t.tick(100);
+  t.layout('Force'); wakes = 0; t.layout('Mind map');
+  await t.controller.switchMode(t.leaves[0], 'explorer'); wakes = 0; await t.controller.switchMode(t.leaves[0], 'mindmap');
+  assert.equal(wakes, 0, 'mind map interactions, refreshes, and returning to mind map do not wake the hidden native renderer');
+  assert.equal(node.fx, null, 'mind map does not start a spring repin loop on pointerup');
+});
+
+test('recenter button tracks camera movement, fit, sidebar expansion, selection changes, and mind map moves', async () => {
+  const t = await setup({ layout: 'force' });
+  t.controller.attach();
+  const recenter = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-recenter'))!;
+  assert.equal(recenter().hidden, true, 'hidden before any tag is selected');
+
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.tick(300); t.tick(200);
+  assert.equal(recenter().hidden, true, 'hidden while centered on selected tag');
+
+  t.contentEl.events.get('pointerdown')!({ type: 'pointerdown' });
+  t.renderer.setPan(t.renderer.panX + 25, t.renderer.panY);
+  t.contentEl.events.get('pointermove')!({ buttons: 1 });
+  assert.equal(recenter().hidden, false, 'shows as soon as the camera pans away');
+
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true, 're-centering returns focus and hides the button');
+
+  t.click('Fit');
+  assert.equal(recenter().hidden, false, 'Fit moves the view off center and shows the button');
+  t.click('Center on selected tag');
+  t.renderer.setPan(t.renderer.panX + 12, t.renderer.panY);
+  t.contentEl.events.get('wheel')!({ type: 'wheel' });
+  t.tick(50);
+  assert.equal(recenter().hidden, false, 'interrupting recenter before frame 1 still detects camera move');
+
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.renderer.setPan(t.renderer.panX + 12, t.renderer.panY);
+  t.contentEl.events.get('wheel')!({ type: 'wheel' });
+  t.tick(50);
+  assert.equal(recenter().hidden, false, 'interrupting single-click wait before centerOn detects camera move');
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.click('Expand in graph');
+  assert.equal(recenter().hidden, false, 'sidebar Expand in graph shows recenter on 2D layouts');
+  t.click('Center on selected tag');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+
+  t.search('ml');
+  t.tick(2500);
+  assert.equal(recenter().hidden, true);
+  t.click('Back');
+  assert.equal(recenter().hidden, false, 'navigating back without re-centering shows recenter');
+
+  t.click('Forward');
+  assert.equal(recenter().hidden, true, 'Forward back to ml while camera is still centered there keeps recenter hidden');
+  t.click('Fit');
+  assert.equal(recenter().hidden, false);
+  t.controller.collapseAll();
+  assert.equal(recenter().hidden, true, 'hides when the selected child tag is collapsed out of view');
+
+  t.layout('Mind map');
+  const map = mindmaps.at(-1)!;
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  assert.equal(recenter().hidden, true, 'hidden on the mind map starting-tag picker');
+  map.chooseRoot('cs');
+  map.select('cs');
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  assert.equal(recenter().hidden, true);
+  map.start.onMove!();
+  assert.equal(recenter().hidden, false, 'mind map viewport movement shows recenter');
+  t.click('Center on selected tag');
+  assert.equal(map.focused, '#cs');
+  assert.equal(recenter().hidden, true);
+});
+
+test('Home fits visible 2D, mind map, and linked views while canceling pending single-click centerOn', async () => {
+  const t = await setup({ layout: 'force' });
+  t.controller.attach();
+  const visible = { ...linkedGraph(), isVisible: () => true, fits: 0, fit() { this.fits++; } };
+  const hidden = { ...linkedGraph(), isVisible: () => false, fits: 0, fit() { this.fits++; } };
+  t.controller.link(visible); t.controller.link(hidden);
+
+  t.renderer.nodes.find(n => n.id === '#cs')!.x = 200;
+  t.controller.clickTag('cs', false, t.leaves[0]);
+  t.renderer.setScale(4); t.renderer.setPan(999, 999);
+  t.click('Home');
+  assert.equal(heading(t), 'Root tags (2)');
+  assert.notEqual(t.renderer.scale, 4, 'Home fits visible 2D graph immediately');
+  assert.notEqual(t.renderer.panX, 999);
+  const afterHome = { scale: t.renderer.scale, panX: t.renderer.panX };
+  t.tick(300);
+  assert.deepEqual({ scale: t.renderer.scale, panX: t.renderer.panX }, afterHome, 'pending centerOn timer is canceled by Home');
+  assert.equal(visible.fits, 1);
+  assert.equal(hidden.fits, 0, 'hidden linked graph is skipped');
+
+  t.layout('Mind map');
+  const map = mindmaps.at(-1)!;
+  map.chooseRoot('cs');
+  const before = map.fitted;
+  t.click('Home');
+  assert.equal(map.fitted, before + 1, 'Home fits open mind map view');
+});
+
+test('attach and recolor refresh 2D renderer CSS colors safely, in order, and defer while hidden or in mind map', async () => {
+  const t = await setup();
+  const order: string[] = [];
+  const origSetData = t.renderer.setData;
+  const wrappedSetData = t.renderer.setData = data => { order.push('update'); return origSetData.call(t.renderer, data); };
+  (t.renderer as { testCSS?: () => void }).testCSS = function () {
+    assert.equal(this, t.renderer, 'preserves renderer as this');
+    order.push('testCSS');
+  };
+  t.controller.attach();
+  assert.deepEqual(order, ['testCSS', 'update'], 'syncs CSS before initial layered render');
+
+  t.layout('Mind map');
+  order.length = 0;
+  t.controller.recolor();
+  assert.deepEqual(order, [], 'mind map keeps hidden native renderer idle on recolor');
+  t.layout('Force');
+  assert.deepEqual(order.slice(0, 1), ['testCSS'], 'leaving mind map flushes deferred recolor');
+
+  await t.controller.switchMode(t.leaves[0], 'explorer');
+  order.length = 0;
+  t.controller.recolor();
+  assert.deepEqual(order, [], 'embedded explorer defers recolor');
+  await t.controller.switchMode(t.leaves[0], '2d');
+  assert.deepEqual(order, ['testCSS'], 'returning to 2D flushes deferred recolor');
+
+  t.addTab();
+  const secondRenderer = (t.leaves[1] as { view: { renderer: typeof t.renderer & { testCSS?: () => void } } }).view.renderer;
+  let secondCalls = 0;
+  secondRenderer.testCSS = () => { secondCalls++; };
+  t.controller.attach();
+  assert.equal(secondCalls, 1);
+
+  (t.renderer as { testCSS?: () => void }).testCSS = () => { throw new Error('broken renderer'); };
+  t.controller.recolor();
+  assert.equal(secondCalls, 2, 'one failing renderer isolates to that tab without aborting others');
+  assert.equal(t.notices.length, 1);
+  assert.equal(t.renderer.setData, wrappedSetData);
+  assert.equal(t.contentEl.classes.has('tag-ontology-native'), false, 'failing session detaches');
+
+  t.controller.destroy();
+  t.controller.recolor();
+  assert.equal(secondCalls, 2, 'detached sessions ignore recolor');
 });
