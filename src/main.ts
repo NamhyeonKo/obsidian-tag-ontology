@@ -257,10 +257,23 @@ export default class TagOntologyPlugin extends Plugin {
     return this.checked.usage;
   }
 
-  // The core graph's data, built from the vault for the 3D view: notes, their tags and links between included notes.
-  graphData(): NativeData {
+  // The core graph's data, built from the vault for the 3D view: notes, their tags, links, and optional attachments/unresolved targets.
+  graphData(options?: { attachments?: boolean; existingOnly?: boolean }): NativeData {
+    const includeAttachments = Boolean(options?.attachments);
+    const includeUnresolved = options?.existingOnly === false;
     const resolved = this.app.metadataCache.resolvedLinks;
-    return vaultData(this.notes().map(note => ({ ...note, links: Object.keys(resolved[note.path] ?? {}) })));
+    const unresolved = includeUnresolved ? this.app.metadataCache.unresolvedLinks : undefined;
+    const attachments = includeAttachments
+      ? (this.app.vault.getFiles?.() ?? []).filter(file => file.extension !== 'md' && !isHiddenPath(file.path)).map(file => file.path)
+      : undefined;
+    return vaultData(
+      this.notes().map(note => ({
+        ...note,
+        links: Object.keys(resolved[note.path] ?? {}),
+        unresolved: unresolved ? Object.keys(unresolved[note.path] ?? {}) : undefined,
+      })),
+      { includeAttachments, attachments, includeUnresolved },
+    );
   }
 
   // One read-check-write: the change goes onto the latest file only if the entries it rewrites are as the editor saw them,

@@ -54,7 +54,7 @@ interface Main {
   app: { fileManager: { renameFile(file: { path: string }, path: string): Promise<void> } };
   dictionaryPath: string; dictionaryFound: boolean; resolveDictionary(): Promise<string>; checkOutsideChange(): Promise<void>; setDictionaryPath(path: string): Promise<void>; resetDictionaryPath(): Promise<void>;
   saveChange(change: Change, base: RawDictionary): Promise<boolean>; createDictionary(): Promise<boolean>;
-  saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer', newTab?: boolean): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
+  saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer', newTab?: boolean): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(options?: { attachments?: boolean; existingOnly?: boolean }): NativeData;
 }
 
 async function setup(saved?: Promise<unknown>, env: { appLanguage?: string; api187?: boolean } = {}) {
@@ -339,13 +339,30 @@ test('Open ontology explorer is offered only while the explorer is on, and turni
   assert.equal(tab.closed, true);
 });
 
-test('graphData links notes to included notes only', async () => {
+test('graphData links notes to included notes only, and optionally includes attachments and unresolved links', async () => {
   const t = await setup();
   (t.vault as { getMarkdownFiles: () => unknown[] }).getMarkdownFiles = () => [{ path: 'A.md' }, { path: 'B.md' }];
+  (t.vault as { getFiles?: () => unknown[] }).getFiles = () => [
+    { path: 'A.md', extension: 'md' },
+    { path: 'B.md', extension: 'md' },
+    { path: 'pic.png', extension: 'png' },
+    { path: '.obsidian/config.json', extension: 'json' },
+  ];
   t.metadataCache.resolvedLinks = { 'A.md': { 'B.md': 1, 'pic.png': 1 } };
-  const { nodes } = t.plugin.graphData();
-  assert.deepEqual(nodes['A.md'].links, { 'B.md': true });
-  assert.deepEqual(nodes['B.md'].links, {});
+  (t.metadataCache as { unresolvedLinks?: Record<string, Record<string, number>> }).unresolvedLinks = {
+    'A.md': { 'Ghost Note': 1 },
+  };
+  const base = t.plugin.graphData();
+  assert.deepEqual(base.nodes['A.md'].links, { 'B.md': true });
+  assert.deepEqual(base.nodes['B.md'].links, {});
+  assert.equal(base.nodes['pic.png'], undefined);
+  assert.equal(base.nodes['Ghost Note'], undefined);
+
+  const expanded = t.plugin.graphData({ attachments: true, existingOnly: false });
+  assert.deepEqual(expanded.nodes['A.md'].links, { 'B.md': true, 'pic.png': true, 'Ghost Note': true });
+  assert.deepEqual(expanded.nodes['pic.png'], { type: 'attachment', links: {} });
+  assert.deepEqual(expanded.nodes['Ghost Note'], { type: 'unresolved', links: {} });
+  assert.equal(expanded.nodes['.obsidian/config.json'], undefined);
 });
 
 for (const action of ['refresh', 'open'] as const) {
