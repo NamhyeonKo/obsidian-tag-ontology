@@ -1,5 +1,6 @@
 import { AbstractInputSuggest, type App } from 'obsidian';
 import type { Suggestion } from 'tag-ontology';
+import { tPlural } from './i18n/index.ts';
 
 // Type-ahead for the graph search box, using Obsidian's own suggestion popover.
 export class TagSuggest extends AbstractInputSuggest<Suggestion> {
@@ -14,7 +15,7 @@ export class TagSuggest extends AbstractInputSuggest<Suggestion> {
 
   renderSuggestion(value: Suggestion, el: HTMLElement): void {
     el.createDiv({ text: value.tag, cls: 'tag-ontology-suggestion-tag' });
-    const detail = value.alias ?? (value.notes === undefined ? undefined : `${value.notes} note${value.notes === 1 ? '' : 's'}`);
+    const detail = value.alias ?? (value.notes === undefined ? undefined : tPlural('sidebar.suggestionNotes', value.notes));
     if (detail) el.createDiv({ text: detail, cls: 'tag-ontology-suggestion-alias' });
   }
 

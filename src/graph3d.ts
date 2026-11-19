@@ -9,6 +9,8 @@ import { buildLayer, edgeKey, focusIds, linkTone, type EdgeKind, type NativeData
 import { DOUBLE_CLICK_MS, coveredEdges, type LinkedGraph } from './native.ts';
 import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, cssColorToHex, type Forces } from './settings.ts';
 import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
+import { t } from './i18n/index.ts';
+import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -16,7 +18,7 @@ export class Graph3DView extends ItemView {
   private canvas?: Graph3DCanvas;
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType() { return VIEW_3D; }
-  getDisplayText() { return '3D tag ontology'; }
+  getDisplayText() { return t('views.graph3dTitle'); }
   getIcon() { return 'box'; }
   async onOpen() {
     if (!this.owner.settings.enable3d) { this.leaf.detach(); return; }
@@ -115,6 +117,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private visible = false;
   private pendingDraw?: string;
   private pendingRecolor = false;
+  private controlsRoot?: HTMLElement;
+  private collapsedSections = new Set<string>();
   private syncModes = () => {};
   private get app() { return this.owner.app; }
   constructor(readonly contentEl: HTMLElement, private owner: TagOntologyPlugin, private leaf: WorkspaceLeaf) { super(); }
@@ -275,6 +279,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.nodes.clear(); this.links = []; this.shape = undefined;
     this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false;
+    this.controlsRoot = undefined;
     this.contentEl.empty();
   }
 
@@ -753,58 +758,80 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // The label and force settings, in a panel opened with a gear at the top right, built like the 2D graph's settings panel.
   // Every 3D tab reads the label settings each frame, so a change shows at once everywhere; saving waits until the slider stops.
   private controlPanel(root: HTMLElement) {
+    this.controlsRoot = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
+    this.renderControlPanel();
+  }
+
+  refreshLocale() {
+    if (this.controlsRoot) this.renderControlPanel();
+  }
+
+  private renderControlPanel() {
+    const panel = this.controlsRoot;
+    if (!panel) return;
+    panel.empty();
     // The settings tab replaces the settings object on every change, so each change writes to the current one.
     const owner = this.owner, save = debounce(() => void owner.saveState(), 500, true);
-    const panel = root.createDiv('graph-controls is-close tag-ontology-3d-controls');
     // Real buttons, unlike the core panel's, so the keyboard reaches them.
     const close = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-close' });
     const open = panel.createEl('button', { cls: 'clickable-icon graph-controls-button mod-open' });
-    setIcon(close, 'x'); setTooltip(close, 'Close'); setIcon(open, 'settings'); setTooltip(open, 'Open graph settings');
+    setIcon(close, 'x'); setTooltip(close, t('controls3d.close')); setIcon(open, 'settings'); setTooltip(open, t('controls3d.openSettings'));
     // A collapsible section with its rows laid out like the core panel's: a toggle beside its name, a slider under it.
-    const section = (name: string) => {
+    const section = (key: string, name: string) => {
       const el = panel.createDiv('tree-item graph-control-section');
       const heading = el.createDiv('tree-item-self mod-collapsible');
       const icon = heading.createDiv('tree-item-icon collapse-icon');
       setIcon(icon, 'right-triangle');
       heading.createDiv('tree-item-inner').createEl('header', { cls: 'graph-control-section-header', text: name });
       const body = el.createDiv('tree-item-children');
+      const applyCollapsed = (collapsed: boolean) => {
+        el.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
+      };
+      applyCollapsed(this.collapsedSections.has(key));
       // As in the core panel, the icon carries the state too, which turns it.
       heading.addEventListener('click', () => {
         const collapsed = !el.hasClass('is-collapsed');
-        el.toggleClass('is-collapsed', collapsed); icon.toggleClass('is-collapsed', collapsed); body.toggle(!collapsed);
+        if (collapsed) this.collapsedSections.add(key); else this.collapsedSections.delete(key);
+        applyCollapsed(collapsed);
       });
       return body;
     };
-    const labels = section('Labels');
+    const labels = section('labels', t('controls3d.labelsSection'));
     let toggle: ToggleComponent | undefined, slider: SliderComponent | undefined;
-    const perspective = new Setting(labels).setName('Perspective labels').addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
+    const perspective = new Setting(labels).setName(t('controls3d.perspectiveLabels')).addToggle(component => (toggle = component).setValue(owner.settings.perspectiveLabels).onChange(value => {
       if (value !== owner.settings.perspectiveLabels) { owner.settings.perspectiveLabels = value; save(); }
     }));
     perspective.settingEl.addClass('mod-toggle');
-    setTooltip(perspective.nameEl, 'Labels grow as you come closer. Off: one size at any distance.');
+    setTooltip(perspective.nameEl, t('controls3d.perspectiveLabelsTooltip'));
     // The labels follow the slider while it is dragged.
-    new Setting(labels).setName('Label size').addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
+    new Setting(labels).setName(t('controls3d.labelSize')).addSlider(component => (slider = component).setLimits(LABEL_SIZE.min, LABEL_SIZE.max, LABEL_SIZE.step).setInstant(true)
       .setValue(owner.settings.labelSize).onChange(value => { if (value !== owner.settings.labelSize) { owner.settings.labelSize = value; save(); } }))
       .settingEl.addClass('mod-slider');
     // As in 2D, moving a force slider warms the layout up so it settles into the new balance.
-    const forces = section('Forces'), sliders = new Map<keyof Forces, SliderComponent>();
+    const forces = section('forces', t('controls3d.forcesSection')), sliders = new Map<keyof Forces, SliderComponent>();
     let tension: ToggleComponent | undefined;
-    const dragTension = new Setting(forces).setName('Drag tension').addToggle(component => (tension = component).setValue(owner.settings.dragTension3d).onChange(value => {
+    const dragTension = new Setting(forces).setName(t('controls3d.dragTension')).addToggle(component => (tension = component).setValue(owner.settings.dragTension3d).onChange(value => {
       if (value === owner.settings.dragTension3d) return;
       owner.settings.dragTension3d = value; this.syncDragMode(); save();
     }));
     dragTension.settingEl.addClass('mod-toggle');
-    setTooltip(dragTension.nameEl, 'Pull connected nodes when dragging. Off: only the dragged node moves.');
+    setTooltip(dragTension.nameEl, t('controls3d.dragTensionTooltip'));
+    const forceNames: Record<keyof Forces, StringMessageKey> = {
+      center: 'controls3d.centerForce',
+      repel: 'controls3d.repelForce',
+      link: 'controls3d.linkForce',
+      distance: 'controls3d.linkDistance',
+    };
     for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
-      const { name, min, max, step } = FORCES[key];
-      new Setting(forces).setName(name).addSlider(component => { sliders.set(key, component); component.setLimits(min, max, step).setInstant(true)
+      const { min, max, step } = FORCES[key];
+      new Setting(forces).setName(t(forceNames[key])).addSlider(component => { sliders.set(key, component); component.setLimits(min, max, step).setInstant(true)
         .setValue(owner.settings.forces3d[key]).onChange(value => {
           if (value === owner.settings.forces3d[key]) return;
           owner.settings.forces3d = { ...owner.settings.forces3d, [key]: value };
           this.applyForces(); this.graph?.d3ReheatSimulation(); save();
         }); }).settingEl.addClass('mod-slider');
     }
-    new Setting(forces).addButton(button => button.setButtonText('Restore defaults').onClick(() => {
+    new Setting(forces).addButton(button => button.setButtonText(t('common.restoreDefaults')).onClick(() => {
       owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
       owner.settings.dragTension3d = DEFAULT_SETTINGS.dragTension3d;
       tension?.setValue(owner.settings.dragTension3d); this.syncDragMode();

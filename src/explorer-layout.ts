@@ -1,4 +1,6 @@
 import type { Ontology } from 'tag-ontology';
+import { formatRelativeTime, getLocale } from './i18n/index.ts';
+import type { SupportedLocale } from './i18n/types.ts';
 // Facet categories keep their existing colors independently of the depth palette examples.
 const FACET_PALETTE = ['#4ea1ff', '#f0a33c', '#e5484d', '#30a46c', '#a67cf0', '#14b8a6', '#e879a6', '#a3a33a'];
 
@@ -100,13 +102,8 @@ export function facetColors(facets: Iterable<string>): Map<string, string> {
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-export function relativeTime(mtime: number, now: number): string {
-  const days = Math.floor((now - mtime) / 864e5);
-  const ago = (n: number, unit: string) => `${plural(n, unit)} ago`;
-  if (days < 1) return 'today';
-  if (days < 30) return ago(days, 'day');
-  if (days < 365) return ago(Math.floor(days / 30), 'month');
-  return ago(Math.floor(days / 365), 'year');
+export function relativeTime(mtime: number, now: number, locale: SupportedLocale = getLocale()): string {
+  return formatRelativeTime(mtime, now, locale);
 }
 
 // A group holds every note tagged directly with its tag that isn't a card on the canvas: notes tagged later join it, and a note

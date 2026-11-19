@@ -1,7 +1,7 @@
-import { ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, getAllTags, getLanguage, moment, requireApiVersion, type App, type ColorComponent, type DropdownComponent, type SettingDefinitionItem, type TextComponent, type WorkspaceLeaf } from 'obsidian';
 import { AUTOMATIC_DICTIONARIES, DEFAULT_SETTINGS, TOW_FOLDER_DICTIONARY, cssColorToHex, sanitizeSettings, isValidDictionaryPath, isHiddenPath, type Settings } from './settings.ts';
 import { hierarchyColor, samePalette } from './colors.ts';
-import { choosePalette as paletteChoice, deletePalette as deletedPalette, editPalette, fillPaletteSelect, paletteSelection, resizePalette as resizedPalette, savePalette as namedPalette } from './palettes.ts';
+import { PaletteValidationError, choosePalette as paletteChoice, deletePalette as deletedPalette, editPalette, fillPaletteSelect, paletteSelection, resizePalette as resizedPalette, savePalette as namedPalette } from './palettes.ts';
 import { NativeGraphs, PANEL_VIEW } from './native.ts';
 import { Ontology, apply, conflicts, isIncludedNote, serialize, usage, type Change, type Note, type RawDictionary, type Usage } from 'tag-ontology';
 import { vaultData } from './vault-data.ts';
@@ -9,6 +9,8 @@ import { Graph3DView, VIEW_3D } from './graph3d.ts';
 import { ExplorerView, VIEW_EXPLORER } from './explorer.ts';
 import type { GraphMode } from './graph-modes.ts';
 import type { NativeData } from './layer.ts';
+import { getLocale, resolveLocale, setLocale, t, tPlural } from './i18n/index.ts';
+import { LOCALE_LABELS, SUPPORTED_LOCALES } from './i18n/types.ts';
 
 export type { Settings } from './settings.ts';
 
@@ -16,6 +18,9 @@ const ICON = 'book-open';
 // Obsidian's default accent color, for a theme whose accent can't be read.
 const ACCENT = '#8b6cef';
 export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
+export class DictionaryConflictError extends Error {
+  constructor() { super(CONFLICT); }
+}
 // Notices and the sidebar show the message alone; String(error) would add an "Error: " prefix.
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -49,10 +54,11 @@ export default class TagOntologyPlugin extends Plugin {
     if (this.disposed) return;
     this.firstRun = saved === null || saved === undefined;
     this.settings = sanitizeSettings(saved, this.app.vault.configDir);
+    this.applyLocale(false);
     if (!this.settings.locationNoticeShown) {
       const fresh = saved === null || saved === undefined;
       await this.resolveDictionary();
-      if (!fresh && this.dictionaryPath !== TOW_FOLDER_DICTIONARY) new Notice(`Tag Ontology now keeps the tag dictionary in ${TOW_FOLDER_DICTIONARY}. Your dictionary at ${this.dictionaryPath} keeps working. To move it, use “Move to tow/” in the plugin settings (TOW vaults: use the tow-setup skill or tow migrate).`);
+      if (!fresh && this.dictionaryPath !== TOW_FOLDER_DICTIONARY) new Notice(t('notice.locationMoved', { towPath: TOW_FOLDER_DICTIONARY, currentPath: this.dictionaryPath }));
       this.settings.locationNoticeShown = true;
       await this.saveData(this.settings);
     }
@@ -61,19 +67,19 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerView(PANEL_VIEW, leaf => new DictionaryView(leaf, this));
     this.registerView(VIEW_3D, leaf => new Graph3DView(leaf, this));
     this.registerView(VIEW_EXPLORER, leaf => new ExplorerView(leaf, this));
-    this.addRibbonIcon(ICON, 'Open tag ontology', () => { void this.openView(); });
-    this.addCommand({ id: 'open-graph', name: 'Open graph', callback: () => { void this.openView(); } });
-    this.addCommand({ id: 'open-3d-graph', name: OPEN_3D, checkCallback: (checking) => {
+    this.addRibbonIcon(ICON, t('commands.ribbonOpen'), () => { void this.openView(); });
+    this.addCommand({ id: 'open-graph', name: t('commands.openGraph'), callback: () => { void this.openView(); } });
+    this.addCommand({ id: 'open-3d-graph', name: t('commands.open3d'), checkCallback: (checking) => {
       if (!this.settings.enable3d) return false;
       if (!checking) void this.openView('3d');
       return true;
     } });
-    this.addCommand({ id: 'open-explorer', name: OPEN_EXPLORER, checkCallback: (checking) => {
+    this.addCommand({ id: 'open-explorer', name: t('commands.openExplorer'), checkCallback: (checking) => {
       if (!this.settings.enableExplorer) return false;
       if (!checking) void this.openView('explorer');
       return true;
     } });
-    this.addCommand({ id: 'reload-dictionary', name: 'Reload dictionary', callback: () => {
+    this.addCommand({ id: 'reload-dictionary', name: t('commands.reloadDictionary'), callback: () => {
       void this.refreshViews({ notify: true });
     } });
     this.settingsTab = new OntologySettingsTab(this.app, this);
@@ -193,7 +199,7 @@ export default class TagOntologyPlugin extends Plugin {
     try {
       const path = await this.resolveDictionary();
       await this.writeEmpty(path);
-    } catch (error) { new Notice(`Could not create the dictionary: ${String(error)}`); return false; }
+    } catch (error) { new Notice(t('notice.createFailed', { error: String(error) })); return false; }
     await this.reload();
     return true;
   }
@@ -261,19 +267,21 @@ export default class TagOntologyPlugin extends Plugin {
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
     const path = await this.resolveDictionary();
+    const conflictOr = (error: unknown) => error instanceof DictionaryConflictError || (error instanceof Error && error.message === CONFLICT)
+      ? t('notice.conflict') : t('notice.saveFailed', { error: String(error) });
     if (!isHiddenPath(path)) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof TFile)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
+      if (!(file instanceof TFile)) { new Notice(t('notice.dictionaryNotFound', { path })); return false; }
       try {
         await this.app.vault.process(file, (text) => this.changedText(text, change, base));
         return true;
       } catch (error) {
-        new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
+        new Notice(conflictOr(error));
         return false;
       }
     }
     try {
-      if (!await this.app.vault.adapter.exists(path)) { new Notice(`Tag dictionary not found: ${path}`); return false; }
+      if (!await this.app.vault.adapter.exists(path)) { new Notice(t('notice.dictionaryNotFound', { path })); return false; }
       const adapter = this.app.vault.adapter;
       const text = await adapter.read(path), out = this.changedText(text, change, base);
       // The adapter has no atomic compare-and-swap; a file changed after this check but before write can still be overwritten.
@@ -284,14 +292,14 @@ export default class TagOntologyPlugin extends Plugin {
       } catch { this.dictionaryMtime = undefined; this.dictionarySize = undefined; }
       return true;
     } catch (error) {
-      new Notice(error instanceof Error && error.message === CONFLICT ? CONFLICT : `Could not save the dictionary: ${String(error)}`);
+      new Notice(conflictOr(error));
       return false;
     }
   }
 
   private changedText(text: string, change: Change, base: RawDictionary): string {
     const latest = JSON.parse(text) as RawDictionary;
-    if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
+    if (conflicts(base, latest, change).length) throw new DictionaryConflictError();
     const next = apply(latest, change);
     // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
     new Ontology(next, []);
@@ -403,8 +411,21 @@ export default class TagOntologyPlugin extends Plugin {
 
   managePalettes(): void { new PaletteManagerModal(this.app, this).open(); }
 
+  private obsidianLanguage(): string {
+    if (requireApiVersion('1.8.7') && typeof getLanguage === 'function') return getLanguage();
+    return typeof moment?.locale === 'function' ? moment.locale() : '';
+  }
+
+  applyLocale(notify = true): void {
+    const prev = getLocale();
+    const next = resolveLocale(this.settings.language, this.obsidianLanguage());
+    setLocale(next);
+    if (notify && prev !== next) this.native.refreshLocale();
+  }
+
   async saveSettings(): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
+    this.applyLocale();
     await this.saveState();
     await this.refreshViews({ notify: true, linked: 'settings' });
     this.settingsTab?.syncPaletteControls();
@@ -433,7 +454,7 @@ export default class TagOntologyPlugin extends Plugin {
       if (existing && !this.disposed) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     } catch (error) {
       if (this.disposed) return;
-      new Notice(`Could not open the graph: ${reason(error)}`);
+      new Notice(t('notice.openGraphFailed', { error: reason(error) }));
       this.native.renderPanel();
     }
   }
@@ -480,7 +501,7 @@ export default class TagOntologyPlugin extends Plugin {
       this.native.renderPanel();
       // A 3D view with no dictionary loaded yet says why, as the sidebar does.
       this.native.drawLinked('refresh');
-      if (notify) new Notice(`Could not load the tag dictionary: ${reason(error)}`);
+      if (notify) new Notice(t('notice.loadFailed', { error: reason(error) }));
     }
   }
 
@@ -495,39 +516,20 @@ export default class TagOntologyPlugin extends Plugin {
 class DictionaryView extends ItemView {
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType(): string { return PANEL_VIEW; }
-  getDisplayText(): string { return 'Tag dictionary'; }
+  getDisplayText(): string { return t('views.dictionaryTitle'); }
   getIcon(): string { return ICON; }
   onOpen(): Promise<void> { this.owner.native.mount(this.contentEl); return Promise.resolve(); }
 }
 
-const PATH_HINT = 'Enter a .json path inside the vault, outside the config folder.';
-const pathDescription = (owner: TagOntologyPlugin) => `Vault-relative path to the tag dictionary (.json). Leave empty to find it automatically. In use: ${owner.dictionaryPath}${owner.settings.dictionaryPathExplicit ? '' : ' (automatic)'}.`;
+const pathDescription = (owner: TagOntologyPlugin) => t('settings.dictionary.path.desc', {
+  path: owner.settings.dictionaryPathExplicit ? owner.dictionaryPath : t('settings.dictionary.path.autoSuffix', { path: owner.dictionaryPath }),
+});
 const TOW_MARKERS = ['tow.json', '.tow/config.json', 'tow/config.json'];
-const TOW_VAULT_NOTICE ='TOW manages this file: run the tow-setup skill or tow migrate to move it.';
-const MOVE_NOTICE = `${TOW_FOLDER_DICTIONARY} already exists; not moving the dictionary.`;
-// UI text in constants, like the earlier Layout options: the sentence-case lint rule reads 3D as a word and wants 3d.
-const OPEN_3D = 'Open 3D graph';
-const OPEN_EXPLORER = 'Open ontology explorer';
-const ENABLE_EXPLORER = { name: 'Enable ontology explorer (beta)', desc: 'Explore the ontology in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the explorer canvases.' };
-const ENABLE_TREE = { name: 'Enable vertical tree', desc: 'Show the vertical tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
-const ENABLE_TREE_HORIZONTAL = { name: 'Enable horizontal tree', desc: 'Show the horizontal tree mode button in graph tabs. A tab in this mode goes back to force when it is turned off.' };
-const ENABLE_3D = { name: 'Enable 3D view (beta)', desc: 'View the hierarchy in 3D in the current graph tab, or right-click its mode button to open a new tab. Turning it off releases the 3D canvases. Drag tension can be toggled in the 3D view’s Forces settings.' };
-const KEBAB_NAMES = { name: 'Kebab-case tag names', desc: 'Accept a new or renamed tag only as lowercase letters and digits joined by hyphens, as TOW expects. Existing names are kept.' };
-const FOCUS = { name: 'Keep the selected tag focused', desc: 'Keep the selected tag and the tags next to it (its parents, children and related tags) bright and fade the rest.' };
-const FOCUS_SCOPE = [
-  { key: 'focusDescendants', name: 'Its descendants', desc: 'Also keep every tag under it bright, as far as they are expanded.' },
-  { key: 'focusNotes', name: 'Include notes', desc: 'Also keep the notes on the selected tag bright, and on its descendants when those are on.' },
-] as const;
-const COLOR_MODE = { name: 'Color mode', desc: 'Choose how tags are colored.' };
-const TAG_COLOR = { name: 'Tag color', desc: 'Uses the accent color until you pick one.' };
-const TAG_LIST_STYLE = { name: 'Tag lists', desc: 'Show tags in the sidebar as chips or one per line.' };
-const TAG_LIST_OPTIONS = { chips: 'Chips', list: 'List' };
-const TITLE = { name: 'Colored sidebar titles', desc: 'Use the selected tag’s color for its title.' };
 
 class PaletteNameModal extends Modal {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app); }
   onOpen(): void {
-    this.titleEl.setText('Save palette');
+    this.titleEl.setText(t('palettes.saveTitle'));
     let input: TextComponent;
     const error = this.contentEl.createDiv({ cls: 'tag-ontology-palette-error' });
     error.setAttribute('role', 'alert');
@@ -536,14 +538,18 @@ class PaletteNameModal extends Modal {
       if (saving) return;
       saving = true;
       try { await this.owner.savePaletteAs(input.getValue()); this.close(); }
-      catch (failure) { error.setText(reason(failure)); }
+      catch (failure) {
+        error.setText(failure instanceof PaletteValidationError
+          ? t(failure.code === 'invalid-name' ? 'palettes.errInvalidName' : 'palettes.errDuplicateName')
+          : reason(failure));
+      }
       finally { saving = false; }
     };
-    new Setting(this.contentEl).setName('Palette name').addText(text => {
-      input = text; text.setPlaceholder('Study'); text.inputEl.maxLength = 80;
+    new Setting(this.contentEl).setName(t('palettes.nameLabel')).addText(text => {
+      input = text; text.setPlaceholder(t('palettes.namePlaceholder')); text.inputEl.maxLength = 80;
       text.inputEl.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); void save(); } });
     });
-    new Setting(this.contentEl).addButton(button => button.setButtonText('Save palette').onClick(() => { void save(); }));
+    new Setting(this.contentEl).addButton(button => button.setButtonText(t('palettes.saveButton')).onClick(() => { void save(); }));
   }
 }
 
@@ -551,25 +557,25 @@ class PaletteManagerModal extends Modal {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app); }
   onOpen() { this.render(); }
   private render() {
-    this.titleEl.setText('My palettes'); this.contentEl.empty();
-    if (!this.owner.settings.savedHierarchyPalettes.length) new Setting(this.contentEl).setName('No saved palettes yet');
+    this.titleEl.setText(t('palettes.myPalettes')); this.contentEl.empty();
+    if (!this.owner.settings.savedHierarchyPalettes.length) new Setting(this.contentEl).setName(t('palettes.empty'));
     for (const palette of this.owner.settings.savedHierarchyPalettes) {
-      new Setting(this.contentEl).setName(palette.name).setDesc(`${palette.colors.length} color levels`)
-        .addExtraButton(button => button.setIcon('trash-2').setTooltip(`Delete ${palette.name}`).onClick(() => this.confirm(palette.name)));
+      new Setting(this.contentEl).setName(palette.name).setDesc(tPlural('palettes.levelsCount', palette.colors.length))
+        .addExtraButton(button => button.setIcon('trash-2').setTooltip(t('palettes.deleteTooltip', { name: palette.name })).onClick(() => this.confirm(palette.name)));
     }
   }
   private confirm(name: string) {
-    this.contentEl.empty(); this.titleEl.setText(`Delete ${name}?`);
+    this.contentEl.empty(); this.titleEl.setText(t('palettes.deleteTitle', { name }));
     const active = paletteSelection(this.owner.settings) === 'saved:' + name;
-    new Setting(this.contentEl).setDesc(active ? 'The active palette will switch to Default. Your working copy and other saved palettes are kept.' : 'Your working copy and other saved palettes are kept.');
+    new Setting(this.contentEl).setDesc(t(active ? 'palettes.deleteDescActive' : 'palettes.deleteDescInactive'));
     let deleting = false;
     new Setting(this.contentEl)
-      .addButton(button => button.setButtonText('Cancel').onClick(() => this.render()))
-      .addButton(button => button.setButtonText('Delete palette').onClick(() => {
+      .addButton(button => button.setButtonText(t('common.cancel')).onClick(() => this.render()))
+      .addButton(button => button.setButtonText(t('palettes.deleteButton')).onClick(() => {
         if (deleting) return;
         deleting = true; button.buttonEl.disabled = true;
         void this.owner.deletePalette(name).then(() => this.render()).catch(error => {
-          new Notice(`Could not delete the palette: ${reason(error)}`);
+          new Notice(t('notice.deletePaletteFailed', { error: reason(error) }));
           deleting = false; button.buttonEl.disabled = false;
         });
       }));
@@ -584,37 +590,49 @@ class OntologySettingsTab extends PluginSettingTab {
   private commitPath?: () => Promise<void>;
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
 
+  private languageOptions(): Record<string, string> {
+    const options: Record<string, string> = { auto: t('settings.general.language.auto') };
+    for (const locale of SUPPORTED_LOCALES) options[locale] = LOCALE_LABELS[locale];
+    return options;
+  }
+
   // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
   getSettingDefinitions(): SettingDefinitionItem[] {
     const custom = () => this.owner.settings.customColors;
     const palette = () => custom() && this.owner.settings.hierarchyColors;
     return [
-      { type: 'group', heading: 'Dictionary', items: [
-        { name: 'Dictionary path', desc: pathDescription(this.owner), render: setting => { this.dictionaryPathSetting(setting); } },
-        { ...KEBAB_NAMES, control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
+      { type: 'group', heading: t('settings.general.heading'), items: [
+        { name: t('settings.general.language.name'), desc: t('settings.general.language.desc'),
+          control: { type: 'dropdown', key: 'language', defaultValue: DEFAULT_SETTINGS.language, options: this.languageOptions() } },
       ] },
-      { type: 'group', heading: 'Colors', items: [
-        { ...COLOR_MODE, render: setting => { this.colorMode(setting); } },
-        { name: 'Palette', visible: palette, render: setting => { this.palettePreset(setting); } },
-        { name: 'Level colors', visible: palette, render: setting => { this.paletteColors(setting); } },
-        { name: 'My palettes', visible: palette, render: setting => { this.paletteSave(setting); } },
+      { type: 'group', heading: t('settings.dictionary.heading'), items: [
+        { name: t('settings.dictionary.path.name'), desc: pathDescription(this.owner), render: setting => { this.dictionaryPathSetting(setting); } },
+        { name: t('settings.dictionary.kebab.name'), desc: t('settings.dictionary.kebab.desc'), control: { type: 'toggle', key: 'kebabNames', defaultValue: DEFAULT_SETTINGS.kebabNames } },
+      ] },
+      { type: 'group', heading: t('settings.colors.heading'), items: [
+        { name: t('settings.colors.mode.name'), desc: t('settings.colors.mode.desc'), render: setting => { this.colorMode(setting); } },
+        { name: t('settings.colors.palette.name'), visible: palette, render: setting => { this.palettePreset(setting); } },
+        { name: t('settings.colors.levelColors.name'), visible: palette, render: setting => { this.paletteColors(setting); } },
+        { name: t('settings.colors.myPalettes.name'), visible: palette, render: setting => { this.paletteSave(setting); } },
         // A plain color control has no way back to following the accent, so this row is drawn by hand.
-        { ...TAG_COLOR, name: this.tagColorName(), visible: custom, render: setting => { this.tagColor(setting); } },
-        { ...TITLE, visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
+        { name: this.tagColorName(), desc: t('settings.colors.tagColor.desc'), visible: custom, render: setting => { this.tagColor(setting); } },
+        { name: t('settings.colors.titleAccent.name'), desc: t('settings.colors.titleAccent.desc'), visible: custom, control: { type: 'toggle', key: 'titleAccent', defaultValue: DEFAULT_SETTINGS.titleAccent } },
       ] },
-      { type: 'group', heading: 'Sidebar', items: [
-        { ...TAG_LIST_STYLE, control: { type: 'dropdown', key: 'tagListStyle', defaultValue: DEFAULT_SETTINGS.tagListStyle, options: TAG_LIST_OPTIONS } },
+      { type: 'group', heading: t('settings.sidebar.heading'), items: [
+        { name: t('settings.sidebar.tagList.name'), desc: t('settings.sidebar.tagList.desc'), control: { type: 'dropdown', key: 'tagListStyle', defaultValue: DEFAULT_SETTINGS.tagListStyle, options: { chips: t('settings.sidebar.tagList.chips'), list: t('settings.sidebar.tagList.list') } } },
       ] },
-      { type: 'group', heading: 'Focus', items: [
-        { ...FOCUS, control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
-        ...FOCUS_SCOPE.map(({ key, name, desc }) => ({ name, desc, visible: () => this.owner.settings.focus,
-          control: { type: 'toggle' as const, key, defaultValue: DEFAULT_SETTINGS[key] } })),
+      { type: 'group', heading: t('settings.focus.heading'), items: [
+        { name: t('settings.focus.main.name'), desc: t('settings.focus.main.desc'), control: { type: 'toggle', key: 'focus', defaultValue: DEFAULT_SETTINGS.focus } },
+        { name: t('settings.focus.descendants.name'), desc: t('settings.focus.descendants.desc'), visible: () => this.owner.settings.focus,
+          control: { type: 'toggle', key: 'focusDescendants', defaultValue: DEFAULT_SETTINGS.focusDescendants } },
+        { name: t('settings.focus.notes.name'), desc: t('settings.focus.notes.desc'), visible: () => this.owner.settings.focus,
+          control: { type: 'toggle', key: 'focusNotes', defaultValue: DEFAULT_SETTINGS.focusNotes } },
       ] },
-      { type: 'group', heading: 'Additional views', items: [
-        { ...ENABLE_TREE, control: { type: 'toggle', key: 'enableTree', defaultValue: DEFAULT_SETTINGS.enableTree } },
-        { ...ENABLE_TREE_HORIZONTAL, control: { type: 'toggle', key: 'enableTreeHorizontal', defaultValue: DEFAULT_SETTINGS.enableTreeHorizontal } },
-        { ...ENABLE_3D, control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
-        { ...ENABLE_EXPLORER, control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
+      { type: 'group', heading: t('settings.views.heading'), items: [
+        { name: t('settings.views.tree.name'), desc: t('settings.views.tree.desc'), control: { type: 'toggle', key: 'enableTree', defaultValue: DEFAULT_SETTINGS.enableTree } },
+        { name: t('settings.views.treeHorizontal.name'), desc: t('settings.views.treeHorizontal.desc'), control: { type: 'toggle', key: 'enableTreeHorizontal', defaultValue: DEFAULT_SETTINGS.enableTreeHorizontal } },
+        { name: t('settings.views.graph3d.name'), desc: t('settings.views.graph3d.desc'), control: { type: 'toggle', key: 'enable3d', defaultValue: DEFAULT_SETTINGS.enable3d } },
+        { name: t('settings.views.explorer.name'), desc: t('settings.views.explorer.desc'), control: { type: 'toggle', key: 'enableExplorer', defaultValue: DEFAULT_SETTINGS.enableExplorer } },
       ] },
     ];
   }
@@ -626,10 +644,10 @@ class OntologySettingsTab extends PluginSettingTab {
       input.setValue(this.owner.settings.dictionaryPathExplicit ? this.owner.settings.dictionaryPath : '');
       input.setPlaceholder(this.owner.settings.dictionaryPathExplicit ? TOW_FOLDER_DICTIONARY : this.owner.dictionaryPath);
     };
-    const describe = () => setting.setDesc(`${pathDescription(this.owner)}${towVault && this.owner.dictionaryPath !== TOW_FOLDER_DICTIONARY ? ` ${TOW_VAULT_NOTICE}` : ''}`);
-    setting.setName('Dictionary path').setDesc(pathDescription(this.owner))
+    const describe = () => setting.setDesc(`${pathDescription(this.owner)}${towVault && this.owner.dictionaryPath !== TOW_FOLDER_DICTIONARY ? ` ${t('notice.towManaged')}` : ''}`);
+    setting.setName(t('settings.dictionary.path.name')).setDesc(pathDescription(this.owner))
       .addText(text => { input = text; })
-      .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip('Use automatic dictionary path').onClick(async () => {
+      .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip(t('settings.dictionary.path.resetTooltip')).onClick(async () => {
         await this.owner.resetDictionaryPath(); fill(); describe();
       }));
     fill(); describe();
@@ -637,7 +655,7 @@ class OntologySettingsTab extends PluginSettingTab {
       const path = input.getValue().trim();
       if (path === (this.owner.settings.dictionaryPathExplicit ? this.owner.settings.dictionaryPath : '')) return;
       if (!path) await this.owner.resetDictionaryPath();
-      else if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(PATH_HINT); return; }
+      else if (!isValidDictionaryPath(path, this.app.vault.configDir)) { setting.setDesc(t('settings.dictionary.path.hint')); return; }
       else await this.owner.setDictionaryPath(path);
       // A slow reload must not overwrite text typed after this commit started.
       if (input.getValue().trim() === path) fill();
@@ -651,20 +669,20 @@ class OntologySettingsTab extends PluginSettingTab {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile && !path.startsWith('tow/') && !isHiddenPath(path)
         && !this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) {
-        setting.addButton(button => button.setButtonText('Move to tow/').onClick(async () => {
+        setting.addButton(button => button.setButtonText(t('settings.dictionary.moveToTow')).onClick(async () => {
           try {
             // The vault index has no hidden files, so .tow/config.json is only visible on disk.
-            for (const marker of TOW_MARKERS) if (await this.app.vault.adapter.exists(marker)) { new Notice(TOW_VAULT_NOTICE); return; }
-            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(MOVE_NOTICE); return; }
+            for (const marker of TOW_MARKERS) if (await this.app.vault.adapter.exists(marker)) { new Notice(t('notice.towManaged')); return; }
+            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(t('notice.moveExists', { path: TOW_FOLDER_DICTIONARY })); return; }
             if (!this.app.vault.getAbstractFileByPath('tow')) await this.app.vault.createFolder('tow');
-            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(MOVE_NOTICE); return; }
+            if (this.app.vault.getAbstractFileByPath(TOW_FOLDER_DICTIONARY)) { new Notice(t('notice.moveExists', { path: TOW_FOLDER_DICTIONARY })); return; }
             await this.app.fileManager.renameFile(file, TOW_FOLDER_DICTIONARY);
             if (this.owner.settings.dictionaryPathExplicit) await this.owner.setDictionaryPath(TOW_FOLDER_DICTIONARY);
             await this.owner.reload();
             fill(); describe();
             // The dictionary is in tow/ now, so there is nothing left to move.
             button.buttonEl.remove();
-          } catch (error) { new Notice(`Could not move the dictionary: ${reason(error)}`); }
+          } catch (error) { new Notice(t('notice.moveFailed', { error: reason(error) })); }
         }));
       }
     }
@@ -685,18 +703,22 @@ class OntologySettingsTab extends PluginSettingTab {
     }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
     await this.owner.saveSettings();
+    if (key === 'language') {
+      if (requireApiVersion('1.13.0')) this.update(); else this.renderLegacy();
+      return;
+    }
     if (requireApiVersion('1.13.0') && key === 'hierarchyColors') this.update();
   }
 
   private tagColorName(): string {
-    return this.owner.settings.hierarchyColors ? 'Color for tags outside the hierarchy' : TAG_COLOR.name;
+    return this.owner.settings.hierarchyColors ? t('settings.colors.tagColor.outsideName') : t('settings.colors.tagColor.name');
   }
 
   // The picker shows the color in use, the accent until one is picked; the reset button goes back to following the accent.
   // Showing the accent again calls onChange too, and that must not pin the accent as a picked color.
   private tagColor(setting: Setting): Setting {
     let shown: ColorComponent | undefined;
-    return setting.setName(this.tagColorName()).setDesc(TAG_COLOR.desc)
+    return setting.setName(this.tagColorName()).setDesc(t('settings.colors.tagColor.desc'))
       .addColorPicker((picker) => {
         shown = picker;
         picker.setValue(this.owner.tagColor()).onChange(async (value) => {
@@ -704,44 +726,48 @@ class OntologySettingsTab extends PluginSettingTab {
           await this.setControlValue('tagColor', value);
         });
       })
-      .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip('Use the accent color').onClick(async () => {
+      .addExtraButton(button => button.setIcon('rotate-ccw').setTooltip(t('settings.colors.tagColor.resetTooltip')).onClick(async () => {
         await this.setControlValue('tagColor', '');
         shown?.setValue(this.owner.tagColor());
       }));
   }
 
-  private depthName(index: number): string { return index === 0 ? 'Depth 0 (root)' : `Depth ${index}`; }
+  private depthName(index: number): string {
+    return index === 0 ? t('settings.colors.depthRoot') : t('settings.colors.depthLevel', { index });
+  }
 
   private colorMode(setting: Setting): Setting {
     const value = !this.owner.settings.customColors ? 'default' : this.owner.settings.hierarchyColors ? 'depth' : 'single';
-    return setting.setName(COLOR_MODE.name).setDesc(COLOR_MODE.desc).addDropdown(dropdown => {
-      dropdown.addOption('default', 'Obsidian default').addOption('single', 'Single color').addOption('depth', 'Hierarchy depth')
+    return setting.setName(t('settings.colors.mode.name')).setDesc(t('settings.colors.mode.desc')).addDropdown(dropdown => {
+      dropdown.addOption('default', t('settings.colors.mode.default'))
+        .addOption('single', t('settings.colors.mode.single'))
+        .addOption('depth', t('settings.colors.mode.depth'))
         .setValue(value).onChange(mode => this.setControlValue('colorMode', mode));
     });
   }
 
   private palettePreset(setting: Setting): Setting {
-    return setting.setName('Palette').setDesc('Choose an example, a working copy or a saved palette.')
+    return setting.setName(t('settings.colors.palette.name')).setDesc(t('settings.colors.palette.desc'))
       .addDropdown(dropdown => {
         this.paletteDropdown = dropdown;
         fillPaletteSelect(dropdown.selectEl, this.owner.settings);
         dropdown.setValue(paletteSelection(this.owner.settings)).onChange(key => this.owner.choosePalette(key));
       })
-      .addExtraButton(button => button.setIcon('plus').setTooltip('Add level').onClick(() => { void this.owner.resizePalette(1); }))
-      .addExtraButton(button => button.setIcon('minus').setTooltip('Remove last level').onClick(() => { void this.owner.resizePalette(-1); }));
+      .addExtraButton(button => button.setIcon('plus').setTooltip(t('settings.colors.palette.addTooltip')).onClick(() => { void this.owner.resizePalette(1); }))
+      .addExtraButton(button => button.setIcon('minus').setTooltip(t('settings.colors.palette.removeTooltip')).onClick(() => { void this.owner.resizePalette(-1); }));
   }
 
   private paletteSave(setting: Setting): Setting {
     this.paletteSaveSetting = setting;
-    return setting.setName('My palettes').setDesc(this.paletteStatus())
-      .addButton(button => button.setButtonText('Save as…').onClick(() => this.owner.promptSavePalette()))
-      .addButton(button => button.setButtonText('Manage…').onClick(() => this.owner.managePalettes()));
+    return setting.setName(t('settings.colors.myPalettes.name')).setDesc(this.paletteStatus())
+      .addButton(button => button.setButtonText(t('settings.colors.myPalettes.saveAs')).onClick(() => this.owner.promptSavePalette()))
+      .addButton(button => button.setButtonText(t('settings.colors.myPalettes.manage')).onClick(() => this.owner.managePalettes()));
   }
 
   private paletteStatus(): string {
     return paletteSelection(this.owner.settings) === 'custom'
-      ? 'Working copy is kept automatically. Save a name to add it to My palettes.'
-      : 'Save the current colors as a new named palette.';
+      ? t('settings.colors.myPalettes.descWorking')
+      : t('settings.colors.myPalettes.descSaved');
   }
 
   syncPaletteControls(): void {
@@ -758,7 +784,10 @@ class OntologySettingsTab extends PluginSettingTab {
   private paletteColors(setting: Setting): Setting {
     this.paletteSetting = setting;
     const palette = this.owner.settings.hierarchyPalette;
-    setting.setName('Level colors').setDesc(`Root = 0. ${palette.length} color levels; level ${palette.length - 1} and deeper use the last color.`);
+    const desc = palette.length === 1
+      ? t('settings.colors.levelColors.descSingle')
+      : tPlural('settings.colors.levelColors.desc', palette.length, { last: palette.length - 1 });
+    setting.setName(t('settings.colors.levelColors.name')).setDesc(desc);
     setting.settingEl.addClass('tag-ontology-palette-setting');
     setting.controlEl.empty();
     this.palettePickers = [];
@@ -785,12 +814,17 @@ class OntologySettingsTab extends PluginSettingTab {
   private renderLegacy(): void {
     const { containerEl } = this;
     containerEl.empty();
-    new Setting(containerEl).setName('Dictionary').setHeading();
+    new Setting(containerEl).setName(t('settings.general.heading')).setHeading();
+    new Setting(containerEl).setName(t('settings.general.language.name')).setDesc(t('settings.general.language.desc')).addDropdown((dropdown) => {
+      for (const [key, label] of Object.entries(this.languageOptions())) dropdown.addOption(key, label);
+      dropdown.setValue(this.owner.settings.language).onChange(value => this.setControlValue('language', value));
+    });
+    new Setting(containerEl).setName(t('settings.dictionary.heading')).setHeading();
     this.dictionaryPathSetting(new Setting(containerEl));
-    new Setting(containerEl).setName(KEBAB_NAMES.name).setDesc(KEBAB_NAMES.desc).addToggle((toggle) => {
+    new Setting(containerEl).setName(t('settings.dictionary.kebab.name')).setDesc(t('settings.dictionary.kebab.desc')).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.kebabNames).onChange(value => this.setControlValue('kebabNames', value));
     });
-    new Setting(containerEl).setName('Colors').setHeading();
+    new Setting(containerEl).setName(t('settings.colors.heading')).setHeading();
     this.colorMode(new Setting(containerEl));
     const custom: Setting[] = [], palette: Setting[] = [];
     palette.push(this.palettePreset(new Setting(containerEl)));
@@ -798,29 +832,39 @@ class OntologySettingsTab extends PluginSettingTab {
     palette.push(this.paletteSave(new Setting(containerEl)));
     for (const row of palette) row.settingEl.toggle(this.owner.settings.customColors && this.owner.settings.hierarchyColors);
     custom.push(this.tagColor(new Setting(containerEl)));
-    custom.push(new Setting(containerEl).setName(TITLE.name).setDesc(TITLE.desc).addToggle((toggle) => {
+    custom.push(new Setting(containerEl).setName(t('settings.colors.titleAccent.name')).setDesc(t('settings.colors.titleAccent.desc')).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.titleAccent).onChange(value => this.setControlValue('titleAccent', value));
     }));
     for (const setting of custom) setting.settingEl.toggle(this.owner.settings.customColors);
-    new Setting(containerEl).setName('Sidebar').setHeading();
-    new Setting(containerEl).setName(TAG_LIST_STYLE.name).setDesc(TAG_LIST_STYLE.desc).addDropdown((dropdown) => {
-      dropdown.addOption('chips', TAG_LIST_OPTIONS.chips).addOption('list', TAG_LIST_OPTIONS.list).setValue(this.owner.settings.tagListStyle).onChange(value => this.setControlValue('tagListStyle', value));
+    new Setting(containerEl).setName(t('settings.sidebar.heading')).setHeading();
+    new Setting(containerEl).setName(t('settings.sidebar.tagList.name')).setDesc(t('settings.sidebar.tagList.desc')).addDropdown((dropdown) => {
+      dropdown.addOption('chips', t('settings.sidebar.tagList.chips')).addOption('list', t('settings.sidebar.tagList.list')).setValue(this.owner.settings.tagListStyle).onChange(value => this.setControlValue('tagListStyle', value));
     });
-    new Setting(containerEl).setName('Focus').setHeading();
+    new Setting(containerEl).setName(t('settings.focus.heading')).setHeading();
     const scope: Setting[] = [];
-    new Setting(containerEl).setName(FOCUS.name).setDesc(FOCUS.desc).addToggle((toggle) => {
+    new Setting(containerEl).setName(t('settings.focus.main.name')).setDesc(t('settings.focus.main.desc')).addToggle((toggle) => {
       toggle.setValue(this.owner.settings.focus).onChange((value) => {
         for (const setting of scope) setting.settingEl.toggle(value);
         return this.setControlValue('focus', value);
       });
     });
-    for (const { key, name, desc } of FOCUS_SCOPE) scope.push(new Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
-      toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
-    }));
+    for (const [key, nameKey, descKey] of [
+      ['focusDescendants', 'settings.focus.descendants.name', 'settings.focus.descendants.desc'],
+      ['focusNotes', 'settings.focus.notes.name', 'settings.focus.notes.desc'],
+    ] as const) {
+      scope.push(new Setting(containerEl).setName(t(nameKey)).setDesc(t(descKey)).addToggle((toggle) => {
+        toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value));
+      }));
+    }
     for (const setting of scope) setting.settingEl.toggle(this.owner.settings.focus);
-    new Setting(containerEl).setName('Additional views').setHeading();
-    for (const [key, text] of [['enableTree', ENABLE_TREE], ['enableTreeHorizontal', ENABLE_TREE_HORIZONTAL], ['enable3d', ENABLE_3D], ['enableExplorer', ENABLE_EXPLORER]] as const) {
-      new Setting(containerEl).setName(text.name).setDesc(text.desc).addToggle(toggle => toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value)));
+    new Setting(containerEl).setName(t('settings.views.heading')).setHeading();
+    for (const [key, nameKey, descKey] of [
+      ['enableTree', 'settings.views.tree.name', 'settings.views.tree.desc'],
+      ['enableTreeHorizontal', 'settings.views.treeHorizontal.name', 'settings.views.treeHorizontal.desc'],
+      ['enable3d', 'settings.views.graph3d.name', 'settings.views.graph3d.desc'],
+      ['enableExplorer', 'settings.views.explorer.name', 'settings.views.explorer.desc'],
+    ] as const) {
+      new Setting(containerEl).setName(t(nameKey)).setDesc(t(descKey)).addToggle(toggle => toggle.setValue(this.owner.settings[key]).onChange(value => this.setControlValue(key, value)));
     }
   }
 }

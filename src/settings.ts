@@ -1,5 +1,7 @@
 import { DICTIONARY_LOCATIONS } from 'tag-ontology';
 import { PALETTE, PALETTE_PRESETS, paletteFor, samePalette } from './colors.ts';
+import { isSupportedLocale } from './i18n/index.ts';
+import type { LanguageSetting } from './i18n/types.ts';
 
 export interface SavedPalette { name: string; colors: string[] }
 
@@ -32,6 +34,8 @@ export interface Settings {
   forces3d: Forces;
   // When on, dragging a 3D node keeps the simulation active so linked nodes follow; when off, only the grabbed node moves.
   dragTension3d: boolean;
+  // Active UI language ('auto' follows Obsidian's configured language).
+  language: LanguageSetting;
 }
 export interface Forces { center: number; repel: number; link: number; distance: number }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
@@ -55,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
   forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
   dragTension3d: true,
+  language: 'auto',
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -141,6 +146,7 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
     forces3d: forces(value.forces3d),
     dragTension3d: flag('dragTension3d'),
+    language: value.language === 'auto' || isSupportedLocale(value.language) ? value.language : DEFAULT_SETTINGS.language,
   };
 }
 

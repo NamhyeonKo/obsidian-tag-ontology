@@ -7,6 +7,8 @@ import { Ontology, isIncludedNote } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
 import * as colors from '../src/colors.ts';
 import * as palettes from '../src/palettes.ts';
+import * as i18n from '../src/i18n/index.ts';
+import * as i18nTypes from '../src/i18n/types.ts';
 import * as coreModule from 'tag-ontology';
 import { vaultData } from '../src/vault-data.ts';
 import { apply, draftOf, serialize, type Change, type RawDictionary } from 'tag-ontology';
@@ -14,7 +16,7 @@ import type { NativeData } from '../src/layer.ts';
 import type { Setting, SettingDefinitionItem, SettingDefinitionGroup } from 'obsidian';
 
 const dictionarySetting = (tab: { getSettingDefinitions(): SettingDefinitionItem[] }) =>
-  (tab.getSettingDefinitions()[0] as SettingDefinitionGroup).items![0];
+  (tab.getSettingDefinitions()[1] as SettingDefinitionGroup).items![0];
 
 const dictionary = JSON.stringify({ root: { description: 'Root', broader: [] } });
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -42,6 +44,7 @@ class NativeGraphs {
   drawLinked() { this.calls.push('draw-linked'); }
   modes: string[] = [];
   async switchMode(_leaf: unknown, mode: string) { this.modes.push(mode); }
+  refreshLocale() { this.calls.push('refresh-locale'); }
   destroy() { this.calls.push('destroy'); }
 }
 
@@ -54,9 +57,12 @@ interface Main {
   saveData(data?: unknown): Promise<void>; onload(): Promise<void>; onunload(): void; loadModel(): Promise<Ontology>; openView(graph?: '2d' | '3d' | 'explorer', newTab?: boolean): Promise<void>; saveSettings(): Promise<void>; setPaletteColor(depth: number, color: string): Promise<void>; choosePalette(key: string): Promise<void>; savePaletteAs(name: string): Promise<void>; promptSavePalette(): void; saveState(): Promise<void>; graphData(): NativeData;
 }
 
-async function setup(saved?: Promise<unknown>) {
+async function setup(saved?: Promise<unknown>, env: { appLanguage?: string; api187?: boolean } = {}) {
   let modernSettings = true;
+  const appLanguage = env.appLanguage ?? 'en';
+  const api187 = env.api187 ?? true;
   const notices: string[] = [], errors: unknown[][] = [], ui: string[] = [], settingRows: TestSetting[] = [], settingTabs: object[] = [], savedWrites: unknown[] = [];
+  const commandNames = new Map<string, string>(), ribbons: string[] = [];
   // Each command's action, and whether the command palette offers it.
   const commands = new Map<string, () => void>(), offered = new Map<string, () => boolean>();
   const events = new Map<string, (file: { path: string }) => void>();
@@ -192,10 +198,11 @@ async function setup(saved?: Promise<unknown>) {
     loadData() { return saved ?? Promise.resolve({ locationNoticeShown: true }); }
     async saveData(data?: unknown) { savedWrites.push(data); }
     registerView() { ui.push('register-view'); }
-    addRibbonIcon() {} addSettingTab(tab: object) { settingTabs.push(tab); } registerEvent() {}
+    addRibbonIcon(_icon: string, title: string) { ribbons.push(title); } addSettingTab(tab: object) { settingTabs.push(tab); } registerEvent() {}
     registerDomEvent(target: { addEventListener(type: string, callback: () => void): void }, type: string, callback: () => void) { target.addEventListener(type, callback); }
     register(cleanup: () => void) { cleanups.push(cleanup); }
-    addCommand({ id, callback, checkCallback }: { id: string; callback?: () => void; checkCallback?: (checking: boolean) => boolean }) {
+    addCommand({ id, name, callback, checkCallback }: { id: string; name: string; callback?: () => void; checkCallback?: (checking: boolean) => boolean }) {
+      commandNames.set(id, name);
       commands.set(id, callback ?? (() => { checkCallback!(false); }));
       offered.set(id, () => checkCallback?.(true) ?? true);
     }
@@ -212,11 +219,13 @@ async function setup(saved?: Promise<unknown>) {
   const module = new SourceTextModule(code.code, { context });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { requireApiVersion: () => modernSettings, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: (cache?: { tags?: string[] }) => cache?.tags ?? [],
+      ? { requireApiVersion: (version: string) => version === '1.8.7' ? api187 : modernSettings, getLanguage: () => appLanguage, moment: { locale: () => appLanguage }, Modal: TestModal, Plugin, ItemView: class {}, PluginSettingTab: TestPluginSettingTab, Setting: TestSetting, TFile: File, getAllTags: (cache?: { tags?: string[] }) => cache?.tags ?? [],
         Notice: class { constructor(message: string) { notices.push(message); } } }
       : specifier === './colors.ts' ? { ...colors }
       : specifier === './palettes.ts' ? { ...palettes }
       : specifier === './settings.ts' ? { ...settings }
+      : specifier === './i18n/index.ts' ? { ...i18n }
+      : specifier === './i18n/types.ts' ? { ...i18nTypes }
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './vault-data.ts' ? { vaultData }
       : specifier === './graph3d.ts' ? { VIEW_3D: 'tag-ontology-3d', Graph3DView: class {} }
@@ -233,7 +242,7 @@ async function setup(saved?: Promise<unknown>) {
   const runTimers = () => { const due = [...timers.values()]; timers.clear(); due.forEach(callback => callback()); };
   // Obsidian's accent color setting rewrites the accent variables on <body> and fires no event.
   const restyle = (accent: string, viaCss = false) => { theme.accent = accent; if (viaCss) workspace.trigger('css-change'); else observers.forEach(observer => observer()); };
-  return { modals, plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
+  return { modals, plugin, loaded, vault, workspace, metadataCache, metaEvents, leaf, types, open, notices, errors, ui, commands, commandNames, ribbons, offered, events, ready: () => ready(), focus: async () => { focusListener?.(); await settle(); }, runTimers, reads: () => reads,
     legacySettings: () => { modernSettings = false; }, restyle, settingRows, settingTabs, newSetting: () => new TestSetting(), file: (path = '') => new File(path), savedWrites, watching: () => watching, unload: () => { plugin.onunload(); cleanups.forEach(cleanup => cleanup()); } };
 }
 
@@ -1300,7 +1309,7 @@ test('editing a graph legend color saves the whole active preset as custom and r
 test('modern and legacy settings keep the same sections, order and conditional visibility', async () => {
   const t = await setup(); await t.loaded;
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void };
-  const expected = ['Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Color mode',
+  const expected = ['General', 'Language', 'Dictionary', 'Dictionary path', 'Kebab-case tag names', 'Colors', 'Color mode',
     'Palette', 'Level colors', 'My palettes', 'Color for tags outside the hierarchy', 'Colored sidebar titles',
     'Sidebar', 'Tag lists',
     'Focus', 'Keep the selected tag focused', 'Its descendants', 'Include notes',
@@ -1316,7 +1325,7 @@ test('modern and legacy settings keep the same sections, order and conditional v
     const legacy = t.settingRows.filter(row => !row.settingEl.hidden && !/^\d+$/.test(row.name)).map(row => row.name);
     assert.deepEqual(legacy, modern, JSON.stringify({ customColors, hierarchyColors, focus }));
     if (customColors && hierarchyColors && focus) assert.deepEqual(modern, expected);
-    assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['Dictionary', 'Colors', 'Sidebar', 'Focus', 'Additional views']);
+    assert.deepEqual(t.settingRows.filter(row => row.heading).map(row => row.name), ['General', 'Dictionary', 'Colors', 'Sidebar', 'Focus', 'Additional views']);
   }
 });
 
@@ -1327,7 +1336,7 @@ test('color mode updates both settings APIs while keeping all saved colors', asy
   const tab = t.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; display(): void; update(): void; definitions: SettingDefinitionItem[] };
   tab.display(); tab.update();
   const mode = () => [...t.settingRows].reverse().find(row => row.name === 'Color mode')!;
-  const name = () => (tab.definitions[1] as SettingDefinitionGroup).items![4].name;
+  const name = () => (tab.definitions[2] as SettingDefinitionGroup).items![4].name;
   assert.equal(mode().dropdownValue, 'single');
   mode().dropdownChanged!('depth'); await settle();
   assert.equal(name(), 'Color for tags outside the hierarchy');
@@ -1441,4 +1450,78 @@ test('review: failed deletion must preserve a concurrently saved case-variant sn
   rejectDelete(new Error('disk unavailable')); await failed;
   await t.plugin.saveSettings();
   assert.ok(t.plugin.settings.savedHierarchyPalettes.some(p => p.name === 'study' && p.colors[0] === '#123456'), 'new successful snapshot must survive rollback');
+});
+
+test('language setting follows Obsidian language automatically (including pre-1.8.7 fallback) and refreshes UI on manual switch', async () => {
+  try {
+    const koAuto = await setup(Promise.resolve({ locationNoticeShown: true }), { appLanguage: 'ko', api187: true });
+    await koAuto.loaded;
+    assert.equal(i18n.getLocale(), 'ko');
+    assert.equal(koAuto.ribbons[0], 'Tag Ontology 열기');
+    assert.equal(koAuto.commandNames.get('open-graph'), '그래프 열기');
+    const koTab = koAuto.settingTabs[0] as { getSettingDefinitions(): SettingDefinitionItem[]; setControlValue(key: string, value: unknown): Promise<void>; definitions?: SettingDefinitionItem[]; display(): void };
+    assert.equal((koTab.getSettingDefinitions()[0] as SettingDefinitionGroup).heading, '일반');
+
+    const jaFallback = await setup(Promise.resolve({ locationNoticeShown: true }), { appLanguage: 'ja', api187: false });
+    await jaFallback.loaded;
+    assert.equal(i18n.getLocale(), 'ja');
+    assert.equal(jaFallback.commandNames.get('reload-dictionary'), '辞書を再読み込み');
+
+    await koTab.setControlValue('language', 'de');
+    assert.equal(i18n.getLocale(), 'de');
+    assert.equal(koAuto.plugin.settings.language, 'de');
+    assert.equal((koTab.definitions?.[0] as SettingDefinitionGroup).heading, 'Allgemein');
+    assert.ok(koAuto.plugin.native.calls.includes('refresh-locale'));
+
+    // Conflict notice uses active locale rather than English string matching.
+    const conflict = await setup(Promise.resolve({ locationNoticeShown: true, language: 'ko' }));
+    await conflict.loaded;
+    const base = JSON.parse(dictionary) as RawDictionary;
+    conflict.vault.text = JSON.stringify({ root: { description: 'Changed outside', broader: [] } });
+    const saved = await conflict.plugin.saveChange({ kind: 'edit', tag: 'root', draft: { ...draftOf(base, 'root'), description: 'Mine' } }, base);
+    assert.equal(saved, false);
+    assert.equal(conflict.notices.at(-1), i18n.CATALOGS.ko['notice.conflict']);
+  } finally {
+    i18n.setLocale('en');
+  }
+});
+
+test('legacySettings re-renders on language switch and palette modals localize under ko', async () => {
+  const t = await setup(); t.ready(); await settle();
+  const tab = t.settingTabs[0] as { display(): void };
+  t.legacySettings();
+  Object.defineProperty(tab, 'update', { value: undefined });
+  try {
+    tab.display();
+    const lang = t.settingRows.find(row => row.name === 'Language')!;
+    await lang.dropdownChanged!('ko');
+    assert.ok(t.settingRows.some(row => row.name === i18n.CATALOGS.ko['settings.general.language.name']));
+    assert.ok(t.settingRows.some(row => row.name === i18n.CATALOGS.ko['settings.dictionary.path.name']));
+
+    t.plugin.managePalettes();
+    assert.equal(t.modals.at(-1)!.title, i18n.CATALOGS.ko['palettes.myPalettes']);
+    assert.equal(t.settingRows.at(-1)!.name, i18n.CATALOGS.ko['palettes.empty']);
+
+    t.plugin.promptSavePalette();
+    const nameModal = t.modals.at(-1)!;
+    assert.equal(nameModal.title, i18n.CATALOGS.ko['palettes.saveTitle']);
+    const nameInput = [...t.settingRows].reverse().find(row => row.name === i18n.CATALOGS.ko['palettes.nameLabel'])!;
+    const saveRow = [...t.settingRows].reverse().find(row => row.buttonNames.includes(i18n.CATALOGS.ko['palettes.saveButton']))!;
+    nameInput.textValue = '';
+    saveRow.buttons[0]();
+    await settle();
+    assert.equal(nameModal.closed, false);
+    assert.equal(nameModal.errorText, i18n.CATALOGS.ko['palettes.errInvalidName']);
+
+    nameInput.textValue = 'Study';
+    saveRow.buttons[0]();
+    await settle();
+    assert.equal(nameModal.closed, true);
+
+    t.plugin.managePalettes();
+    const entry = [...t.settingRows].reverse().find(row => row.name === 'Study');
+    assert.equal(entry?.desc, '8개 색상 단계');
+  } finally {
+    i18n.setLocale('en');
+  }
 });
