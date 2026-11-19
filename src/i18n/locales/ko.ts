@@ -234,7 +234,6 @@ const ko = {
 
   'controls3d.openSettings': '그래프 설정 열기',
   'controls3d.close': '닫기',
-  'controls3d.labelsSection': '라벨',
   'controls3d.perspectiveLabels': '원근 라벨',
   'controls3d.perspectiveLabelsTooltip': '카메라에 가까워질수록 라벨이 커집니다. 끄면 거리에 상관없이 일정한 크기로 보입니다.',
   'controls3d.labelSize': '라벨 크기',
@@ -245,6 +244,21 @@ const ko = {
   'controls3d.repelForce': '반발력',
   'controls3d.linkForce': '링크 장력',
   'controls3d.linkDistance': '링크 거리',
+  'controls3d.restoreAll': '기본 설정으로 되돌리기',
+  'controls3d.filtersSection': '필터',
+  'controls3d.searchPlaceholder': '파일 검색...',
+  'controls3d.attachments': '첨부 파일',
+  'controls3d.attachmentsTooltip': '파일에 포함된 첨부 파일 보기',
+  'controls3d.existingOnly': '존재하는 파일만 표시',
+  'controls3d.existingOnlyTooltip': '활성화 한 경우 존재하지 않는 파일로의 링크는 표시되지 않습니다.',
+  'controls3d.orphans': '미연결 노트',
+  'controls3d.orphansTooltip': '다른 파일로 링크되지 않은 파일도 표시',
+  'controls3d.displaySection': '표시',
+  'controls3d.arrows': '화살표',
+  'controls3d.arrowsTooltip': '노트 링크에도 화살표를 표시합니다. 계층 링크에는 항상 화살표가 표시됩니다.',
+  'controls3d.textFadeThreshold': '텍스트 표시 시작점',
+  'controls3d.nodeSize': '노드 크기',
+  'controls3d.linkThickness': '링크 두께',
 } satisfies Messages;
 
 export default ko;

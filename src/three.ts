@@ -3,6 +3,6 @@
 export { default as ForceGraph3D } from '3d-force-graph';
 export { default as SpriteText } from 'three-spritetext';
 export {
-  BufferAttribute, BufferGeometry, Color, ConeGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Mesh,
+  BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Fog, InstancedMesh, LineBasicMaterial, LineDashedMaterial, LineSegments, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, Object3D, SphereGeometry, Vector3,
 } from 'three';

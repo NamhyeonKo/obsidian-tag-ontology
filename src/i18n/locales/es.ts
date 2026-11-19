@@ -247,7 +247,6 @@ const es = {
 
   'controls3d.openSettings': 'Abrir ajustes de gráfico',
   'controls3d.close': 'Cerrar',
-  'controls3d.labelsSection': 'Etiquetas',
   'controls3d.perspectiveLabels': 'Etiquetas en perspectiva',
   'controls3d.perspectiveLabelsTooltip': 'Las etiquetas crecen al acercarte. Desactivado: tamaño constante a cualquier distancia.',
   'controls3d.labelSize': 'Tamaño de etiqueta',
@@ -258,6 +257,21 @@ const es = {
   'controls3d.repelForce': 'Fuerza de repelencia',
   'controls3d.linkForce': 'Fuerza de enlace',
   'controls3d.linkDistance': 'Distancia de enlace',
+  'controls3d.restoreAll': 'Restaurar ajustes por defecto',
+  'controls3d.filtersSection': 'Filtros',
+  'controls3d.searchPlaceholder': 'Buscar archivos...',
+  'controls3d.attachments': 'Adjuntos',
+  'controls3d.attachmentsTooltip': 'Mostrar archivos incluidos',
+  'controls3d.existingOnly': 'Solo archivos existentes',
+  'controls3d.existingOnlyTooltip': 'Cuando está activada, no se muestran los enlaces a archivos no existentes',
+  'controls3d.orphans': 'Huérfanos',
+  'controls3d.orphansTooltip': 'Muestra los archivos que no están vinculados a ningún otro',
+  'controls3d.displaySection': 'Mostrar',
+  'controls3d.arrows': 'Flechas',
+  'controls3d.arrowsTooltip': 'Muestra flechas en los enlaces de notas. Los enlaces de jerarquía siempre muestran flechas.',
+  'controls3d.textFadeThreshold': 'Umbral de desvanecimiento',
+  'controls3d.nodeSize': 'Tamaño del nodo',
+  'controls3d.linkThickness': 'Grosor de la línea',
 } satisfies Messages;
 
 export default es;

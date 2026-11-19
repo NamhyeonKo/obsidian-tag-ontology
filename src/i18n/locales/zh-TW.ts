@@ -234,7 +234,6 @@ const zhTW = {
 
   'controls3d.openSettings': '開啟關聯圖設定',
   'controls3d.close': '關閉',
-  'controls3d.labelsSection': '標籤文字',
   'controls3d.perspectiveLabels': '透視縮放標籤',
   'controls3d.perspectiveLabelsTooltip': '靠近節點時標籤放大；關閉後在任何距離皆維持相同大小。',
   'controls3d.labelSize': '標籤大小',
@@ -245,6 +244,21 @@ const zhTW = {
   'controls3d.repelForce': '節點間的互斥強度',
   'controls3d.linkForce': '節點間的連結強度',
   'controls3d.linkDistance': '連接線距離',
+  'controls3d.restoreAll': '還原為預設設定',
+  'controls3d.filtersSection': '過濾設定',
+  'controls3d.searchPlaceholder': '搜尋檔案…',
+  'controls3d.attachments': '附件',
+  'controls3d.attachmentsTooltip': '顯示檔案含有的附件',
+  'controls3d.existingOnly': '只顯示已存在檔案',
+  'controls3d.existingOnlyTooltip': '勾選時，不顯示未存在的檔案連結',
+  'controls3d.orphans': '孤立連結',
+  'controls3d.orphansTooltip': '顯示未連結到其他檔案的檔案',
+  'controls3d.displaySection': '外觀設定',
+  'controls3d.arrows': '方向箭頭',
+  'controls3d.arrowsTooltip': '也在筆記連線顯示方向箭頭；階層連線一律顯示箭頭。',
+  'controls3d.textFadeThreshold': '文字透明度',
+  'controls3d.nodeSize': '節點尺寸',
+  'controls3d.linkThickness': '連接線寬度',
 } satisfies Messages;
 
 export default zhTW;

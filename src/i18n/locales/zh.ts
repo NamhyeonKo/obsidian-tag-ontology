@@ -234,7 +234,6 @@ const zh = {
 
   'controls3d.openSettings': '打开图谱设置',
   'controls3d.close': '关闭',
-  'controls3d.labelsSection': '标签文本',
   'controls3d.perspectiveLabels': '透视缩放标签',
   'controls3d.perspectiveLabelsTooltip': '靠近节点时标签变大；关闭后在任意距离都保持固定大小。',
   'controls3d.labelSize': '标签大小',
@@ -245,6 +244,21 @@ const zh = {
   'controls3d.repelForce': '节点间的排斥力',
   'controls3d.linkForce': '相连节点间的吸引力',
   'controls3d.linkDistance': '连线长度',
+  'controls3d.restoreAll': '恢复默认设置',
+  'controls3d.filtersSection': '筛选',
+  'controls3d.searchPlaceholder': '搜索文件…',
+  'controls3d.attachments': '附件',
+  'controls3d.attachmentsTooltip': '在图谱中显示附件以及与之相关的链接',
+  'controls3d.existingOnly': '仅显示已创建的笔记',
+  'controls3d.existingOnlyTooltip': '开启后，图谱中不显示未被创建的笔记以及与之相关的链接。',
+  'controls3d.orphans': '孤立文件',
+  'controls3d.orphansTooltip': '开启后，在图谱中显示未链接到任何其他文件的笔记',
+  'controls3d.displaySection': '外观',
+  'controls3d.arrows': '箭头',
+  'controls3d.arrowsTooltip': '在笔记连线上也显示箭头。层级连线始终显示箭头。',
+  'controls3d.textFadeThreshold': '文本透明度',
+  'controls3d.nodeSize': '节点大小',
+  'controls3d.linkThickness': '连线粗细',
 } satisfies Messages;
 
 export default zh;

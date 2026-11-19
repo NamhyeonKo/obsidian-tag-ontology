@@ -247,7 +247,6 @@ const it = {
 
   'controls3d.openSettings': 'Apri impostazioni grafo',
   'controls3d.close': 'Chiudi',
-  'controls3d.labelsSection': 'Etichette',
   'controls3d.perspectiveLabels': 'Etichette in prospettiva',
   'controls3d.perspectiveLabelsTooltip': 'Le etichette crescono avvicinandosi. Disattivo: dimensione fissa a qualsiasi distanza.',
   'controls3d.labelSize': 'Dimensione etichette',
@@ -258,6 +257,21 @@ const it = {
   'controls3d.repelForce': 'Forza di repulsione',
   'controls3d.linkForce': 'Forza collegamenti',
   'controls3d.linkDistance': 'Distanza collegamenti',
+  'controls3d.restoreAll': 'Ripristina impostazioni predefinite',
+  'controls3d.filtersSection': 'Filtri',
+  'controls3d.searchPlaceholder': 'Cerca file...',
+  'controls3d.attachments': 'Allegati',
+  'controls3d.attachmentsTooltip': 'Mostra gli allegati inclusi nei file',
+  'controls3d.existingOnly': 'Solo file esistenti',
+  'controls3d.existingOnlyTooltip': 'Se attivato, i collegamenti a file inesistenti non vengono visualizzati',
+  'controls3d.orphans': 'Orfani',
+  'controls3d.orphansTooltip': 'Mostra file che non sono collegati a nessun altro file',
+  'controls3d.displaySection': 'Aspetto',
+  'controls3d.arrows': 'Frecce',
+  'controls3d.arrowsTooltip': 'Mostra frecce sui collegamenti delle note. I collegamenti gerarchici mostrano sempre le frecce.',
+  'controls3d.textFadeThreshold': 'Soglia dissolvenza testo',
+  'controls3d.nodeSize': 'Dimensione nodo',
+  'controls3d.linkThickness': 'Spessore linea',
 } satisfies Messages;
 
 export default it;

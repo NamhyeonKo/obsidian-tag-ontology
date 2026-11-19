@@ -247,7 +247,6 @@ const fr = {
 
   'controls3d.openSettings': 'Ouvrir les paramètres du graphique',
   'controls3d.close': 'Fermer',
-  'controls3d.labelsSection': 'Étiquettes',
   'controls3d.perspectiveLabels': 'Étiquettes en perspective',
   'controls3d.perspectiveLabelsTooltip': 'Les étiquettes grandissent à l’approche. Désactivé : taille fixe quelle que soit la distance.',
   'controls3d.labelSize': 'Taille des étiquettes',
@@ -258,6 +257,21 @@ const fr = {
   'controls3d.repelForce': 'Force de répulsion',
   'controls3d.linkForce': 'Force de liaison',
   'controls3d.linkDistance': 'Distance des liens',
+  'controls3d.restoreAll': 'Restaurer les paramètres par défaut',
+  'controls3d.filtersSection': 'Filtres',
+  'controls3d.searchPlaceholder': 'Rechercher des fichiers...',
+  'controls3d.attachments': 'Pièces jointes',
+  'controls3d.attachmentsTooltip': 'Afficher les pièces jointes incluses dans les notes',
+  'controls3d.existingOnly': 'Fichiers existants uniquement',
+  'controls3d.existingOnlyTooltip': 'Si cochés, les liens vers des fichiers inexistants ne seront pas affichés',
+  'controls3d.orphans': 'Orphelins',
+  'controls3d.orphansTooltip': 'Afficher les fichiers qui ne sont liés à aucun autre fichier',
+  'controls3d.displaySection': 'Afficher',
+  'controls3d.arrows': 'Flèches',
+  'controls3d.arrowsTooltip': 'Afficher des flèches sur les liens des notes. Les liens de hiérarchie affichent toujours des flèches.',
+  'controls3d.textFadeThreshold': 'Seuil de fondu du texte',
+  'controls3d.nodeSize': 'Taille des nœuds',
+  'controls3d.linkThickness': 'Épaisseur des liens',
 } satisfies Messages;
 
 export default fr;

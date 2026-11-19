@@ -234,7 +234,6 @@ const ja = {
 
   'controls3d.openSettings': 'グラフ設定を開く',
   'controls3d.close': '閉じる',
-  'controls3d.labelsSection': 'ラベル',
   'controls3d.perspectiveLabels': '遠近ラベル',
   'controls3d.perspectiveLabelsTooltip': 'カメラが近づくほどラベルを大きく表示します。オフにすると距離に関係なく一定サイズになります。',
   'controls3d.labelSize': 'ラベルサイズ',
@@ -245,6 +244,21 @@ const ja = {
   'controls3d.repelForce': '反発力',
   'controls3d.linkForce': 'リンクする力',
   'controls3d.linkDistance': 'リンクの距離',
+  'controls3d.restoreAll': 'デフォルト設定に戻す',
+  'controls3d.filtersSection': 'フィルタ',
+  'controls3d.searchPlaceholder': 'ファイルを検索…',
+  'controls3d.attachments': '添付書類',
+  'controls3d.attachmentsTooltip': 'ファイルに含まれる添付書類を表示',
+  'controls3d.existingOnly': '存在するファイルのみ表示',
+  'controls3d.existingOnlyTooltip': 'チェックすると、存在しないファイルへのリンクは表示しません',
+  'controls3d.orphans': 'オーファン',
+  'controls3d.orphansTooltip': '他のファイルからリンクされていないファイルも表示',
+  'controls3d.displaySection': '表示',
+  'controls3d.arrows': '矢印',
+  'controls3d.arrowsTooltip': 'ノート間のリンクにも矢印を表示します。階層リンクには常に矢印が表示されます。',
+  'controls3d.textFadeThreshold': 'テキストフェードの閾値',
+  'controls3d.nodeSize': 'ノードの大きさ',
+  'controls3d.linkThickness': 'リンクの太さ',
 } satisfies Messages;
 
 export default ja;
