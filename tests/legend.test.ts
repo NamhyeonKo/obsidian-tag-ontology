@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import * as palettes from '../src/palettes.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 
 class DomEl {
@@ -85,7 +86,9 @@ async function setup() {
       ? { Menu: class {}, setIcon() {}, setTooltip() {} }
       : specifier === './palettes.ts'
         ? { ...palettes }
-        : {};
+        : specifier === './i18n/index.ts'
+          ? { ...i18n }
+          : {};
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });
   await module.evaluate();

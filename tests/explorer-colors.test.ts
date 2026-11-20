@@ -51,7 +51,7 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
       size(c: card.Card): layout.Size;
       addNode(id: string, c: card.Card, data: Record<string, unknown>, position: layout.Point): unknown;
       draw(operation: string): void;
-      readTheme(): void; style(): unknown; changed(): void;
+      readTheme(): void; style(): unknown; changed(): void; refreshLocale(): void;
     };
   }).ExplorerCanvas;
 }
@@ -147,7 +147,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
   const handlers: { event: string; selector?: string; fn: (e?: unknown) => void }[] = [];
   interface NodeStub {
     empty(): boolean; nonempty(): boolean; id(): string;
-    data(k?: string): unknown; position(): { x: number; y: number };
+    data(k?: string | Record<string, unknown>): unknown; position(): { x: number; y: number };
     selected(): boolean; select(): NodeStub; unselect(): NodeStub;
     forEach(fn: (item: NodeStub) => void): void; remove(): void;
   }
@@ -155,7 +155,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
     const entry = id ? nodes.get(id) : undefined;
     return {
       empty: () => !entry, nonempty: () => !!entry, id: () => id ?? '',
-      data: (k?: string) => k ? entry?.data[k] : entry?.data,
+      data: (k?: string | Record<string, unknown>) => k && typeof k === 'object' ? (entry && Object.assign(entry.data, k), entry?.data) : k ? entry?.data[k] : entry?.data,
       position: () => entry?.pos ?? { x: 0, y: 0 },
       selected: () => !!entry?.selected,
       select() { if (entry) entry.selected = true; return this; },
@@ -257,5 +257,23 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
   assert.equal(recenter.hidden, true, 'Clear canvas removes cards and hides recenter');
   view.fit();
   assert.equal(animates, before + 1, 'fit() skips empty Explorer canvas');
+
+  try {
+    view.focusOn('a');
+    const cardBefore = fakeCy.getElementById('tag:a').data('img');
+    i18n.setLocale('ko');
+    (view as unknown as { refreshLocale(): void }).refreshLocale();
+    assert.notEqual(fakeCy.getElementById('tag:a').data('img'), cardBefore, 'refreshLocale redraws mounted cards');
+    assert.equal(recenterBtn.attrs['aria-label'], '선택한 태그로 가운데 이동');
+    assert.equal(fitBtn.attrs['aria-label'], '화면에 맞추기');
+    assert.equal(clearBtn.attrs['aria-label'], '캔버스 비우기');
+    const start = root.all().find(el => el.classes.has('tag-ontology-explorer-start'))!;
+    assert.ok(start.all().some(el => el.text === '어디서 시작할까요?'));
+    const status = root.all().find(el => el.classes.has('tag-ontology-status')) as unknown as { textContent: string };
+    assert.equal(status.textContent, '태그 1개 · 노트 1개 · 그룹 0개');
+    assert.deepEqual(JSON.parse(JSON.stringify(view.tagCard('a').rows)), [['직접 연결 노트', '0'], ['하위 태그 포함', '0'], ['하위 태그', '0']]);
+  } finally {
+    i18n.setLocale('en');
+  }
   view.onunload();
 });

@@ -12,6 +12,7 @@ import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, sprin
 import { applySearchFilter, removeOrphans } from './filter3d.ts';
 import { Controls3D, type DisplayChangeKind, type Sync3dChange } from './controls3d.ts';
 import { t } from './i18n/index.ts';
+import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
 
@@ -54,7 +55,11 @@ const FADED_NODE = 0.2, FADED_LABEL = 0.15;
 const TEXT_HEIGHT = 2.2, FONT_SIZE = 48, LABEL_NEAR = 300, LABEL_FAR = 650;
 // Used when a theme leaves a graph color unset or in a format cssColorToHex can't read.
 const FALLBACK = { note: '#b8b8b8', tag: '#55c26a', attachment: '#b8b8b8', unresolved: '#888888', line: '#5a5a5a', text: '#dadada', background: '#1e1e1e', accent: '#8b6cef' };
-const TOGGLES = [['showNotes', 'file-text', 'Notes'], ['showRelated', 'link', 'Related']] as const;
+type ToggleKey = 'showNotes' | 'showRelated';
+const TOGGLES: readonly [ToggleKey, string, StringMessageKey][] = [
+  ['showNotes', 'file-text', 'graph.toggle.notes'],
+  ['showRelated', 'link', 'graph.toggle.related'],
+];
 
 const idOf = (end: string | Node3D) => typeof end === 'string' ? end : end.id;
 const basename = (path: string) => path.split('/').at(-1)!.replace(/\.md$/, '');
@@ -73,7 +78,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   // Where the camera looks, refreshed every frame.
   private forward?: Vector3;
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private recenter?: HTMLElement;
-  private toggles: Partial<Record<typeof TOGGLES[number][0], HTMLElement>> = {};
+  private toggles: Partial<Record<ToggleKey, HTMLElement>> = {};
+  private labels: (() => void)[] = [];
+  private webglError = false;
   private colors = FALLBACK;
   // The theme's interface font. A canvas can't read CSS variables, so the name is resolved here.
   private font = 'sans-serif';
@@ -131,23 +138,25 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.stage = root.createDiv('tag-ontology-3d-stage');
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
     recenter.hidden = true;
+    this.labels = [];
+    this.webglError = false;
     this.legend = overlay.createDiv('tag-ontology-legend');
-    const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
-      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    const stopLegend = this.drawLegend();
     this.register(() => stopLegend?.());
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     const native = this.owner.native;
-    this.button(actions, 'chevrons-down-up', 'Collapse all', () => native.collapseAll(this.leaf), 'top');
-    this.button(actions, 'chevrons-up-down', 'Expand all', () => native.expandAll(this.leaf), 'top');
+    this.button(actions, 'chevrons-down-up', () => t('graph.collapseAll'), () => native.collapseAll(this.leaf), 'top');
+    this.button(actions, 'chevrons-up-down', () => t('graph.expandAll'), () => native.expandAll(this.leaf), 'top');
     // Fit wins over a flight still waiting for a second click, which the toolbar's press, outside the stage, doesn't cancel.
-    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
-    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = native.selectedTag; if (tag) this.focusOn(tag); }, 'top');
-    for (const [key, icon, name] of TOGGLES) {
-      this.toggles[key] = this.button(tools, icon, name, () => native.toggleFilter(key));
+    this.button(actions, 'scan', () => t('graph.fit'), () => this.fit(), 'top');
+    this.button(recenter, 'locate-fixed', () => t('graph.centerSelected'), () => { const tag = native.selectedTag; if (tag) this.focusOn(tag); }, 'top');
+    for (const [key, icon] of TOGGLES) {
+      this.toggles[key] = this.button(tools, icon, undefined, () => native.toggleFilter(key));
       this.toggles[key].addClass('tag-ontology-toggle');
     }
+    this.syncToggles();
     tools.createDiv('tag-ontology-separator');
-    this.button(tools, 'book-open-check', 'Dictionary check', () => native.checkDictionary());
+    this.button(tools, 'book-open-check', () => t('graph.dictionaryCheck'), () => native.checkDictionary());
     // The same mode controls as the core graph and ontology explorer.
     tools.createDiv('tag-ontology-separator');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
@@ -160,7 +169,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       onResetAll: () => change3d('reset'),
     });
     this.colors = this.readColors(); this.font = this.readFont();
-    this.status.setText('Loading the graph…');
+    this.syncStatus();
+    this.owner.native.link(this);
     const three = this.three = await import('./three.ts');
     if (this.closed) return;
     let created: Graph;
@@ -168,7 +178,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     catch (error) {
       // Without WebGL (hardware acceleration off, or a GPU Chromium blocks) there is nothing to draw on.
       console.error('Tag Ontology:', error);
-      this.status.setText('Could not start the graph. It needs hardware acceleration, which is in the advanced settings.');
+      this.webglError = true;
+      this.syncStatus();
       return;
     }
     this.ball = new three.SphereGeometry(1, 16, 12);
@@ -244,7 +255,6 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     const accentWatch = new MutationObserver(() => this.recolor());
     accentWatch.observe(this.contentEl.doc.body, { attributes: true, attributeFilter: ['style'] });
     this.register(() => accentWatch.disconnect());
-    this.owner.native.link(this);
     this.draw('refresh');
   }
 
@@ -301,10 +311,16 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.thickLinks = undefined;
     this.cylinder = undefined; this.thickLinkMaterial = undefined; this.baseKey = undefined;
-    this.nodes.clear(); this.links = []; this.shape = undefined;
+    this.nodes.clear(); this.links = []; this.shape = undefined; this.labels = [];
     this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false; this.pendingSync3d = false;
     this.controlsPanel?.destroy(); this.controlsPanel = undefined;
     this.contentEl.empty();
+  }
+
+  private drawLegend() {
+    if (!this.legend) return;
+    return renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
   }
 
   draw(operation: string) {
@@ -312,9 +328,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (!this.isVisible()) { this.pendingDraw = this.pendingDraw === 'refresh' || operation === 'refresh' ? 'refresh' : operation; return; }
     const graph = this.graph, model = this.owner.model, settings = this.owner.settings;
     if (!graph || !this.status) return;
-    if (this.legend) renderDepthLegend(this.legend, settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
-      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
-    if (!model) { this.status.setText(this.owner.error ? `Could not load the tag dictionary: ${this.owner.error}` : 'Loading the tag dictionary…'); return; }
+    this.drawLegend();
+    if (!model) { this.syncStatus(); return; }
     const first = !this.layer;
     const filters = this.filterSettings, display = this.displaySettings;
     const baseKey = `${filters.attachments}:${filters.existingOnly}`;
@@ -367,13 +382,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (shape !== this.shape) { this.shape = shape; this.links = links; graph.graphData({ nodes: [...next.values()], links }); this.buildDots(); this.buildLinks(); }
     if (operation.startsWith('expand:')) this.moved = true;
     this.paint();
-    const notes = [...next.values()].filter(item => item.type !== 'tag').length;
-    this.status.setText(`${layer.resolved.visible.size} / ${model.placed.size} tags · ${notes} notes · ${model.roots.length} roots`);
-    for (const [key, , name] of TOGGLES) {
-      const button = this.toggles[key], on = settings[key];
-      button?.toggleClass('is-active', on); button?.setAttribute('aria-pressed', String(on));
-      if (button) setTooltip(button, `${name}: ${on ? 'shown' : 'hidden'}`, { placement: 'right' });
-    }
+    this.syncStatus();
+    this.syncToggles();
     // The layout needs a moment to spread before it can be fitted.
     if (first || operation === 'roots' || operation === 'expand-all') {
       window.clearTimeout(this.fitTimer);
@@ -841,8 +851,36 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.paint();
   }
 
+  private syncStatus() {
+    if (!this.status) return;
+    if (this.webglError) { this.status.setText(t('graph.webglRequired')); return; }
+    if (!this.three) { this.status.setText(t('graph.loadingGraph')); return; }
+    const model = this.owner.model;
+    if (!model) {
+      this.status.setText(this.owner.error ? t('notice.loadFailed', { error: this.owner.error }) : t('graph.loadingDictionary'));
+      return;
+    }
+    if (!this.layer) { this.status.setText(t('graph.loadingGraph')); return; }
+    const notes = [...this.nodes.values()].filter(item => item.type !== 'tag').length;
+    this.status.setText(t('graph.statusCounts', { visible: this.layer.resolved.visible.size, total: model.placed.size, notes, roots: model.roots.length }));
+  }
+
+  private syncToggles() {
+    const settings = this.owner.settings;
+    for (const [key, , nameKey] of TOGGLES) {
+      const button = this.toggles[key], on = settings[key];
+      button?.toggleClass('is-active', on); button?.setAttribute('aria-pressed', String(on));
+      if (button) setTooltip(button, t(on ? 'graph.toggleShown' : 'graph.toggleHidden', { name: t(nameKey) }), { placement: 'right' });
+    }
+  }
+
   refreshLocale() {
     this.controlsPanel?.refreshLocale();
+    for (const update of this.labels) update();
+    this.syncToggles();
+    this.syncModes();
+    this.drawLegend();
+    this.syncStatus();
   }
 
   /** Apply a 3D settings change initiated in another 3D tab. */
@@ -918,10 +956,14 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
   }
 
-  private button(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
+  private button(parent: HTMLElement, icon: string, label: (() => string) | undefined, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    setTooltip(button, label, { placement });
+    if (label) {
+      const sync = () => setTooltip(button, label(), { placement });
+      sync();
+      this.labels.push(sync);
+    }
     button.addEventListener('click', action);
     return button;
   }

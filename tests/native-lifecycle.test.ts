@@ -2610,3 +2610,34 @@ test('refreshLocale updates nav tooltips, group relative times, ChoiceModal text
     i18n.setLocale('en');
   }
 });
+
+test('refreshLocale updates 2D graph overlay toolbar, legend, mode bar, context menu, and status text', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true });
+  t.controller.attach();
+  try {
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    const legend = t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+    assert.equal(legend.attrs['aria-label'], '계층 깊이 색상');
+    assert.equal(legend.all().find(el => el.classes.has('tag-ontology-legend-palette'))!.attrs['aria-label'], '팔레트: 기본값');
+    assert.equal(legend.all().find(el => el.classes.has('tag-ontology-legend-picker'))!.attrs.title, '루트 · 0 색상 변경');
+    assert.ok(legend.all().some(el => el.classes.has('tag-ontology-sr') && el.text === '루트 · 0'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '모두 접기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '모두 펼치기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '화면에 맞추기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '노트: 표시됨'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '연관 태그: 표시됨'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '사전 검사'));
+    const modeButtons = t.contentEl.all().find(el => el.classes.has('tag-ontology-layouts'))!.children;
+    const modeLabels = modeButtons.map(el => el.attrs['aria-label']);
+    assert.deepEqual(modeLabels, [
+      '레이아웃: Force', '레이아웃: 마인드맵', '레이아웃: 세로 트리', '레이아웃: 가로 트리', '레이아웃: 3D', '레이아웃: 온톨로지 탐색기',
+    ]);
+    modeButtons[0]!.events.get('contextmenu')!({ preventDefault() {} });
+    assert.equal(t.menus.at(-1)!.items[0]!.title, '새 탭에서 열기');
+    const status = t.contentEl.all().find(el => el.classes.has('tag-ontology-status'))!;
+    assert.match((status as unknown as { textContent: string }).textContent, /태그 \d+ \/ \d+개 · 노트 \d+개 · 루트 \d+개/);
+  } finally {
+    i18n.setLocale('en');
+  }
+});
