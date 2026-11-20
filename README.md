@@ -7,7 +7,7 @@
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md)
+**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português (Brasil)](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Italiano](docs/readme/README.it.md)
 
 **Link your tags the way you link notes.**
 
