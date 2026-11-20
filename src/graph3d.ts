@@ -124,7 +124,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
   private visible = false;
   private pendingDraw?: string;
   private pendingRecolor = false;
-  private pendingSync3d = false;
+  private pendingSync3d = new Set<Sync3dChange>();
   private controlsPanel?: Controls3D;
   private syncModes = () => {};
   private get app() { return this.owner.app; }
@@ -278,11 +278,18 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       const operation = this.pendingDraw; this.pendingDraw = undefined; this.draw(operation);
       reshaped = this.shape !== prevShape;
     }
-    if (this.pendingSync3d) {
-      this.pendingSync3d = false;
-      if (!reshaped) this.applyDisplay('reset');
-      this.syncDragMode();
-      this.applyForces();
+    if (this.pendingSync3d.size) {
+      const changes = new Set(this.pendingSync3d);
+      this.pendingSync3d.clear();
+      if (!reshaped) {
+        if (changes.has('reset') || changes.has('arrows')) this.applyDisplay('arrows');
+        else {
+          if (changes.has('nodeSize')) this.applyDisplay('nodeSize');
+          if (changes.has('linkThickness')) this.applyDisplay('linkThickness');
+        }
+      }
+      if (changes.has('reset') || changes.has('dragTension')) this.syncDragMode();
+      if (changes.has('reset') || changes.has('forces')) { this.applyForces(); this.graph?.d3ReheatSimulation(); }
     }
   }
 
@@ -312,7 +319,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     this.graph = undefined; this.litDots = undefined; this.fadedDots = undefined; this.thickLinks = undefined;
     this.cylinder = undefined; this.thickLinkMaterial = undefined; this.baseKey = undefined;
     this.nodes.clear(); this.links = []; this.shape = undefined; this.labels = [];
-    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false; this.pendingSync3d = false;
+    this.hover = undefined; this.lit = undefined;
+    this.homes.clear(); this.springs.clear(); this.dragging = false; this.restoreAlphaMin = false; this.pendingRecolor = false; this.pendingSync3d.clear();
     this.controlsPanel?.destroy(); this.controlsPanel = undefined;
     this.contentEl.empty();
   }
@@ -897,7 +905,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (syncControls) this.controlsPanel?.sync();
     if (!this.isVisible()) {
       if (change === 'filters' || change === 'reset') this.pendingDraw = this.pendingDraw === 'refresh' ? 'refresh' : 'settings';
-      if (change !== 'filters' && change !== 'fade' && change !== 'labels') this.pendingSync3d = true;
+      if (change === 'nodeSize' || change === 'reset') this.dotsDirty = true;
+      if (change !== 'filters' && change !== 'fade' && change !== 'labels') this.pendingSync3d.add(change);
       return;
     }
     if (change === 'filters') { this.draw('settings'); return; }
@@ -905,8 +914,9 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     if (change === 'dragTension') { this.syncDragMode(); return; }
     if (change === 'reset') {
       const prevShape = this.shape;
+      this.dotsDirty = true;
       this.draw('settings');
-      if (this.shape === prevShape) this.applyDisplay('reset');
+      if (this.shape === prevShape) { this.buildLinks(); this.colorLinks(); }
       this.syncDragMode();
       this.applyForces();
       this.graph?.d3ReheatSimulation();
@@ -944,8 +954,7 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
 
   private applyDisplay(kind: DisplayChangeKind) {
     if (!this.graph) return;
-    if (kind === 'arrows' || kind === 'reset') {
-      if (kind === 'reset') this.applyNodeSize();
+    if (kind === 'arrows') {
       this.buildLinks();
       this.colorLinks();
       return;
@@ -955,6 +964,8 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
       return;
     }
     if (kind === 'linkThickness') {
+      const thick = this.displaySettings.linkThickness > 1;
+      if (!thick && !this.thickLinks?.visible) { this.syncLinkAppearance(); return; }
       this.linksDirty = true;
       this.placeLinks();
       this.colorLinks();

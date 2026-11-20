@@ -47,11 +47,11 @@ export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
 export const TEXT_FADE = { min: -3, max: 3, step: 0.1, value: 0 } as const;
 export const NODE_SIZE = { min: 0.1, max: 5, step: 0.1, value: 0.8 } as const;
 export const LINK_THICKNESS = { min: 0.1, max: 5, step: 0.1, value: 0.8 } as const;
-export const FORCES: Record<keyof Forces, { name: string; min: number; max: number; step: number; value: number }> = {
-  center: { name: 'Center force', min: 0, max: 1, step: 0.01, value: 0.52 },
-  repel: { name: 'Repel force', min: 0, max: 20, step: 0.1, value: 10 },
-  link: { name: 'Link force', min: 0, max: 1, step: 0.01, value: 1 },
-  distance: { name: 'Link distance', min: 30, max: 500, step: 1, value: 250 },
+export const FORCES: Record<keyof Forces, { min: number; max: number; step: number; value: number }> = {
+  center: { min: 0, max: 1, step: 0.01, value: 0.52 },
+  repel: { min: 0, max: 20, step: 0.1, value: 10 },
+  link: { min: 0, max: 1, step: 0.01, value: 1 },
+  distance: { min: 30, max: 500, step: 1, value: 250 },
 };
 export const TOW_FOLDER_DICTIONARY = DICTIONARY_LOCATIONS[0];
 export const TOW_DICTIONARY = DICTIONARY_LOCATIONS[1];
@@ -125,8 +125,7 @@ function sanitizeDisplay3d(raw: unknown): Display3D {
 }
 
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
-  const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-    ? raw as Record<string, unknown> : {};
+  const value = recordOf(raw);
   const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'enableTree' | 'enableTreeHorizontal' | 'perspectiveLabels' | 'kebabNames' | 'dragTension3d') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.

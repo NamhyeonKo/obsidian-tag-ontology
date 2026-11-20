@@ -10,7 +10,7 @@ import { ExplorerView, VIEW_EXPLORER } from './explorer.ts';
 import type { GraphMode } from './graph-modes.ts';
 import type { NativeData } from './layer.ts';
 import { getLocale, resolveLocale, setLocale, t, tPlural } from './i18n/index.ts';
-import { LOCALE_LABELS, SUPPORTED_LOCALES } from './i18n/types.ts';
+import { LOCALE_LABELS } from './i18n/types.ts';
 
 export type { Settings } from './settings.ts';
 
@@ -18,9 +18,6 @@ const ICON = 'book-open';
 // Obsidian's default accent color, for a theme whose accent can't be read.
 const ACCENT = '#8b6cef';
 export const CONFLICT = 'The dictionary changed outside the editor. Cancel and edit again to see the latest version.';
-export class DictionaryConflictError extends Error {
-  constructor() { super(CONFLICT); }
-}
 // Notices and the sidebar show the message alone; String(error) would add an "Error: " prefix.
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -100,8 +97,8 @@ export default class TagOntologyPlugin extends Plugin {
         : this.app.vault.getAbstractFileByPath(this.dictionaryPath) instanceof TFile; } catch { notify = false; }
       await this.refreshViews({ notify });
     }); });
-    const isAttachmentFile = (file: { path: string; children?: unknown }) => this.settings.filters3d.attachments
-      && !('children' in file) && !isHiddenPath(file.path) && !file.path.toLowerCase().endsWith('.md');
+    const isAttachmentPath = (path: string) => this.settings.filters3d.attachments && !isHiddenPath(path) && !path.toLowerCase().endsWith('.md');
+    const isAttachmentFile = (file: { path: string; children?: unknown }) => !('children' in file) && isAttachmentPath(file.path);
     const relevant = (path: string) => this.isDictionaryFile(path) || isIncludedNote(path);
     const changed = (file: { path: string }) => { if (relevant(file.path)) this.scheduleRefresh(file.path); };
     const changedOrAttachment = (file: { path: string; children?: unknown }) => {
@@ -111,8 +108,7 @@ export default class TagOntologyPlugin extends Plugin {
     this.registerEvent(this.app.vault.on('create', changedOrAttachment));
     this.registerEvent(this.app.vault.on('delete', changedOrAttachment));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-      const attachmentRenamed = isAttachmentFile(file) || (this.settings.filters3d.attachments && !isHiddenPath(oldPath) && !oldPath.toLowerCase().endsWith('.md'));
-      if (relevant(file.path) || relevant(oldPath) || attachmentRenamed) this.scheduleRefresh(file.path, oldPath);
+      if (relevant(file.path) || relevant(oldPath) || isAttachmentFile(file) || isAttachmentPath(oldPath)) this.scheduleRefresh(file.path, oldPath);
     }));
     this.registerEvent(this.app.metadataCache.on('changed', changed));
     // The 3D view takes note links from resolvedLinks, which fill in after startup and can finish after the refresh a note edit
@@ -286,7 +282,7 @@ export default class TagOntologyPlugin extends Plugin {
   // and only if the result is still a valid dictionary. Nothing is written otherwise.
   async saveChange(change: Change, base: RawDictionary): Promise<boolean> {
     const path = await this.resolveDictionary();
-    const conflictOr = (error: unknown) => error instanceof DictionaryConflictError || (error instanceof Error && error.message === CONFLICT)
+    const conflictOr = (error: unknown) => error instanceof Error && error.message === CONFLICT
       ? t('notice.conflict') : t('notice.saveFailed', { error: String(error) });
     if (!isHiddenPath(path)) {
       const file = this.app.vault.getAbstractFileByPath(path);
@@ -318,7 +314,7 @@ export default class TagOntologyPlugin extends Plugin {
 
   private changedText(text: string, change: Change, base: RawDictionary): string {
     const latest = JSON.parse(text) as RawDictionary;
-    if (conflicts(base, latest, change).length) throw new DictionaryConflictError();
+    if (conflicts(base, latest, change).length) throw new Error(CONFLICT);
     const next = apply(latest, change);
     // Checks the dictionary itself (references, cycles); notes don't affect that, and a note still being indexed mustn't block a save.
     new Ontology(next, []);
@@ -442,11 +438,11 @@ export default class TagOntologyPlugin extends Plugin {
     if (notify && prev !== next) this.native.refreshLocale();
   }
 
-  async saveSettings(): Promise<void> {
+  async saveSettings(refreshViews = true): Promise<void> {
     this.settings = sanitizeSettings(this.settings, this.app.vault.configDir);
     this.applyLocale();
     await this.saveState();
-    await this.refreshViews({ notify: true, linked: 'settings' });
+    if (refreshViews) await this.refreshViews({ notify: true, linked: 'settings' });
     this.settingsTab?.syncPaletteControls();
   }
 
@@ -610,9 +606,7 @@ class OntologySettingsTab extends PluginSettingTab {
   constructor(app: App, private owner: TagOntologyPlugin) { super(app, owner); }
 
   private languageOptions(): Record<string, string> {
-    const options: Record<string, string> = { auto: t('settings.general.language.auto') };
-    for (const locale of SUPPORTED_LOCALES) options[locale] = LOCALE_LABELS[locale];
-    return options;
+    return { auto: t('settings.general.language.auto'), ...LOCALE_LABELS };
   }
 
   // Obsidian 1.13+ renders these declaratively and indexes them for settings search.
@@ -721,7 +715,7 @@ class OntologySettingsTab extends PluginSettingTab {
       return;
     }
     this.owner.settings = sanitizeSettings({ ...this.owner.settings, [key]: value }, this.app.vault.configDir);
-    await this.owner.saveSettings();
+    await this.owner.saveSettings(key !== 'language');
     if (key === 'language') {
       if (requireApiVersion('1.13.0')) this.update(); else this.renderLegacy();
       return;

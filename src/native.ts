@@ -1061,12 +1061,12 @@ export class NativeGraphs {
     header.createEl('h3', { text: tag, cls: customColors && titleAccent ? 'tag-ontology-accent' : undefined });
     panel.createEl('p', { text: entry.description });
     if (entry.aliases.length) panel.createEl('p', { text: entry.aliases.join(' · '), cls: 'tag-ontology-muted' });
-    const counts = model.counts(tag);
+    const counts = model.counts(tag), related = model.related(tag);
     panel.createEl('h4', { text: t('sidebar.directAndRollup', { direct: counts.direct, rollup: counts.rollup }) });
     for (const [key, label, tags] of [
       ['parents', t('sidebar.parentsSection', { count: (entry.broader ?? []).length }), entry.broader ?? []],
       ['children', t('sidebar.childrenSection', { count: (model.children.get(tag) ?? []).length }), model.children.get(tag) ?? []],
-      ['related', t('sidebar.relatedSection', { count: model.related(tag).length }), model.related(tag)],
+      ['related', t('sidebar.relatedSection', { count: related.length }), related],
     ] as const) {
       if (!tags.length) continue;
       this.tagLinks(this.details(panel, key, label), tags);

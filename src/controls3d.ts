@@ -1,4 +1,4 @@
-import { Setting, debounce, setIcon, setTooltip, type Debouncer, type SliderComponent, type ToggleComponent } from 'obsidian';
+import { Setting, debounce, setIcon, setTooltip, type Debouncer } from 'obsidian';
 import { DEFAULT_SETTINGS, FORCES, LABEL_SIZE, LINK_THICKNESS, NODE_SIZE, TEXT_FADE, type Forces, type Settings } from './settings.ts';
 import { t } from './i18n/index.ts';
 import type { StringMessageKey } from './i18n/locales/en.ts';
@@ -74,40 +74,25 @@ export class Controls3D {
     void this.owner.saveState();
   }
 
-  private resetFilters(notify: boolean) {
-    this.debouncedFilter.cancel();
-    this.owner.settings.filters3d = { ...DEFAULT_SETTINGS.filters3d };
+  private resetDefaults(section: SectionKey | 'all') {
+    if (section === 'filters' || section === 'all') {
+      this.debouncedFilter.cancel();
+      this.owner.settings.filters3d = { ...DEFAULT_SETTINGS.filters3d };
+    }
+    if (section === 'display' || section === 'all') {
+      this.owner.settings.display3d = { ...DEFAULT_SETTINGS.display3d };
+      this.owner.settings.perspectiveLabels = DEFAULT_SETTINGS.perspectiveLabels;
+      this.owner.settings.labelSize = DEFAULT_SETTINGS.labelSize;
+    }
+    if (section === 'forces' || section === 'all') {
+      this.owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
+      this.owner.settings.dragTension3d = DEFAULT_SETTINGS.dragTension3d;
+    }
     this.sync();
-    if (!notify) return;
-    this.callbacks.onFilters();
-    this.saveNow();
-  }
-
-  private resetDisplay(notify: boolean) {
-    this.owner.settings.display3d = { ...DEFAULT_SETTINGS.display3d };
-    this.owner.settings.perspectiveLabels = DEFAULT_SETTINGS.perspectiveLabels;
-    this.owner.settings.labelSize = DEFAULT_SETTINGS.labelSize;
-    this.sync();
-    if (!notify) return;
-    this.callbacks.onDisplay('reset');
-    this.saveNow();
-  }
-
-  private resetForces(notify: boolean) {
-    this.owner.settings.forces3d = { ...DEFAULT_SETTINGS.forces3d };
-    this.owner.settings.dragTension3d = DEFAULT_SETTINGS.dragTension3d;
-    this.sync();
-    if (!notify) return;
-    this.callbacks.onDragTension();
-    this.callbacks.onForces();
-    this.saveNow();
-  }
-
-  private resetAll() {
-    this.resetFilters(false);
-    this.resetDisplay(false);
-    this.resetForces(false);
-    this.callbacks.onResetAll();
+    if (section === 'all') this.callbacks.onResetAll();
+    else if (section === 'filters') this.callbacks.onFilters();
+    else if (section === 'display') this.callbacks.onDisplay('reset');
+    else { this.callbacks.onDragTension(); this.callbacks.onForces(); }
     this.saveNow();
   }
 
@@ -154,15 +139,12 @@ export class Controls3D {
       get: () => boolean,
       set: (value: boolean) => void,
     ) => {
-      let component: ToggleComponent | undefined;
       const row = new Setting(parent).setName(t(nameKey)).addToggle(c => {
-        component = c.setValue(get()).onChange(value => {
-          if (value !== get()) set(value);
-        });
+        c.setValue(get()).onChange(value => { if (value !== get()) set(value); });
+        this.syncs.push(() => { c.setValue(get()); });
       });
       row.settingEl.addClass('mod-toggle');
       setTooltip(row.nameEl, t(tooltipKey));
-      this.syncs.push(() => { component?.setValue(get()); });
     };
 
     const addSlider = (
@@ -172,14 +154,13 @@ export class Controls3D {
       get: () => number,
       set: (value: number) => void,
     ) => {
-      let component: SliderComponent | undefined;
       const row = new Setting(parent).setName(t(nameKey)).addSlider(c => {
-        component = c.setLimits(range.min, range.max, range.step).setInstant(true).setValue(get()).onChange(value => {
+        c.setLimits(range.min, range.max, range.step).setInstant(true).setValue(get()).onChange(value => {
           if (value !== get()) set(value);
         });
+        this.syncs.push(() => { c.setValue(get()); });
       });
       row.settingEl.addClass('mod-slider');
-      this.syncs.push(() => { component?.setValue(get()); });
     };
 
     const addReset = (parent: HTMLElement, action: () => void) => {
@@ -215,7 +196,7 @@ export class Controls3D {
         },
       );
     }
-    addReset(filters, () => this.resetFilters(true));
+    addReset(filters, () => this.resetDefaults('filters'));
 
     // Display section
     const display = section('display', t('controls3d.displaySection'));
@@ -260,7 +241,7 @@ export class Controls3D {
         this.debouncedSave();
       },
     );
-    addReset(display, () => this.resetDisplay(true));
+    addReset(display, () => this.resetDefaults('display'));
 
     // Forces section
     const forces = section('forces', t('controls3d.forcesSection'));
@@ -288,9 +269,9 @@ export class Controls3D {
         },
       );
     }
-    addReset(forces, () => this.resetForces(true));
+    addReset(forces, () => this.resetDefaults('forces'));
 
-    reset.addEventListener('click', () => this.resetAll());
+    reset.addEventListener('click', () => this.resetDefaults('all'));
     open.addEventListener('click', () => {
       this.sync();
       panel.removeClass('is-close');

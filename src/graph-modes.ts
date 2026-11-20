@@ -1,7 +1,7 @@
 import { Menu, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 import type TagOntologyPlugin from './main.ts';
 import type { Settings } from './settings.ts';
-import { t } from './i18n/index.ts';
+import { t, getLocale } from './i18n/index.ts';
 import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export type GraphMode = Settings['layout'] | '3d' | 'explorer';
@@ -29,10 +29,12 @@ export function graphModeBar(parent: HTMLElement, owner: TagOntologyPlugin, leaf
     });
     return { mode, button, labelKey };
   });
+  let lastLocale = '';
   const sync = () => {
-    const current = owner.native.graphMode(leaf);
+    const current = owner.native.graphMode(leaf), locale = getLocale(), relocalize = lastLocale !== locale;
+    lastLocale = locale;
     for (const { mode, button, labelKey } of buttons) {
-      setTooltip(button, t('graph.modeTooltip', { name: t(labelKey) }), { placement: 'right' });
+      if (relocalize) setTooltip(button, t('graph.modeTooltip', { name: t(labelKey) }), { placement: 'right' });
       button.hidden = !modeEnabled(owner.settings, mode);
       button.toggleClass('is-active', mode === current); button.setAttribute('aria-pressed', String(mode === current));
     }

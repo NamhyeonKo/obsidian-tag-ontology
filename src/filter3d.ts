@@ -51,9 +51,6 @@ function noteMatchesTerm(id: string, tags: readonly string[], term: QueryTerm): 
 }
 
 function tagMatchesDirect(tagName: string, terms: readonly QueryTerm[]): boolean {
-  const hasPositiveTag = terms.some(term => !term.negate && (term.field === 'tag' || term.field === 'any'));
-  const hasPositiveScope = terms.some(term => !term.negate && (term.field === 'path' || term.field === 'file'));
-  if (!hasPositiveTag || hasPositiveScope) return false;
   for (const term of terms) {
     const matched = term.field === 'tag'
       ? tagMatches(tagName, term.value)
@@ -81,35 +78,33 @@ export function applySearchFilter(data: NativeData, query: string): NativeData {
   const terms = parseFilterQuery(query);
   if (!terms.length) return data;
 
+  const canMatchTagDirectly = terms.some(term => !term.negate && (term.field === 'tag' || term.field === 'any'))
+    && !terms.some(term => !term.negate && (term.field === 'path' || term.field === 'file'));
   const keep = new Set<string>();
   for (const [id, node] of Object.entries(data.nodes)) {
-    if (node.type === 'tag') continue;
-    const linkedTags = Object.keys(node.links).filter(target => data.nodes[target]?.type === 'tag');
+    if (node.type === 'tag') {
+      if (canMatchTagDirectly && tagMatchesDirect(id.slice(1).toLowerCase(), terms)) keep.add(id);
+      continue;
+    }
+    const linkedTags = Object.keys(node.links).filter(target => Object.hasOwn(data.nodes, target) && data.nodes[target].type === 'tag');
     const tags = linkedTags.map(target => target.slice(1).toLowerCase());
     if (!terms.every(term => noteMatchesTerm(id, tags, term) !== term.negate)) continue;
     keep.add(id);
     for (const target of linkedTags) keep.add(target);
-  }
-
-  for (const [id, node] of Object.entries(data.nodes)) {
-    if (node.type === 'tag' && tagMatchesDirect(id.slice(1).toLowerCase(), terms)) keep.add(id);
   }
   return pruneData(data, keep);
 }
 
 /** Remove degree-0 non-tag nodes (orphaned notes, attachments, unresolved links) while keeping tag nodes. */
 export function removeOrphans(data: NativeData): NativeData {
-  const degree = new Map<string, number>();
-  for (const [id, node] of Object.entries(data.nodes)) {
-    for (const target of Object.keys(node.links)) {
-      if (!Object.hasOwn(data.nodes, target)) continue;
-      degree.set(id, (degree.get(id) ?? 0) + 1);
-      degree.set(target, (degree.get(target) ?? 0) + 1);
-    }
-  }
   const keep = new Set<string>();
   for (const [id, node] of Object.entries(data.nodes)) {
-    if (node.type === 'tag' || (degree.get(id) ?? 0) > 0) keep.add(id);
+    if (node.type === 'tag') keep.add(id);
+    for (const target of Object.keys(node.links)) {
+      if (!Object.hasOwn(data.nodes, target)) continue;
+      keep.add(id);
+      keep.add(target);
+    }
   }
   return pruneData(data, keep);
 }

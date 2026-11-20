@@ -65,10 +65,11 @@ test('filters notes and tags cleanly by path, file, tag, text, and negation', ()
   assert.equal(applySearchFilter(data, ''), data);
 });
 
-test('removeOrphans drops degree-0 non-tag nodes while preserving tag nodes', () => {
+test('removeOrphans drops degree-0 non-tag nodes while preserving incoming-linked notes and tag nodes', () => {
   const data: NativeData = {
     nodes: {
-      'linked.md': { type: '', links: { '#root': true } },
+      'linked.md': { type: '', links: { '#root': true, 'helper.md': true, 'dropped': true } },
+      'helper.md': { type: '', links: {} },
       'orphan.md': { type: '', links: {} },
       'img.png': { type: 'attachment', links: {} },
       'ghost': { type: 'unresolved', links: {} },
@@ -78,5 +79,5 @@ test('removeOrphans drops degree-0 non-tag nodes while preserving tag nodes', ()
     numLinks: 0,
   };
   const filtered = removeOrphans(data);
-  assert.deepEqual(Object.keys(filtered.nodes).sort(), ['#empty-tag', '#root', 'linked.md']);
+  assert.deepEqual(Object.keys(filtered.nodes).sort(), ['#empty-tag', '#root', 'helper.md', 'linked.md']);
 });

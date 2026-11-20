@@ -820,6 +820,10 @@ test('display3d.linkThickness switches between thin line opacity and InstancedMe
   ];
   canvas.buildLinks();
   canvas.colorLinks();
+  let placeCalls = 0, colorCalls = 0;
+  const origPlace = canvas.placeLinks.bind(canvas), origColor = canvas.colorLinks.bind(canvas);
+  canvas.placeLinks = () => { placeCalls++; origPlace(); };
+  canvas.colorLinks = () => { colorCalls++; origColor(); };
   assert.equal(canvas.lines.visible, true);
   assert.equal(canvas.dashes.visible, true);
   assert.equal(canvas.thickLinks?.visible, false);
@@ -828,8 +832,13 @@ test('display3d.linkThickness switches between thin line opacity and InstancedMe
   toggles.get('Link thickness')!(0.25);
   assert.equal((canvas.lines.material as THREE.LineBasicMaterial).opacity, 0.25);
   assert.equal(canvas.thickLinks?.visible, false);
+  assert.equal(placeCalls, 0, 'thin-to-thin linkThickness skips placeLinks geometry update');
+  assert.equal(colorCalls, 0, 'thin-to-thin linkThickness skips colorLinks upload');
+  assert.equal(Boolean(canvas.linksDirty), false, 'thin-to-thin linkThickness does not dirty links');
 
   toggles.get('Link thickness')!(3);
+  assert.equal(placeCalls, 1, 'crossing > 1 updates thick cylinder geometry once');
+  assert.equal(colorCalls, 1, 'crossing > 1 uploads thick cylinder colors once');
   assert.equal(canvas.lines.visible, false);
   assert.equal(canvas.dashes.visible, false);
   assert.equal(canvas.thickLinks?.visible, true);
@@ -845,6 +854,8 @@ test('display3d.linkThickness switches between thin line opacity and InstancedMe
   assert.equal(canvas.arrowMaterial.opacity, 1);
 
   toggles.get('Link thickness')!(0.5);
+  assert.equal(placeCalls, 2, 'exiting thick mode updates thin link geometry');
+  assert.equal(colorCalls, 2, 'exiting thick mode uploads link colors');
   assert.equal(canvas.thickLinks?.visible, false);
   assert.equal(canvas.lines.visible, true);
   assert.equal(canvas.dashes.visible, true);
@@ -967,5 +978,58 @@ test('filters3d filters nodes, requests attachments/unresolved from graphData, o
 
   triggerClick({ id: 'pic.png', type: 'attachment' });
   assert.equal(opened.length, 1, 'clicking attachment opens file in a tab');
+  canvas.onunload();
+});
+
+test('background sync3d flushes dragTension, forces, and nodeSize without rebuilding links', async () => {
+  const model = new Ontology({ root: { description: '', broader: [] } }, []);
+  const { graph } = stubGraph();
+  let graphDataCalls = 0, reheatCalls = 0, alphaMinCalls = 0;
+  graph.d3ReheatSimulation = () => { reheatCalls++; };
+  const origAlphaMin = graph.d3AlphaMin.bind(graph);
+  graph.d3AlphaMin = () => { alphaMinCalls++; return origAlphaMin(); };
+  const owner = {
+    model,
+    settings: structuredClone(settings.DEFAULT_SETTINGS),
+    saveState() {},
+    native: { selectedTag: undefined, renderPanel() {}, link() {}, unlink() {}, isDouble: () => false, clickTag() {}, toggleFilter() {}, checkDictionary() {}, collapseAll() {}, expandAll() {} },
+    tagColor: () => '#123456',
+    app: { workspace: { on: () => () => {} } },
+    graphData: () => {
+      graphDataCalls++;
+      return { nodes: { '#root': { type: 'tag', links: {} }, 'orphan.md': { type: '', links: {} } }, numLinks: 0 };
+    },
+  };
+  const { canvas } = await openCanvas({ owner, fakeGraph: graph });
+  const node = canvas.nodes.get('#root')!;
+  (canvas as unknown as { nodeObject(item: Node): unknown }).nodeObject(node);
+  const beforeRadius = node.radius;
+  const beforeGraphData = graphDataCalls;
+  let buildCalls = 0;
+  const origBuild = canvas.buildLinks.bind(canvas);
+  canvas.buildLinks = () => { buildCalls++; origBuild(); };
+
+  canvas.setVisible(false);
+  reheatCalls = 0; alphaMinCalls = 0;
+  owner.settings.dragTension3d = false;
+  canvas.sync3d('dragTension');
+  owner.settings.forces3d = { ...owner.settings.forces3d, repel: 12 };
+  canvas.sync3d('forces');
+  owner.settings.display3d = { ...owner.settings.display3d, nodeSize: 1.6 };
+  canvas.sync3d('nodeSize');
+  canvas.setVisible(true);
+
+  assert.equal(buildCalls, 0, 'dragTension + forces + nodeSize sync does not rebuild links');
+  assert.equal(graphDataCalls, beforeGraphData, 'dragTension + forces + nodeSize sync does not rebuild base graphData');
+  assert.equal(alphaMinCalls, 1, 'flushing queued dragTension syncs drag mode');
+  assert.equal(reheatCalls, 1, 'flushing queued forces reheats simulation');
+  assert.ok(Math.abs(node.radius - beforeRadius * 2) < 1e-6, 'flushing queued nodeSize scales node radii');
+
+  assert.equal(canvas.nodes.has('orphan.md'), true);
+  canvas.setVisible(false);
+  owner.settings.filters3d = { ...owner.settings.filters3d, orphans: false };
+  canvas.sync3d('filters');
+  canvas.setVisible(true);
+  assert.equal(canvas.nodes.has('orphan.md'), false, 'flushing queued filter change updates visible nodes');
   canvas.onunload();
 });
