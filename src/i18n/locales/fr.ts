@@ -303,7 +303,11 @@ const fr = {
   'graph.toggleShown': '{name} : affichées',
   'graph.toggleHidden': '{name} : masquées',
   'graph.notesHiddenInTree': 'Les notes sont masquées dans les vues en arbre',
-  'graph.statusCounts': '{visible} / {total} étiquettes · {notes} notes · {roots} racines',
+  'graph.statusCounts': '{visible} / {total} étiquettes · {notes} · {roots}',
+  'graph.countRoots': {
+    one: '{count} racine',
+    other: '{count} racines',
+  },
   'graph.statusTurnOnTags': 'Activez Mots-clés dans les filtres du graphique pour afficher la hiérarchie du dictionnaire.',
   'graph.statusMindmapPick': 'Choisissez une étiquette de départ pour explorer sa branche.',
   'graph.loadingGraph': 'Chargement du graphique…',

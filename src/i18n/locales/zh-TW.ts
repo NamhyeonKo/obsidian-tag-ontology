@@ -290,7 +290,10 @@ const zhTW = {
   'graph.toggleShown': '{name}：已顯示',
   'graph.toggleHidden': '{name}：已隱藏',
   'graph.notesHiddenInTree': '樹狀配置會隱藏筆記',
-  'graph.statusCounts': '{visible} / {total} 個標籤 · {notes} 篇筆記 · {roots} 個根標籤',
+  'graph.statusCounts': '{visible} / {total} 個標籤 · {notes} · {roots}',
+  'graph.countRoots': {
+    other: '{count} 個根標籤',
+  },
   'graph.statusTurnOnTags': '請在關聯圖篩選開啟「標籤」以顯示字典階層。',
   'graph.statusMindmapPick': '選擇起始標籤以探索其分支。',
   'graph.loadingGraph': '正在載入關聯圖…',

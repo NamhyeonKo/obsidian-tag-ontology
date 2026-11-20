@@ -87,7 +87,7 @@ let layoutFails = 0;
 
 class TestMindMap {
   el = new Element();
-  data?: MindMapData; destroyed = false; fitted = 0; focused?: string;
+  data?: MindMapData; destroyed = false; fitted = 0; refreshed = 0; focused?: string;
   start: MindMapStart;
   select: (tag: string) => void; toggle: (tag: string) => void;
   constructor(_parent: unknown, select: (tag: string) => void, toggle: (tag: string) => void, start: MindMapStart) { this.start = start; this.select = select; this.toggle = toggle; mindmaps.push(this); }
@@ -96,6 +96,7 @@ class TestMindMap {
   paint(selected?: string, bright?: ReadonlySet<string>) { if (this.data) { this.data.selected = selected; this.data.bright = bright; } }
   fit() { this.fitted++; }
   focusOn(id: string) { this.focused = id; }
+  refreshLocale() { this.refreshed++; }
   destroy() { this.destroyed = true; }
 }
 const mindmaps: TestMindMap[] = [];
@@ -2637,6 +2638,17 @@ test('refreshLocale updates 2D graph overlay toolbar, legend, mode bar, context 
     assert.equal(t.menus.at(-1)!.items[0]!.title, '새 탭에서 열기');
     const status = t.contentEl.all().find(el => el.classes.has('tag-ontology-status'))!;
     assert.match((status as unknown as { textContent: string }).textContent, /태그 \d+ \/ \d+개 · 노트 \d+개 · 루트 \d+개/);
+
+    const mind = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true });
+    mind.controller.attach();
+    const map = mindmaps.at(-1)!;
+    i18n.setLocale('ko');
+    mind.controller.refreshLocale();
+    assert.equal(map.refreshed, 1);
+    assert.ok(mind.contentEl.all().some(el => el.attrs['aria-label'] === '트리 레이아웃에서는 노트를 숨깁니다'));
+    assert.ok(mind.contentEl.all().some(el => el.attrs['aria-label'] === '시작 태그 변경'));
+    const mindStatus = mind.contentEl.all().find(el => el.classes.has('tag-ontology-status'))!;
+    assert.equal((mindStatus as unknown as { textContent: string }).textContent, '가지를 탐색할 시작 태그를 선택하세요.');
   } finally {
     i18n.setLocale('en');
   }

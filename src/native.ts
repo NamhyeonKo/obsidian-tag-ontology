@@ -712,7 +712,12 @@ export class NativeGraphs {
       session.status.textContent = settings.layout === 'mindmap' && !session.mindmapRoot
         ? t('graph.statusMindmapPick')
         : tagsShown
-          ? t('graph.statusCounts', { visible: layer.resolved.visible.size, total: model.placed.size, notes, roots: model.roots.length })
+          ? t('graph.statusCounts', {
+              visible: layer.resolved.visible.size,
+              total: model.placed.size,
+              notes: tPlural('sidebar.suggestionNotes', notes),
+              roots: tPlural('graph.countRoots', model.roots.length),
+            })
           : t('graph.statusTurnOnTags');
     };
     session.syncStatus();

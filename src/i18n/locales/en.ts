@@ -303,7 +303,11 @@ const en = {
   'graph.toggleShown': '{name}: shown',
   'graph.toggleHidden': '{name}: hidden',
   'graph.notesHiddenInTree': 'Notes are hidden in tree layouts',
-  'graph.statusCounts': '{visible} / {total} tags · {notes} notes · {roots} roots',
+  'graph.statusCounts': '{visible} / {total} tags · {notes} · {roots}',
+  'graph.countRoots': {
+    one: '{count} root',
+    other: '{count} roots',
+  },
   'graph.statusTurnOnTags': 'Turn on Tags in the graph filters to show the dictionary hierarchy.',
   'graph.statusMindmapPick': 'Choose a starting tag to explore its branch.',
   'graph.loadingGraph': 'Loading the graph…',

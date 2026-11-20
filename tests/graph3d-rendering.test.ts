@@ -681,6 +681,7 @@ test('3D control panel localizes labels and preserves open/collapsed state acros
     firstSection.all().find(el => el.classes.has('mod-collapsible'))!.events.get('click')?.[0]?.();
     assert.equal(firstSection.hasClass('is-collapsed'), true);
 
+    assert.equal(root.all().find(el => el.classes.has('tag-ontology-status'))!.text, '1 / 1 tags · 0 notes · 1 root');
     i18n.setLocale('ko');
     (canvas as unknown as { refreshLocale(): void }).refreshLocale();
     assert.equal(panel.hasClass('is-close'), false, 'open panel stays open across locale switches');

@@ -290,7 +290,10 @@ const ko = {
   'graph.toggleShown': '{name}: 표시됨',
   'graph.toggleHidden': '{name}: 숨겨짐',
   'graph.notesHiddenInTree': '트리 레이아웃에서는 노트를 숨깁니다',
-  'graph.statusCounts': '태그 {visible} / {total}개 · 노트 {notes}개 · 루트 {roots}개',
+  'graph.statusCounts': '태그 {visible} / {total}개 · {notes} · {roots}',
+  'graph.countRoots': {
+    other: '루트 {count}개',
+  },
   'graph.statusTurnOnTags': '사전 계층을 보려면 그래프 필터에서 태그를 켜세요.',
   'graph.statusMindmapPick': '가지를 탐색할 시작 태그를 선택하세요.',
   'graph.loadingGraph': '그래프 불러오는 중…',

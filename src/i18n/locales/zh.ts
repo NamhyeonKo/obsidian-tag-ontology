@@ -290,7 +290,10 @@ const zh = {
   'graph.toggleShown': '{name}：已显示',
   'graph.toggleHidden': '{name}：已隐藏',
   'graph.notesHiddenInTree': '树形布局中不显示笔记',
-  'graph.statusCounts': '{visible} / {total} 个标签 · {notes} 篇笔记 · {roots} 个根标签',
+  'graph.statusCounts': '{visible} / {total} 个标签 · {notes} · {roots}',
+  'graph.countRoots': {
+    other: '{count} 个根标签',
+  },
   'graph.statusTurnOnTags': '请在图谱筛选中开启“标签”以显示字典层级。',
   'graph.statusMindmapPick': '选择一个起始标签以探索其分支。',
   'graph.loadingGraph': '正在加载图谱…',

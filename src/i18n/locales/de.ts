@@ -303,7 +303,11 @@ const de = {
   'graph.toggleShown': '{name}: angezeigt',
   'graph.toggleHidden': '{name}: ausgeblendet',
   'graph.notesHiddenInTree': 'Notizen sind in Baum-Layouts ausgeblendet',
-  'graph.statusCounts': '{visible} / {total} Tags · {notes} Notizen · {roots} Wurzeln',
+  'graph.statusCounts': '{visible} / {total} Tags · {notes} · {roots}',
+  'graph.countRoots': {
+    one: '{count} Wurzel',
+    other: '{count} Wurzeln',
+  },
   'graph.statusTurnOnTags': 'Aktiviere Tags in den Graph-Filtern, um die Wörterbuch-Hierarchie zu sehen.',
   'graph.statusMindmapPick': 'Wähle einen Start-Tag, um dessen Zweig zu erkunden.',
   'graph.loadingGraph': 'Graph wird geladen…',

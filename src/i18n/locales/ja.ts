@@ -290,7 +290,10 @@ const ja = {
   'graph.toggleShown': '{name}: 表示',
   'graph.toggleHidden': '{name}: 非表示',
   'graph.notesHiddenInTree': 'ツリーレイアウトではノートを非表示にします',
-  'graph.statusCounts': 'タグ {visible} / {total} 件 · ノート {notes} 件 · ルート {roots} 件',
+  'graph.statusCounts': 'タグ {visible} / {total} 件 · {notes} · {roots}',
+  'graph.countRoots': {
+    other: 'ルート {count} 件',
+  },
   'graph.statusTurnOnTags': '辞書階層を表示するにはグラフフィルタの「タグ」をオンにしてください。',
   'graph.statusMindmapPick': 'ブランチを探索する開始タグを選択してください。',
   'graph.loadingGraph': 'グラフを読み込み中…',

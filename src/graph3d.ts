@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, cssColorToHex } from './settings.ts';
 import { arrowAt, cameraDepth, fitView, fogRange, labelBounds, labelScale, springBack, type Point } from './geometry3d.ts';
 import { applySearchFilter, removeOrphans } from './filter3d.ts';
 import { Controls3D, type DisplayChangeKind, type Sync3dChange } from './controls3d.ts';
-import { t } from './i18n/index.ts';
+import { t, tPlural } from './i18n/index.ts';
 import type { StringMessageKey } from './i18n/locales/en.ts';
 
 export const VIEW_3D = 'tag-ontology-3d';
@@ -862,7 +862,12 @@ export class Graph3DCanvas extends Component implements LinkedGraph {
     }
     if (!this.layer) { this.status.setText(t('graph.loadingGraph')); return; }
     const notes = [...this.nodes.values()].filter(item => item.type !== 'tag').length;
-    this.status.setText(t('graph.statusCounts', { visible: this.layer.resolved.visible.size, total: model.placed.size, notes, roots: model.roots.length }));
+    this.status.setText(t('graph.statusCounts', {
+      visible: this.layer.resolved.visible.size,
+      total: model.placed.size,
+      notes: tPlural('sidebar.suggestionNotes', notes),
+      roots: tPlural('graph.countRoots', model.roots.length),
+    }));
   }
 
   private syncToggles() {
