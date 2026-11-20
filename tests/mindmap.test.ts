@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import cytoscape from 'cytoscape';
+import * as i18n from '../src/i18n/index.ts';
 import type { MindMapData } from '../src/mindmap.ts';
 
 class Element {
@@ -63,10 +64,16 @@ async function setup(closeBeforeLoad = false, color: (tag: string) => string | u
   const code = await transform(readFileSync(new URL('../src/mindmap.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const search = new SyntheticModule(['TagSuggest'], function () { this.setExport('TagSuggest', class { close() {} }); }, { context });
   await search.link(() => { throw new Error('Unexpected import'); }); await search.evaluate();
+  const i18nModule = new SyntheticModule(Object.keys(i18n), function () { for (const [k, v] of Object.entries(i18n)) this.setExport(k, v); }, { context });
+  await i18nModule.link(() => { throw new Error('Unexpected import'); }); await i18nModule.evaluate();
   const module = new SourceTextModule(code.code, { context, importModuleDynamically: () => Promise.resolve(dependency) });
-  await module.link(specifier => { if (specifier === './search.ts') return search; throw new Error('Unexpected static import'); }); await module.evaluate();
+  await module.link(specifier => {
+    if (specifier === './search.ts') return search;
+    if (specifier === './i18n/index.ts') return i18nModule;
+    throw new Error('Unexpected static import');
+  }); await module.evaluate();
   const Constructor = (module.namespace as { MindMap: new(root: Element, select: (tag: string) => void, toggle: (tag: string) => void, start: { app: object; suggest(query: string): never[]; choose(tag?: string): void; color(tag: string): string | undefined; onMove?(): void }) => {
-    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; top: number; bottom: number }): void; focusOn(id: string): void; destroy(): void;
+    draw(data: MindMapData): void; fit(covered?: { left: number; right: number; top: number; bottom: number }): void; focusOn(id: string): void; refreshLocale(): void; destroy(): void;
   } }).MindMap;
   const root = new Element(), selected: string[] = [], toggled: string[] = [], chosen: (string | undefined)[] = [];
   const map = new Constructor(root, tag => selected.push(tag), tag => toggled.push(tag), { app: {}, suggest: () => [], choose: tag => chosen.push(tag), color, onMove: () => { moves++; } });
@@ -230,4 +237,34 @@ test('onMove notifies on user pan/zoom, fit, and non-selected anchor pan, not du
   t.map.fit();
   assert.equal(t.moves(), before + 2);
   t.map.destroy();
+});
+
+test('mind map localizes start screen, card aria labels, and updates across refreshLocale', async () => {
+  const t = await setup();
+  t.resize(800, 600);
+  try {
+    t.map.draw({ ...data, root: undefined, roots: ['a'], startFrom: 'b' });
+    i18n.setLocale('ko');
+    t.map.refreshLocale();
+    const start = t.root.all().find(el => el.classes.has('tag-ontology-mindmap-start'))!;
+    assert.ok(start.all().some(el => el.text === '어디서 시작할까요?'));
+    assert.ok(start.all().some(el => el.text === '#b에서 계속'));
+    const input = start.all().find(el => el.attrs.placeholder === '태그 또는 별칭 검색')!;
+    assert.equal(input.attrs['aria-label'], '시작 태그 선택');
+
+    t.map.draw(data);
+    t.map.draw({ ...data, selected: '#root', anchor: '#other' });
+    const movesBefore = t.moves();
+    i18n.setLocale('en');
+    t.map.refreshLocale();
+    assert.ok(t.root.all().some(el => el.attrs['aria-label'] === 'Show #root details'));
+    i18n.setLocale('ko');
+    t.map.refreshLocale();
+    assert.equal(t.moves(), movesBefore, 'refreshLocale updates labels in place without triggering pan or onMove');
+    assert.ok(t.root.all().some(el => el.attrs['aria-label'] === '#root 세부 정보 보기'));
+    assert.ok(t.root.all().some(el => el.attrs['aria-label'] === '#root 펼치기'));
+  } finally {
+    i18n.setLocale('en');
+    t.map.destroy();
+  }
 });

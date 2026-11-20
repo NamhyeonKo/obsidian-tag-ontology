@@ -129,7 +129,8 @@ class El {
 
 async function openCanvas(opts: {
   owner: object;
-  fakeGraph: object;
+  fakeGraph: object | (() => object);
+  visible?: boolean;
   now?: () => number;
   cssVar?: (name: string) => string;
   onMutationObserver?: (cb: () => void) => void;
@@ -145,7 +146,7 @@ async function openCanvas(opts: {
     createEl: () => ({ getContext: () => ({ fillRect() {}, measureText: () => ({ width: 20 }) }) }),
   });
   const code = await transform(readFileSync(new URL('../src/graph3d.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
-  const threeMock = { ...THREE, ...(opts.SpriteText ? { SpriteText: opts.SpriteText } : {}), ForceGraph3D: class { constructor() { return opts.fakeGraph; } } };
+  const threeMock = { ...THREE, ...(opts.SpriteText ? { SpriteText: opts.SpriteText } : {}), ForceGraph3D: class { constructor() { return typeof opts.fakeGraph === 'function' ? (opts.fakeGraph as () => object)() : opts.fakeGraph; } } };
   const module = new SourceTextModule(code.code, {
     context,
     importModuleDynamically: async () => {
@@ -207,7 +208,7 @@ async function openCanvas(opts: {
     Graph3DCanvas: new(root: El, owner: object, leaf: object) => Renderer & { ball: THREE.SphereGeometry; open(): Promise<void>; focusOn(tag: string): void; fit(): void; paint(): void; unload?(): void; onunload(): void };
   }).Graph3DCanvas;
   const canvas = new Canvas(root, opts.owner, {});
-  canvas.setVisible(true);
+  canvas.setVisible(opts.visible ?? true);
   await canvas.open();
   return { canvas, root, toggles, toggleValues, buttons, TFile };
 }
@@ -680,6 +681,7 @@ test('3D control panel localizes labels and preserves open/collapsed state acros
     firstSection.all().find(el => el.classes.has('mod-collapsible'))!.events.get('click')?.[0]?.();
     assert.equal(firstSection.hasClass('is-collapsed'), true);
 
+    assert.equal(root.all().find(el => el.classes.has('tag-ontology-status'))!.text, '1 / 1 tags · 0 notes · 1 root');
     i18n.setLocale('ko');
     (canvas as unknown as { refreshLocale(): void }).refreshLocale();
     assert.equal(panel.hasClass('is-close'), false, 'open panel stays open across locale switches');
@@ -689,7 +691,42 @@ test('3D control panel localizes labels and preserves open/collapsed state acros
     assert.equal(sections[0]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '필터');
     assert.equal(sections[1]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '표시');
     assert.equal(sections[2]!.all().find(el => el.classes.has('graph-control-section-header'))!.text, '장력');
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '모두 접기'));
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '모두 펼치기'));
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '화면에 맞추기'));
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '사전 검사'));
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '노트: 표시됨'));
+    const status = root.all().find(el => el.classes.has('tag-ontology-status'))!;
+    assert.equal(status.text, '태그 1 / 1개 · 노트 0개 · 루트 1개');
     canvas.onunload();
+
+    const linked = new Set<{ refreshLocale?(): void }>();
+    const baseOwner = {
+      ...owner,
+      native: { ...owner.native, link(v: { refreshLocale?(): void }) { linked.add(v); }, unlink(v: { refreshLocale?(): void }) { linked.delete(v); } },
+    };
+    const hidden = await openCanvas({ owner: baseOwner, fakeGraph, visible: false });
+    i18n.setLocale('en');
+    (hidden.canvas as unknown as { refreshLocale(): void }).refreshLocale();
+    assert.equal(hidden.root.all().find(el => el.classes.has('tag-ontology-status'))!.text, 'Loading the graph…');
+    assert.ok(hidden.root.all().some(el => el.attrs['aria-label'] === 'Notes: shown'));
+    i18n.setLocale('ko');
+    (hidden.canvas as unknown as { refreshLocale(): void }).refreshLocale();
+    assert.equal(hidden.root.all().find(el => el.classes.has('tag-ontology-status'))!.text, '그래프 불러오는 중…');
+    assert.ok(hidden.root.all().some(el => el.attrs['aria-label'] === '노트: 표시됨'));
+    hidden.canvas.onunload();
+
+    const origError = console.error;
+    console.error = () => {};
+    try {
+      const failed = await openCanvas({ owner: baseOwner, fakeGraph: () => { throw new Error('no webgl'); }, visible: false });
+      assert.equal(linked.has(failed.canvas as unknown as { refreshLocale?(): void }), true);
+      (failed.canvas as unknown as { refreshLocale(): void }).refreshLocale();
+      assert.match(failed.root.all().find(el => el.classes.has('tag-ontology-status'))!.text, /하드웨어 가속/);
+      failed.canvas.onunload();
+    } finally {
+      console.error = origError;
+    }
   } finally {
     i18n.setLocale('en');
   }

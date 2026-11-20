@@ -4,11 +4,15 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import * as palettes from '../src/palettes.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 
 class DomEl {
   children: DomEl[] = [];
   parentElement?: DomEl;
+  attrs: Record<string, string> = {};
+  text = '';
+  events = new Map<string, () => void>();
   classes: Set<string>;
   classList: { toggle(cls: string, force?: boolean): boolean; contains(cls: string): boolean };
   hidden = false;
@@ -20,9 +24,10 @@ class DomEl {
   scrollHeight = 0;
   private measure?: (el: DomEl) => void;
 
-  constructor(cls = '', measure?: (el: DomEl) => void) {
+  constructor(cls = '', measure?: (el: DomEl) => void, text = '') {
     this.classes = new Set(cls.split(/\s+/).filter(Boolean));
     this.measure = measure;
+    this.text = text;
     this.classList = {
       toggle: (name, force) => {
         const on = force ?? !this.classes.has(name);
@@ -34,12 +39,13 @@ class DomEl {
   }
 
   empty() { this.children = []; }
-  setAttribute() {}
+  setAttribute(k: string, v: string) { this.attrs[k] = v; }
+  getBoundingClientRect() { return { left: 0, bottom: 0, width: 24 }; }
   setCssProps() {}
-  addEventListener() {}
-  createSpan() { return this.createEl('span'); }
-  createEl(_tag: string, options?: { cls?: string }) {
-    const child = new DomEl(options?.cls, this.measure);
+  addEventListener(type: string, fn: () => void) { this.events.set(type, fn); }
+  createSpan(options?: { cls?: string; text?: string }) { return this.createEl('span', options); }
+  createEl(_tag: string, options?: { cls?: string; text?: string }) {
+    const child = new DomEl(options?.cls, this.measure, options?.text);
     child.parentElement = this;
     this.children.push(child);
     this.measure?.(child);
@@ -79,13 +85,26 @@ async function setup() {
     ResizeObserver: ro.ResizeObserver,
   });
   const code = await transform(readFileSync(new URL('../src/legend.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
+  const menus: string[][] = [];
+  class Menu {
+    items: string[] = [];
+    addItem(fn: (item: { setTitle(t: string): unknown; setIsLabel(): unknown; setChecked(): unknown; setIcon(): unknown; onClick(): unknown }) => void) {
+      const item = { setTitle: (t: string) => { this.items.push(t); return item; }, setIsLabel: () => item, setChecked: () => item, setIcon: () => item, onClick: () => item };
+      fn(item); return this;
+    }
+    addSeparator() { return this; }
+    onHide() { return this; }
+    showAtPosition() { menus.push(this.items); }
+  }
   const module = new SourceTextModule(code.code, { context });
   await module.link(async specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian'
-      ? { Menu: class {}, setIcon() {}, setTooltip() {} }
+      ? { Menu, setIcon() {}, setTooltip(el: DomEl, label: string) { el.attrs['aria-label'] = label; } }
       : specifier === './palettes.ts'
         ? { ...palettes }
-        : {};
+        : specifier === './i18n/index.ts'
+          ? { ...i18n }
+          : {};
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });
   await module.evaluate();
@@ -123,7 +142,7 @@ async function setup() {
     legend.scrollHeight = (legend.hidden ? 0 : chrome - 2) + (list?.clientHeight ?? 0);
   };
 
-  return { overlay, buttons, legend, observed: ro.observed, ro, triggerResize: ro.trigger, renderDepthLegend, syncLegendBoxes };
+  return { overlay, buttons, legend, menus, observed: ro.observed, ro, triggerResize: ro.trigger, renderDepthLegend, syncLegendBoxes };
 }
 
 test('renderDepthLegend switches overlay compact mode from measured tools, legend, and status bounds rather than a hardcoded height', async () => {
@@ -219,4 +238,20 @@ test('renderDepthLegend returns a stop cleanup, ignores disconnected callbacks, 
 
   stopPopout?.();
   assert.deepEqual(popoutRo.counts(), { observers: 1, disconnects: 1 });
+
+  try {
+    i18n.setLocale('ko');
+    const custom: Settings = { ...base, hierarchyPalettePreset: 'custom', workingPaletteSource: '', customHierarchyPalette: ['#111111', '#222222'], hierarchyPalette: ['#111111', '#222222'] };
+    t.renderDepthLegend(t.legend, custom, actions);
+    assert.equal(t.legend.attrs['aria-label'], '계층 깊이 색상');
+    assert.equal(t.legend.attrs['aria-description'], '루트는 0단계입니다. 1단계 이상은 마지막 색상을 사용합니다.');
+    const paletteBtn = t.legend.querySelector('.tag-ontology-legend-palette')!;
+    assert.equal(paletteBtn.attrs['aria-label'], '팔레트: 작업 사본 · 저장 안 됨');
+    paletteBtn.events.get('click')?.();
+    assert.ok(t.menus.at(-1)!.includes('사본 저장…'));
+    assert.equal(t.legend.querySelector('.tag-ontology-legend-save')!.attrs['aria-label'], '팔레트를 다른 이름으로 저장…');
+    assert.deepEqual(JSON.parse(JSON.stringify(t.legend.querySelectorAll('.tag-ontology-sr').map(el => el.text))), ['루트 · 0', '1단계 이상']);
+  } finally {
+    i18n.setLocale('en');
+  }
 });

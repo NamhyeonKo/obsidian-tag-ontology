@@ -126,6 +126,9 @@ test('non-English locales provide distinct localized text, pluralization, and re
     setLocale('ru');
     assert.equal(tPlural('sidebar.unregisteredSummary', 11, { tag: 'ai' }), '#ai · 11 заметок');
     assert.equal(tPlural('sidebar.unregisteredSummary', 21, { tag: 'ai' }), '#ai · 21 заметка');
+    assert.equal(tPlural('graph.countRoots', 1), '1 корень');
+    assert.equal(tPlural('graph.countRoots', 2), '2 корня');
+    assert.equal(tPlural('graph.countRoots', 5), '5 корней');
   } finally {
     setLocale('en');
   }
