@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { transform } from 'esbuild';
 import type { Suggestion } from 'tag-ontology';
+import * as i18n from '../src/i18n/index.ts';
 
 class Div {
   children: { text: string; cls: string }[] = [];
@@ -23,7 +24,12 @@ async function setup() {
   const context = createContext({});
   const code = await transform(readFileSync(new URL('../src/search.ts', import.meta.url), 'utf8'), { loader: 'ts', target: 'es2022', format: 'esm' });
   const module = new SourceTextModule(code.code, { context });
-  await module.link(() => new SyntheticModule(['AbstractInputSuggest'], function () { this.setExport('AbstractInputSuggest', AbstractInputSuggest); }, { context }));
+  await module.link(specifier => {
+    const exports = specifier === './i18n/index.ts' ? { ...i18n } : { AbstractInputSuggest };
+    return new SyntheticModule(Object.keys(exports), function () {
+      for (const [k, v] of Object.entries(exports)) this.setExport(k, v);
+    }, { context });
+  });
   await module.evaluate();
   const TagSuggest = (module.namespace as { TagSuggest: new(...args: unknown[]) => Suggest }).TagSuggest;
   const input = { value: 'mach' }, queries: string[] = [], chosen: string[] = [];
@@ -59,4 +65,15 @@ test('suggestions with a note count show it under the tag', async () => {
   t.suggest.renderSuggestion({ tag: 'book', notes: 2 }, two);
   assert.deepEqual(one.children[1], { text: '1 note', cls: 'tag-ontology-suggestion-alias' });
   assert.deepEqual(two.children[1], { text: '2 notes', cls: 'tag-ontology-suggestion-alias' });
+});
+
+test('suggestions localize note count when locale changes', async () => {
+  const t = await setup(), el = new Div();
+  i18n.setLocale('ko');
+  try {
+    t.suggest.renderSuggestion({ tag: 'book', notes: 3 }, el);
+    assert.deepEqual(el.children[1], { text: '노트 3개', cls: 'tag-ontology-suggestion-alias' });
+  } finally {
+    i18n.setLocale('en');
+  }
 });

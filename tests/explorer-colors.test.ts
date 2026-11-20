@@ -7,9 +7,10 @@ import { Ontology } from 'tag-ontology';
 import * as settings from '../src/settings.ts';
 import * as card from '../src/explorer-card.ts';
 import * as layout from '../src/explorer-layout.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { hierarchyColor, PALETTE } from '../src/colors.ts';
 
-async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partial<typeof layout>; cytoscape?: (opts: object) => object } = {}) {
+async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partial<typeof layout>; cytoscape?: (opts: object) => object; loadCytoscape?: () => Promise<(opts: object) => object>; onMenu?: (items: { title: string; action: () => void }[]) => void } = {}) {
   const code = await transform(readFileSync(new URL('../src/explorer.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
   const context = createContext({
     createEl: () => ({ getContext: () => ({ fillRect() {}, measureText: () => ({ width: 20 }) }) }),
@@ -17,29 +18,49 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
     ResizeObserver: class { observe() {} disconnect() {} },
     MutationObserver: class { observe() {} disconnect() {} },
   });
+  class TFileStub { path = ''; stat = { mtime: Date.now() }; }
+  class MenuStub {
+    items: { title: string; action: () => void }[] = [];
+    addItem(fn: (item: { setTitle(t: string): unknown; setIcon(): unknown; onClick(cb: () => void): unknown }) => void) {
+      let title = '', action = () => {};
+      const item = {
+        setTitle(t: string) { title = t; return item; },
+        setIcon() { return item; },
+        onClick(cb: () => void) { action = cb; return item; },
+      };
+      fn(item);
+      this.items.push({ title, action });
+      return this;
+    }
+    addSeparator() { return this; }
+    showAtMouseEvent() { over.onMenu?.(this.items); }
+  }
   const cyFactory = over.cytoscape ?? (() => ({}));
   const module = new SourceTextModule(code.code, {
     context,
     importModuleDynamically: async () => {
-      const m = new SyntheticModule(['default'], function () { this.setExport('default', cyFactory); }, { context });
+      const fn = over.loadCytoscape ? await over.loadCytoscape() : cyFactory;
+      const m = new SyntheticModule(['default'], function () { this.setExport('default', fn); }, { context });
       await m.link(() => { throw new Error('unexpected'); }); await m.evaluate(); return m;
     },
   });
   await module.link(specifier => {
     const exports: Record<string, unknown> = specifier === 'obsidian' ? {
       Component: class { register() {} registerEvent() {} registerDomEvent(el: { addEventListener?: (t: string, f: () => void) => void }, t: string, f: () => void) { el.addEventListener?.(t, f); } },
-      ItemView: class {}, Menu: class {}, TFile: class {},
+      ItemView: class {}, Menu: MenuStub, TFile: TFileStub,
       setIcon(el: { attrs?: Record<string, string> }, id: string) { if (el.attrs) el.attrs.icon = id; },
       setTooltip(el: { attrs?: Record<string, string> }, label: string) { if (el.attrs) el.attrs['aria-label'] = label; },
     }
       : specifier === './graph-modes.ts' ? { graphModeBar() { return () => {}; } }
       : specifier === './legend.ts' ? { renderDepthLegend() {} } : specifier === './settings.ts' ? { ...settings }
       : specifier === './explorer-card.ts' ? { ...card, ...over.card }
-      : specifier === './explorer-layout.ts' ? { ...layout, ...over.layout } : { TagSuggest: class {} };
+      : specifier === './explorer-layout.ts' ? { ...layout, ...over.layout }
+      : specifier === './i18n/index.ts' ? { ...i18n }
+      : { TagSuggest: class {} };
     return new SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
   });
   await module.evaluate();
-  return (module.namespace as unknown as {
+  return { TFile: TFileStub, View: (module.namespace as unknown as {
     ExplorerCanvas: new(root: object, owner: object, leaf: object) => {
       cy?: object;
       open(): Promise<void>; focusOn(tag: string): void; fit(): void; paint(): void; onunload(): void;
@@ -48,13 +69,13 @@ async function loadExplorer(over: { card?: Partial<typeof card>; layout?: Partia
       size(c: card.Card): layout.Size;
       addNode(id: string, c: card.Card, data: Record<string, unknown>, position: layout.Point): unknown;
       draw(operation: string): void;
-      readTheme(): void; style(): unknown; changed(): void;
+      readTheme(): void; style(): unknown; changed(): void; refreshLocale(): void;
     };
-  }).ExplorerCanvas;
+  }).ExplorerCanvas };
 }
 
 test('explorer uses the chosen color mode, with facet colors only in Obsidian default mode', async () => {
-  const View = await loadExplorer();
+  const { View } = await loadExplorer();
   const model = new Ontology({ root: { description: '', broader: [], facet: 'language' } }, []);
   const owner = { model, settings: { ...settings.DEFAULT_SETTINGS }, tagColor(tag: string) {
     return this.settings.hierarchyColors ? hierarchyColor(model, tag, this.settings.hierarchyPalette)! : '#123456';
@@ -79,7 +100,7 @@ test('explorer uses the chosen color mode, with facet colors only in Obsidian de
 
 test('explorer caches facet colors per model and computes card height without building SVG', async () => {
   let facetCalls = 0, imageCalls = 0;
-  const View = await loadExplorer({
+  const { View } = await loadExplorer({
     layout: { facetColors: facets => { facetCalls++; return layout.facetColors(facets); } },
     card: { cardImage: (c, theme, measure) => { imageCalls++; return card.cardImage(c, theme, measure); } },
   });
@@ -123,7 +144,8 @@ test('explorer caches facet colors per model and computes card height without bu
 test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas', async () => {
   class El {
     children: El[] = []; classes = new Set<string>(); attrs: Record<string, string> = {}; hidden = false; text = '';
-    events = new Map<string, ((e?: unknown) => void)[]>(); doc = { body: {} };
+    events = new Map<string, ((e?: unknown) => void)[]>();
+    doc = { body: {} };
     createDiv(options: string | { cls?: string; text?: string } = '') {
       const child = new El(), cls = typeof options === 'string' ? options : options.cls ?? '';
       for (const c of cls.split(' ')) if (c) child.classes.add(c);
@@ -144,7 +166,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
   const handlers: { event: string; selector?: string; fn: (e?: unknown) => void }[] = [];
   interface NodeStub {
     empty(): boolean; nonempty(): boolean; id(): string;
-    data(k?: string): unknown; position(): { x: number; y: number };
+    data(k?: string | Record<string, unknown>): unknown; position(): { x: number; y: number };
     selected(): boolean; select(): NodeStub; unselect(): NodeStub;
     forEach(fn: (item: NodeStub) => void): void; remove(): void;
   }
@@ -152,7 +174,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
     const entry = id ? nodes.get(id) : undefined;
     return {
       empty: () => !entry, nonempty: () => !!entry, id: () => id ?? '',
-      data: (k?: string) => k ? entry?.data[k] : entry?.data,
+      data: (k?: string | Record<string, unknown>) => k && typeof k === 'object' ? (entry && Object.assign(entry.data, k), entry?.data) : k ? entry?.data[k] : entry?.data,
       position: () => entry?.pos ?? { x: 0, y: 0 },
       selected: () => !!entry?.selected,
       select() { if (entry) entry.selected = true; return this; },
@@ -205,7 +227,7 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
     tagColor: () => '#123456',
     app: { workspace: { on: () => () => {} }, vault: { on: () => () => {}, getAbstractFileByPath: () => null }, metadataCache: { on: () => () => {} } },
   };
-  const View = await loadExplorer({ cytoscape: () => fakeCy });
+  const { View } = await loadExplorer({ cytoscape: () => fakeCy });
   const root = new El(), view = new View(root, owner, {});
   await view.open();
   const recenter = root.all().find(el => el.classes.has('tag-ontology-recenter'))!;
@@ -254,5 +276,173 @@ test('explorer recenter tracks selection, pan/zoom, fit, tap, and clear canvas',
   assert.equal(recenter.hidden, true, 'Clear canvas removes cards and hides recenter');
   view.fit();
   assert.equal(animates, before + 1, 'fit() skips empty Explorer canvas');
+
+  try {
+    view.focusOn('a');
+    const cardBefore = fakeCy.getElementById('tag:a').data('img');
+    i18n.setLocale('ko');
+    (view as unknown as { refreshLocale(): void }).refreshLocale();
+    assert.notEqual(fakeCy.getElementById('tag:a').data('img'), cardBefore, 'refreshLocale redraws mounted cards');
+    assert.equal(recenterBtn.attrs['aria-label'], '선택한 태그로 가운데 이동');
+    assert.equal(fitBtn.attrs['aria-label'], '화면에 맞추기');
+    assert.equal(clearBtn.attrs['aria-label'], '캔버스 비우기');
+    const start = root.all().find(el => el.classes.has('tag-ontology-explorer-start'))!;
+    assert.ok(start.all().some(el => el.text === '어디서 시작할까요?'));
+    const status = root.all().find(el => el.classes.has('tag-ontology-status')) as unknown as { textContent: string };
+    assert.equal(status.textContent, '태그 1개 · 노트 1개 · 그룹 0개');
+    assert.deepEqual(JSON.parse(JSON.stringify(view.tagCard('a').rows)), [['직접 연결 노트', '0'], ['하위 태그 포함', '0'], ['하위 태그', '0']]);
+  } finally {
+    i18n.setLocale('en');
+  }
   view.onunload();
+});
+
+test('explorer links early before cytoscape loads and localizes note/group cards, relative times, and context menus on refreshLocale', async () => {
+  class El {
+    children: El[] = []; classes = new Set<string>(); attrs: Record<string, string> = {}; hidden = false; text = '';
+    events = new Map<string, ((e?: unknown) => void)[]>();
+    doc = { body: { style: '' } };
+    createDiv(options: string | { cls?: string; text?: string } = '') {
+      const child = new El(), cls = typeof options === 'string' ? options : options.cls ?? '';
+      for (const c of cls.split(' ')) if (c) child.classes.add(c);
+      if (typeof options === 'object' && options.text !== undefined) child.text = options.text;
+      this.children.push(child); return child;
+    }
+    createEl(_tag: string, opts?: { cls?: string; text?: string }) { return this.createDiv(opts ?? {}); }
+    setText(t: string) { this.text = t; }
+    setAttribute(k: string, v: string) { this.attrs[k] = v; }
+    setCssProps() {}
+    querySelectorAll() { return []; } querySelector() { return null; }
+    addClass(cls: string) { this.classes.add(cls); } removeClass(cls: string) { this.classes.delete(cls); }
+    toggleClass(cls: string, on: boolean) { if (on) this.classes.add(cls); else this.classes.delete(cls); }
+    empty() { this.children = []; } isShown() { return true; }
+    addEventListener(type: string, fn: (e?: unknown) => void) { const list = this.events.get(type) ?? []; list.push(fn); this.events.set(type, list); }
+    all(): El[] { return [this, ...this.children.flatMap(c => c.all())]; }
+  }
+  const nodes = new Map<string, { data: Record<string, unknown>; pos: { x: number; y: number }; selected: boolean }>();
+  const handlers: { event: string; selector?: string; fn: (e?: unknown) => void }[] = [];
+  const menus: { title: string; action: () => void }[][] = [];
+  interface ColStub { empty(): boolean; boundingBox(): { x1: number; y1: number; x2: number; y2: number }; union(other: { id?: () => string }): ColStub }
+  interface NodeStub extends ColStub {
+    nonempty(): boolean; id(): string;
+    data(k?: string | Record<string, unknown>): unknown; position(): { x: number; y: number };
+    selected(): boolean; select(): NodeStub; unselect(): NodeStub;
+    forEach(fn: (item: NodeStub) => void): void; remove(): void;
+  }
+  const makeCol = (ids: string[]): ColStub => ({
+    empty: () => ids.length === 0,
+    boundingBox: () => ({ x1: 0, y1: 0, x2: 10, y2: 10 }),
+    union: (other: { id?: () => string }) => makeCol(other.id ? [...ids, other.id()] : ids),
+  });
+  const wrap = (id?: string): NodeStub => {
+    const entry = id ? nodes.get(id) : undefined;
+    return {
+      empty: () => !entry, nonempty: () => !!entry, id: () => id ?? '',
+      data: (k?: string | Record<string, unknown>) => k && typeof k === 'object' ? (entry && Object.assign(entry.data, k), entry?.data) : k ? entry?.data[k] : entry?.data,
+      position: () => entry?.pos ?? { x: 0, y: 0 },
+      selected: () => !!entry?.selected,
+      select() { if (entry) entry.selected = true; return this; },
+      unselect() { if (entry) entry.selected = false; return this; },
+      forEach(fn: (item: NodeStub) => void) { for (const key of nodes.keys()) fn(wrap(key)); },
+      remove() { if (id) nodes.delete(id); },
+      boundingBox: () => ({ x1: 0, y1: 0, x2: 10, y2: 10 }),
+      union: (other: { id?: () => string }) => makeCol([id ?? '', ...(other.id ? [other.id()] : [])]),
+    };
+  };
+  const fakeCy = {
+    width: () => 800,
+    extent: () => ({ x1: -100, y1: -100, x2: 900, y2: 700 }),
+    collection: () => makeCol([]),
+    on(event: string, arg2: string | ((e?: unknown) => void), arg3?: (e?: unknown) => void) {
+      for (const e of event.split(' ')) handlers.push({ event: e, selector: typeof arg2 === 'string' ? arg2 : undefined, fn: typeof arg2 === 'string' ? arg3! : arg2 });
+    },
+    getElementById: (id: string) => wrap(id),
+    nodes: (sel?: string) => {
+      const prefix = sel === '[type="group"]' ? 'group:' : sel === '[type="note"]' ? 'note:' : sel === '[type="tag"]' ? 'tag:' : '';
+      const list = [...nodes.keys()].filter(id => !prefix || id.startsWith(prefix)).map(wrap);
+      return Object.assign(list, { empty: () => list.length === 0, nonempty: () => list.length > 0 });
+    },
+    edges: () => ({ filter: () => ({ remove() {} }), remove() {} }),
+    elements: () => ({ unselect() { for (const n of nodes.values()) n.selected = false; }, remove() { nodes.clear(); } }),
+    add(spec: { group: string; data: Record<string, unknown>; position: { x: number; y: number } }) {
+      const id = String(spec.data.id);
+      nodes.set(id, { data: spec.data, pos: spec.position, selected: false });
+      return wrap(id);
+    },
+    zoom() { handlers.filter(h => h.event === 'zoom').forEach(h => h.fn()); },
+    center() {}, animate() {}, style() {}, resize() {}, destroy() {},
+  };
+  let resolveCy!: (fn: (opts: object) => object) => void;
+  const { TFile, View } = await loadExplorer({
+    loadCytoscape: () => new Promise(res => { resolveCy = res; }),
+    onMenu: items => menus.push(items),
+  });
+  const recentMtime = Date.now() - 2 * 864e5;
+  const linked = new Set<object>();
+  const model = new Ontology(
+    { a: { description: '', broader: [], related: ['c'] }, b: { description: '', broader: [] }, c: { description: '', broader: ['a'] } },
+    [{ path: 'notes/alpha.md', tags: ['a'] }, ...Array.from({ length: 16 }, (_, i) => ({ path: `notes/b${i}.md`, tags: ['b'] }))],
+  );
+  const owner = {
+    model, settings: { ...settings.DEFAULT_SETTINGS },
+    native: { selectedTag: undefined, explorer: undefined, renderPanel() {}, link(v: object) { linked.add(v); }, unlink(v: object) { linked.delete(v); }, clickTag() {} },
+    tagColor: () => '#123456',
+    app: {
+      workspace: { on: () => () => {} },
+      vault: { on: () => () => {}, getAbstractFileByPath: (p: string) => Object.assign(new TFile(), { path: p, stat: { mtime: recentMtime } }) },
+      metadataCache: { on: () => () => {} },
+    },
+  };
+  const root = new El(), view = new View(root, owner, {});
+  const opening = view.open();
+  await Promise.resolve();
+  try {
+    // Linked synchronously before dynamic cytoscape import resolves; early refreshLocale still translates start screen + buttons.
+    assert.equal(linked.has(view), true);
+    i18n.setLocale('ko');
+    view.refreshLocale();
+    assert.ok(root.all().some(el => el.attrs['aria-label'] === '화면에 맞추기'));
+    assert.ok(root.all().some(el => el.text === '어디서 시작할까요?'));
+
+    i18n.setLocale('en');
+    view.refreshLocale();
+    resolveCy(() => fakeCy);
+    await opening;
+
+    view.focusOn('a');
+    view.focusOn('b');
+    const cxt = (selector: string, id: string) => handlers.find(h => h.event === 'cxttap' && h.selector === selector)!.fn({ target: wrap(id) });
+    cxt('node[type="tag"]', 'tag:a');
+    menus.at(-1)!.find(item => item.title === 'Show notes (1)')!.action();
+    cxt('node[type="tag"]', 'tag:b');
+    menus.at(-1)!.find(item => item.title === 'Show notes (16)')!.action();
+
+    const noteSvgBefore = decodeURIComponent(String(fakeCy.getElementById('note:notes/alpha.md').data('img')));
+    const groupSvgBefore = decodeURIComponent(String(fakeCy.getElementById('group:b').data('img')));
+    assert.match(noteSvgBefore, /Modified/);
+    assert.match(groupSvgBefore, /16 notes/);
+
+    i18n.setLocale('ko');
+    view.refreshLocale();
+
+    const noteSvgAfter = decodeURIComponent(String(fakeCy.getElementById('note:notes/alpha.md').data('img')));
+    const groupSvgAfter = decodeURIComponent(String(fakeCy.getElementById('group:b').data('img')));
+    assert.match(noteSvgAfter, /notes · 노트/);
+    assert.match(noteSvgAfter, /수정됨/);
+    assert.match(noteSvgAfter, /2일 전/);
+    assert.match(groupSvgAfter, /노트 16개/);
+    assert.match(groupSvgAfter, /#b · 그룹/);
+    assert.match(groupSvgAfter, /최신 노트/);
+    assert.equal((root.all().find(el => el.classes.has('tag-ontology-status')) as unknown as { textContent: string }).textContent, '태그 2개 · 노트 1개 · 그룹 1개');
+
+    cxt('node[type="tag"]', 'tag:a');
+    assert.deepEqual(JSON.parse(JSON.stringify(menus.at(-1)!.map(i => i.title))), ['하위 태그 펼치기 (1)', '연관 태그 펼치기 (1)', '캔버스에서 제거']);
+    cxt('node[type="note"]', 'note:notes/alpha.md');
+    assert.deepEqual(JSON.parse(JSON.stringify(menus.at(-1)!.map(i => i.title))), ['노트 열기', '캔버스에서 제거']);
+    cxt('node[type="group"]', 'group:b');
+    assert.deepEqual(JSON.parse(JSON.stringify(menus.at(-1)!.map(i => i.title))), ['최신 10개 꺼내기', '캔버스에서 제거']);
+  } finally {
+    i18n.setLocale('en');
+    view.onunload();
+  }
 });

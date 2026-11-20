@@ -8,7 +8,8 @@ import type { ExplorerPanel, LinkedGraph } from './native.ts';
 import { TagSuggest } from './search.ts';
 import { cssColorToHex } from './settings.ts';
 import { cardHeight, cardImage, type Card, type CardTheme } from './explorer-card.ts';
-import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, plural, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { TAKE_OUT, canvasEdges, facetColors, groupPaths, grouped, placeAside, placeColumn, pruneCanvas, relativeTime, searchAround, type Box, type OnCanvas, type Point, type Size } from './explorer-layout.ts';
+import { t, tPlural } from './i18n/index.ts';
 
 export const VIEW_EXPLORER = 'tag-ontology-explorer';
 
@@ -17,7 +18,7 @@ export class ExplorerView extends ItemView {
   private canvas?: ExplorerCanvas;
   constructor(leaf: WorkspaceLeaf, private owner: TagOntologyPlugin) { super(leaf); }
   getViewType() { return VIEW_EXPLORER; }
-  getDisplayText() { return 'Ontology explorer'; }
+  getDisplayText() { return t('views.explorerTitle'); }
   getIcon() { return 'waypoints'; }
   async onOpen() {
     if (!this.owner.settings.enableExplorer) { this.leaf.detach(); return; }
@@ -40,6 +41,8 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   private cy?: Core;
   private closed = false;
   private stage?: HTMLElement; private status?: HTMLElement; private legend?: HTMLElement; private start?: HTMLElement; private continueChip?: HTMLElement; private recenter?: HTMLElement;
+  private startHeading?: HTMLElement; private startHint?: HTMLElement; private startSearch?: HTMLElement;
+  private labels: (() => void)[] = [];
   private colors = FALLBACK; private theme: CardTheme = { card: FALLBACK.card, border: FALLBACK.border, title: FALLBACK.text, sub: FALLBACK.muted, row: FALLBACK.text, divider: FALLBACK.border, font: 'sans-serif' };
   private measurer?: CanvasRenderingContext2D;
   private facets?: { model: Ontology; colors: Map<string, string> };
@@ -60,30 +63,31 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.registerDomEvent(this.stage, 'contextmenu', event => event.preventDefault());
     const overlay = root.createDiv('tag-ontology-overlay'), tools = overlay.createDiv('tag-ontology-tools'), actions = overlay.createDiv('tag-ontology-actions'), recenter = this.recenter = overlay.createDiv('tag-ontology-recenter');
     recenter.hidden = true;
+    this.labels = [];
     this.legend = overlay.createDiv('tag-ontology-legend');
-    const stopLegend = renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
-      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    const stopLegend = this.drawLegend();
     this.register(() => stopLegend?.());
     this.status = overlay.createDiv('tag-ontology-status'); this.status.setAttribute('role', 'status');
     // The same buttons in the same places as the graph modes, so switching modes moves nothing; the ones the explorer has no
     // use for stay disabled.
     const unused = (button: HTMLElement) => { button.setAttribute('aria-disabled', 'true'); return button; };
-    unused(this.button(actions, 'chevrons-down-up', 'Not used in the ontology explorer', () => {}, 'top'));
-    unused(this.button(actions, 'chevrons-up-down', 'Not used in the ontology explorer', () => {}, 'top'));
-    this.button(actions, 'scan', 'Fit', () => this.fit(), 'top');
+    unused(this.button(actions, 'chevrons-down-up', () => t('explorer.notUsed'), () => {}, 'top'));
+    unused(this.button(actions, 'chevrons-up-down', () => t('explorer.notUsed'), () => {}, 'top'));
+    this.button(actions, 'scan', () => t('graph.fit'), () => this.fit(), 'top');
     // Clearing the canvas brings back the start screen, like the mind map's Change starting tag. A group the sidebar shows goes
     // with the canvas, so the sidebar draws again.
-    this.button(actions, 'home', 'Clear canvas', () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
+    this.button(actions, 'home', () => t('explorer.clearCanvas'), () => { this.cy?.elements().remove(); this.changed(); this.owner.native.renderPanel(); }, 'top')
       .addClass('tag-ontology-after-divider');
-    this.button(recenter, 'locate-fixed', 'Center on selected tag', () => { const tag = this.owner.native.selectedTag; if (tag) this.centerOn(tag); }, 'top');
-    for (const icon of ['file-text', 'link']) unused(this.button(tools, icon, 'Not used in the ontology explorer', () => {})).addClass('tag-ontology-toggle');
+    this.button(recenter, 'locate-fixed', () => t('graph.centerSelected'), () => { const tag = this.owner.native.selectedTag; if (tag) this.centerOn(tag); }, 'top');
+    for (const icon of ['file-text', 'link']) unused(this.button(tools, icon, () => t('explorer.notUsed'), () => {})).addClass('tag-ontology-toggle');
     tools.createDiv('tag-ontology-separator');
-    this.button(tools, 'book-open-check', 'Dictionary check', () => this.owner.native.checkDictionary());
+    this.button(tools, 'book-open-check', () => t('graph.dictionaryCheck'), () => this.owner.native.checkDictionary());
     tools.createDiv('tag-ontology-separator');
     this.syncModes = graphModeBar(tools, this.owner, this.leaf);
     this.buildStart(root);
     this.measurer = createEl('canvas').getContext('2d') ?? undefined;
     this.readTheme();
+    this.owner.native.link(this);
     const { default: cytoscape } = await import('cytoscape');
     if (this.closed) return;
     // No textureOnViewport: zooming out a snapshot of the view leaves blank margins until the gesture ends. Cards are cached as
@@ -103,10 +107,10 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     cy.on('cxttap', 'node[type="tag"]', event => this.tagMenu(event));
     cy.on('tap', 'node[type="note"]', event => this.owner.native.showNote(this.pathOf(event)));
     cy.on('dbltap', 'node[type="note"]', event => this.owner.native.openNote(this.pathOf(event)));
-    cy.on('cxttap', 'node[type="note"]', event => this.menu(event, [['Open note', 'file-text', () => this.owner.native.openNote(this.pathOf(event))]]));
+    cy.on('cxttap', 'node[type="note"]', event => this.menu(event, [[t('sidebar.openNote'), 'file-text', () => this.owner.native.openNote(this.pathOf(event))]]));
     cy.on('tap', 'node[type="group"]', event => this.owner.native.showGroup(this.tagOf(event), this));
     cy.on('dbltap', 'node[type="group"]', event => this.takeLatest(this.tagOf(event)));
-    cy.on('cxttap', 'node[type="group"]', event => this.menu(event, [[`Take out latest ${TAKE_OUT}`, 'arrow-down-to-line', () => this.takeLatest(this.tagOf(event))]]));
+    cy.on('cxttap', 'node[type="group"]', event => this.menu(event, [[t('sidebar.takeOutLatest', { count: TAKE_OUT }), 'arrow-down-to-line', () => this.takeLatest(this.tagOf(event))]]));
     this.registerEvent(this.app.workspace.on('css-change', () => this.recolor()));
     // Obsidian's accent color setting only rewrites the accent variables on <body>, with no css-change, so <body> is watched too.
     const accentWatch = new MutationObserver(() => this.recolor());
@@ -119,7 +123,6 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
       this.replace(this.cy.getElementById('note:' + oldPath), 'note:' + file.path, { path: file.path });
       this.changed(false);
     }));
-    this.owner.native.link(this);
     this.changed();
   }
 
@@ -146,6 +149,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
 
   onunload(): void {
     this.closed = true;
+    this.labels = [];
     this.owner.native.unlink(this);
     this.cy?.destroy(); this.cy = undefined;
     if (this.owner.native.explorer === this) this.owner.native.explorer = undefined;
@@ -153,18 +157,32 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.contentEl.empty();
   }
 
+  private drawLegend() {
+    if (!this.legend) return;
+    return renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
+      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+  }
+
   // A dictionary or note edit, or a settings change such as the tag color: cards that lost their place go, groups keep the notes
   // that still carry their tag, and every card says what is true now. Nothing moves.
   draw(operation: string): void {
     this.syncModes();
     const cy = this.cy, model = this.owner.model;
-    if (this.legend) renderDepthLegend(this.legend, this.owner.settings, { color: (depth, color) => { void this.owner.setPaletteColor(depth, color); },
-      choose: key => { void this.owner.choosePalette(key); }, save: () => this.owner.promptSavePalette() });
+    this.drawLegend();
     if ((operation !== 'refresh' && operation !== 'settings') || !cy || !model) return;
     const pruned = pruneCanvas(model, path => this.exists(path), this.onCanvas());
     for (const id of [...pruned.tags.map(tag => 'tag:' + tag), ...pruned.notes.map(path => 'note:' + path), ...pruned.groups.map(tag => 'group:' + tag)]) cy.getElementById(id).remove();
     // Redrawing every card ends in changed(), which refills the groups.
     this.recolor();
+  }
+
+  refreshLocale(): void {
+    for (const update of this.labels) update();
+    this.syncModes();
+    this.drawLegend();
+    this.syncStartText();
+    this.cy?.nodes().forEach(node => this.redraw(node));
+    this.changed(false);
   }
 
   // The sidebar's tag is selected on the canvas when its card is there; the start screen offers to continue from it.
@@ -213,12 +231,22 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
   // The start screen fills an empty canvas: a search, the sidebar's tag to continue from, and the root tags.
   private buildStart(root: HTMLElement) {
     const start = this.start = root.createDiv('tag-ontology-explorer-start');
-    start.createEl('h3', { text: 'Where do you want to start?' });
-    start.createEl('p', { text: 'Search for a tag or pick a root tag.', cls: 'tag-ontology-muted' });
-    const search = start.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Search tags or aliases' } });
+    this.startHeading = start.createEl('h3');
+    this.startHint = start.createEl('p', { cls: 'tag-ontology-muted' });
+    const search = this.startSearch = start.createEl('input', { type: 'search' });
+    this.syncStartText();
     new TagSuggest(this.app, search, query => (this.owner.model?.suggest(query) ?? []).filter(item => this.owner.model?.entries.has(item.tag)), tag => this.addTag(tag));
     this.continueChip = start.createDiv('tag-ontology-tags');
     start.createDiv('tag-ontology-explorer-roots');
+  }
+
+  private syncStartText() {
+    this.startHeading?.setText(t('graph.startHeading'));
+    this.startHint?.setText(t('graph.startHint'));
+    if (!this.startSearch) return;
+    const placeholder = t('sidebar.searchPlaceholder');
+    this.startSearch.setAttribute('placeholder', placeholder);
+    this.startSearch.setAttribute('aria-label', placeholder);
   }
 
   private updateStart() {
@@ -227,12 +255,12 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     start.hidden = !!this.cy && this.cy.nodes().nonempty();
     this.continueChip.empty();
     const selected = this.owner.native.selectedTag;
-    if (model && selected && model.entries.has(selected)) this.chip(this.continueChip, `Continue from #${selected}`, selected);
+    if (model && selected && model.entries.has(selected)) this.chip(this.continueChip, t('graph.continueFrom', { tag: selected }), selected);
     const roots = start.querySelector<HTMLElement>('.tag-ontology-explorer-roots');
     if (!roots) return;
     roots.empty();
     if (!model) return;
-    roots.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
+    roots.createDiv({ text: t('graph.startRoots'), cls: 'tag-ontology-muted' });
     const list = roots.createDiv('tag-ontology-tags');
     for (const tag of model.roots) this.chip(list, '#' + tag, tag);
   }
@@ -252,7 +280,11 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     this.updateStart();
     this.syncRecenter();
     const on = this.onCanvas(), status = this.status;
-    if (status) status.textContent = `${plural(on.tags.size, 'tag')} · ${plural(on.notes.size, 'note')} · ${plural(on.groups.size, 'group')}`;
+    if (status) status.textContent = t('explorer.statusLine', {
+      tags: tPlural('explorer.countTags', on.tags.size),
+      notes: tPlural('sidebar.suggestionNotes', on.notes.size),
+      groups: tPlural('explorer.countGroups', on.groups.size),
+    });
   }
 
   // Every group holds its tag's notes that aren't cards on the canvas (groupPaths). A group left empty goes; the sidebar draws
@@ -335,7 +367,7 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const node = event.target as NodeSingular, menu = new Menu();
     for (const [title, icon, action] of items) menu.addItem(item => item.setTitle(title).setIcon(icon).onClick(action));
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => this.remove(node)));
+    menu.addItem(item => item.setTitle(t('explorer.removeFromCanvas')).setIcon('x').onClick(() => this.remove(node)));
     menu.showAtMouseEvent(event.originalEvent);
   }
 
@@ -393,18 +425,21 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     const model = this.owner.model, node = event.target as NodeSingular;
     if (!model) return;
     const around = searchAround(model, node.data('tag') as string, this.onCanvas()), menu = new Menu();
-    const items: [Expand, string, string][] = [['children', 'Expand children', 'git-branch'], ['parents', 'Expand parents', 'arrow-up-circle'], ['related', 'Expand related', 'link']];
+    const items: [Expand, string, string][] = [
+      ['children', t('explorer.expandChildren', { count: around.children.length }), 'git-branch'],
+      ['parents', t('explorer.expandParents', { count: around.parents.length }), 'arrow-up-circle'],
+      ['related', t('explorer.expandRelated', { count: around.related.length }), 'link'],
+    ];
     for (const [kind, title, icon] of items) {
-      const n = around[kind].length;
-      if (n) menu.addItem(item => item.setTitle(`${title} (${n})`).setIcon(icon).onClick(() => this.expand(node, kind)));
+      if (around[kind].length) menu.addItem(item => item.setTitle(title).setIcon(icon).onClick(() => this.expand(node, kind)));
     }
     const notes = around.notes.length;
     if (notes) {
       menu.addSeparator();
-      menu.addItem(item => item.setTitle(`Show notes (${notes})`).setIcon('file-text').onClick(() => this.showNotes(node)));
+      menu.addItem(item => item.setTitle(t('explorer.showNotes', { count: notes })).setIcon('file-text').onClick(() => this.showNotes(node)));
     }
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Remove from canvas').setIcon('x').onClick(() => this.remove(node)));
+    menu.addItem(item => item.setTitle(t('explorer.removeFromCanvas')).setIcon('x').onClick(() => this.remove(node)));
     menu.showAtMouseEvent(event.originalEvent);
   }
 
@@ -429,18 +464,18 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     }
     const color = this.owner.settings.customColors ? this.owner.tagColor(tag)
       : entry?.facet ? this.facets!.colors.get(entry.facet)! : this.colors.tag;
-    return { icon: 'tag', color, title: '#' + tag, sub: `${entry?.facet ?? 'concept'} · Tag`, width: WIDTH.tag,
-      rows: [['Direct notes', String(counts.direct)], ['Including descendants', String(counts.rollup)], ['Children', String(model.children.get(tag)?.length ?? 0)]] };
+    return { icon: 'tag', color, title: '#' + tag, sub: t('explorer.cardSub', { detail: entry?.facet ?? t('explorer.conceptFallback'), kind: t('explorer.kindTag') }), width: WIDTH.tag,
+      rows: [[t('explorer.rowDirectNotes'), String(counts.direct)], [t('explorer.rowIncludingDescendants'), String(counts.rollup)], [t('explorer.rowChildren'), String(model.children.get(tag)?.length ?? 0)]] };
   }
 
   private noteCard(path: string): Card {
     const folder = path.split('/').slice(0, -1).join('/') || '/';
-    return { icon: 'note', color: this.colors.muted, title: basename(path), sub: `${folder} · Note`, width: WIDTH.note, rows: [['Modified', relativeTime(this.mtime(path), Date.now())]] };
+    return { icon: 'note', color: this.colors.muted, title: basename(path), sub: t('explorer.cardSub', { detail: folder, kind: t('explorer.kindNote') }), width: WIDTH.note, rows: [[t('explorer.rowModified'), relativeTime(this.mtime(path), Date.now())]] };
   }
 
   private groupCard(tag: string, notes: Dated[]): Card {
-    return { icon: 'group', color: this.colors.accent, title: plural(notes.length, 'note'), sub: `#${tag} · Group`, width: WIDTH.group, stacked: true,
-      rows: [['Latest', relativeTime(notes[0]?.mtime ?? 0, Date.now())]] };
+    return { icon: 'group', color: this.colors.accent, title: tPlural('sidebar.suggestionNotes', notes.length), sub: t('explorer.cardSub', { detail: '#' + tag, kind: t('explorer.kindGroup') }), width: WIDTH.group, stacked: true,
+      rows: [[t('explorer.rowLatest'), relativeTime(notes[0]?.mtime ?? 0, Date.now())]] };
   }
 
   private cardOf(node: NodeSingular): Card | undefined {
@@ -504,10 +539,12 @@ export class ExplorerCanvas extends Component implements LinkedGraph, ExplorerPa
     ];
   }
 
-  private button(parent: HTMLElement, icon: string, label: string, action: () => void, placement: 'right' | 'top' = 'right') {
+  private button(parent: HTMLElement, icon: string, label: () => string, action: () => void, placement: 'right' | 'top' = 'right') {
     const button = parent.createEl('button', { cls: 'clickable-icon tag-ontology-icon' });
     setIcon(button, icon);
-    setTooltip(button, label, { placement });
+    const sync = () => setTooltip(button, label(), { placement });
+    sync();
+    this.labels.push(sync);
     button.addEventListener('click', action);
     return button;
   }

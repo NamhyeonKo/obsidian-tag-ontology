@@ -10,6 +10,7 @@ import * as mindmapLayout from '../src/mindmap-layout.ts';
 import type { MindMapData, MindMapStart } from '../src/mindmap.ts';
 import * as checkModule from '../src/check.ts';
 import * as explorerLayout from '../src/explorer-layout.ts';
+import * as i18n from '../src/i18n/index.ts';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings.ts';
 import type { NativeData } from '../src/layer.ts';
 import * as coreModule from 'tag-ontology';
@@ -44,7 +45,7 @@ class Element {
   all(): Element[] { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 class File {}
-type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
+type Controller = { readonly savedExpanded: string[]; attach(): void; refresh(redraw?: boolean): void; refreshLocale(): void; recolor(): void; renderPanel(): void; destroy(): void; mount(el: Element): void;
   graphMode(leaf: object): string; switchMode(leaf: object, mode: string): Promise<void>; activate(leaf: object | null): void;
   link(view: LinkedGraph): void; unlink(view: LinkedGraph): void; clickTag(tag: string, double: boolean, leaf?: object): void; expandAll(): void; collapseAll(): void;
   showNote(path: string): void; showGroup(tag: string, source?: ExplorerPanel): void; noteRenamed(from: string, to: string): void; explorer?: ExplorerPanel };
@@ -86,7 +87,7 @@ let layoutFails = 0;
 
 class TestMindMap {
   el = new Element();
-  data?: MindMapData; destroyed = false; fitted = 0; focused?: string;
+  data?: MindMapData; destroyed = false; fitted = 0; refreshed = 0; focused?: string;
   start: MindMapStart;
   select: (tag: string) => void; toggle: (tag: string) => void;
   constructor(_parent: unknown, select: (tag: string) => void, toggle: (tag: string) => void, start: MindMapStart) { this.start = start; this.select = select; this.toggle = toggle; mindmaps.push(this); }
@@ -95,6 +96,7 @@ class TestMindMap {
   paint(selected?: string, bright?: ReadonlySet<string>) { if (this.data) { this.data.selected = selected; this.data.bright = bright; } }
   fit() { this.fitted++; }
   focusOn(id: string) { this.focused = id; }
+  refreshLocale() { this.refreshed++; }
   destroy() { this.destroyed = true; }
 }
 const mindmaps: TestMindMap[] = [];
@@ -162,7 +164,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       return new SourceTextModule(code.code, { context });
     }
     const exports: Record<string, unknown> = specifier === 'obsidian' ? { ItemView: class {}, Notice: class { constructor(message: string) { notices.push(message); } }, TFile: File, Modal, Menu,
-        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string) => { el.attrs.tooltip = el.attrs['aria-label'] = text; } }
+        setIcon: (el: Element, id: string) => { el.attrs.icon = id; }, setTooltip: (el: Element, text: string, opts?: { placement?: string }) => { el.attrs.tooltip = el.attrs['aria-label'] = text; if (opts?.placement) el.attrs['data-tooltip-position'] = opts.placement; } }
       : specifier === './mindmap.ts' ? { MindMap: TestMindMap }
       : specifier === './graph3d.ts' ? { Graph3DCanvas: Canvas }
       : specifier === './explorer.ts' ? { ExplorerCanvas: Canvas }
@@ -173,6 +175,7 @@ async function setup(settings: Partial<Settings> = {}, sendOnUpdate = true, firs
       : specifier === 'tag-ontology' ? { ...coreModule }
       : specifier === './check.ts' ? { ...checkModule }
       : specifier === './explorer-layout.ts' ? { ...explorerLayout }
+      : specifier === './i18n/index.ts' ? { ...i18n }
       : { ...layer };
     return new SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
@@ -1935,18 +1938,26 @@ test('the depth legend follows the saved palette, survives collapse and disappea
   const legend = () => t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
   assert.equal(legend().hidden, false);
   assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
+  assert.equal(legend().attrs['data-tooltip-position'], 'right');
   const swatches = () => legend().all().filter(el => el.classes.has('tag-ontology-legend-swatch'));
   assert.equal(swatches().length, 8);
   assert.equal(swatches()[0].css['--legend-color'], '#ef4444');
   assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')));
   const picker = swatches()[0].children[0];
   assert.equal(picker.attrs.type, 'color');
-  assert.equal(picker.attrs['aria-label'], 'Change root · 0 color');
+  assert.equal(picker.attrs['aria-label'], undefined, 'swatch picker omits aria-label so Obsidian does not show a blocking black hover tooltip');
+  assert.equal(picker.attrs.title, 'Change root · 0 color', 'swatch picker preserves native Chromium title tooltip');
+  picker.events.get('mouseover')!();
+  assert.equal(legend().attrs['aria-label'], undefined, 'hovering a swatch suppresses the parent Obsidian tooltip while title is shown');
+  picker.events.get('mouseout')!();
+  assert.equal(legend().attrs['aria-label'], 'Hierarchy depth colors');
   picker.value = '#112233'; picker.events.get('change')!();
   assert.deepEqual(t.owner.paletteEdits, [[0, '#112233']]);
   assert.ok(legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'editing a swatch reveals the save action');
-  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Root · 0'));
-  assert.ok(legend().all().some(el => el.attrs['aria-label'] === 'Level 7 and deeper'));
+  const rows = () => legend().all().filter(el => el.tag === 'li');
+  assert.ok(rows().every(el => el.attrs['aria-label'] === undefined), 'rows omit aria-label so hovering the depth list shows the legend tooltip');
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Root · 0'));
+  assert.ok(legend().all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Level 7 and deeper'));
   t.owner.settings.expanded = [];
   t.controller.refresh();
   assert.equal(swatches().length, 8);
@@ -1969,7 +1980,7 @@ test('the depth legend expands to match a longer palette', async () => {
   t.controller.attach();
   const legend = t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
   assert.equal(legend.all().filter(el => el.classes.has('tag-ontology-legend-swatch')).length, 12);
-  assert.ok(legend.all().some(el => el.attrs['aria-label'] === 'Level 11 and deeper'));
+  assert.ok(legend.all().some(el => el.classes.has('tag-ontology-sr') && el.text === 'Level 11 and deeper'));
   assert.match(legend.attrs['aria-description'], /Level 11 and deeper use the last color/);
 });
 
@@ -2222,6 +2233,7 @@ test('graph palette picker lists named snapshots and working copy, and save open
   const picker = () => legend().all().find(el => el.classes.has('tag-ontology-legend-palette'))!;
   assert.ok(picker());
   assert.equal(picker().attrs.icon, 'palette');
+  assert.equal(picker().attrs['data-tooltip-position'], 'right');
   assert.equal(picker().text, '');
   assert.equal(picker().attrs['aria-haspopup'], 'menu');
   assert.ok(!legend().all().some(el => el.classes.has('tag-ontology-legend-save')), 'presets hide the save icon');
@@ -2248,6 +2260,7 @@ test('graph palette picker lists named snapshots and working copy, and save open
   assert.equal(t.owner.settings.hierarchyPalette[0], '#654321');
   const save = legend().all().find(el => el.classes.has('tag-ontology-legend-save'))!;
   assert.equal(save.attrs.icon, 'bookmark-plus');
+  assert.equal(save.attrs['data-tooltip-position'], 'right');
   assert.equal(save.text, '');
   assert.match(picker().attrs['aria-label'], /unsaved/);
   t.click('Save palette as…'); assert.equal(t.owner.paletteDialogs, 2);
@@ -2496,4 +2509,147 @@ test('attach and recolor refresh 2D renderer CSS colors safely, in order, and de
   t.controller.destroy();
   t.controller.recolor();
   assert.equal(secondCalls, 2, 'detached sessions ignore recolor');
+});
+
+test('refreshLocale updates sidebar labels, preserves inspect details state, translates tag errors, and notifies linked views', async () => {
+  const t = await setup();
+  const linked = {
+    refreshed: 0,
+    has: () => true,
+    draw() {},
+    paint() {},
+    focusOn() {},
+    refreshLocale() { this.refreshed++; },
+  };
+  t.controller.link(linked as unknown as LinkedGraph);
+  try {
+    t.controller.clickTag('ml', false);
+    const details = t.sidebar.all().filter(el => el.tag === 'details');
+    assert.ok(details.length >= 2);
+    // Collapse the Parents details section before switching language.
+    details[0]!.open = false;
+    details[0]!.events.get('toggle')?.();
+
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    const searchInput = t.sidebar.all().find(el => el.events.has('keydown'))!;
+    assert.equal(searchInput.attrs.placeholder, '태그 또는 별칭 검색');
+    assert.equal(linked.refreshed, 1);
+    const updatedDetails = t.sidebar.all().filter(el => el.tag === 'details');
+    assert.equal(updatedDetails[0]!.open, false, 'collapsed details section stays collapsed across locale switches');
+    assert.match(updatedDetails[0]!.children[0]!.text, /^상위 태그/);
+
+    // Edit form and kebab/name validation errors localize too.
+    t.click('태그 편집');
+    const nameInput = t.sidebar.all().find(el => el.tag === 'input' && el.attrs['aria-label'] === '이름')!;
+    nameInput.value = 'has space';
+    nameInput.events.get('input')?.();
+    const err = t.sidebar.all().find(el => el.classes.has('tag-ontology-error'));
+    assert.equal(err?.text, i18n.CATALOGS.ko['sidebar.errSpaces']);
+  } finally {
+    i18n.setLocale('en');
+  }
+});
+
+test('refreshLocale updates nav tooltips, group relative times, ChoiceModal text, deduplicates embedded 3D canvas, and keeps alias input unfocused', async () => {
+  const t = await setup();
+  t.controller.attach();
+  const now = Date.now();
+  t.controller.explorer = {
+    groupNotes: tag => tag === 'ml' ? [0, 1, 2].map(d => ({ path: `N${d}.md`, mtime: now - d * 864e5 })) : undefined,
+    takeOut() {},
+  };
+  await t.controller.switchMode(t.leaves[0], '3d');
+  const three = t.canvases[0];
+  let canvasRefreshed = 0;
+  Object.assign(three, {
+    has: () => false,
+    draw() {},
+    paint() {},
+    focusOn() {},
+    refreshLocale() { canvasRefreshed++; },
+  });
+  t.controller.link(three as unknown as LinkedGraph);
+
+  try {
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    assert.equal(canvasRefreshed, 1, 'embedded and linked Graph3DCanvas refreshes only once');
+    for (const key of ['sidebar.back', 'sidebar.forward', 'sidebar.home', 'sidebar.newTag', 'sidebar.editTag'] as const) {
+      assert.ok(navButton(t, i18n.CATALOGS.ko[key]), `missing localized nav button for ${key}`);
+    }
+
+    t.controller.showGroup('ml');
+    const times = t.sidebar.all().filter(el => el.tag === 'li').map(li => li.all().find(el => el.tag === 'small')!.text);
+    assert.deepEqual(times, ['오늘', '1일 전', '2일 전']);
+    assert.ok(t.sidebar.all().some(el => el.text === '노트 3개 · #ml'));
+
+    t.search('ml');
+    t.click(i18n.CATALOGS.ko['sidebar.editTag']);
+    t.click(i18n.CATALOGS.ko['sidebar.addAlias']);
+    const openAlias = t.sidebar.all().find(el => el.attrs.placeholder === i18n.CATALOGS.ko['sidebar.addAlias'])!;
+    assert.equal(openAlias.focused, true);
+    openAlias.focused = false;
+    i18n.setLocale('en');
+    t.controller.refreshLocale();
+    const rerenderedAlias = t.sidebar.all().find(el => el.attrs.placeholder === i18n.CATALOGS.en['sidebar.addAlias'])!;
+    assert.equal(rerenderedAlias.focused, false);
+
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    type(field(t, i18n.CATALOGS.ko['sidebar.description']), 'edited');
+    t.click(i18n.CATALOGS.ko['sidebar.home']);
+    const modal = t.modals.at(-1)!;
+    assert.equal(modal.titleEl.text, i18n.tPlural('sidebar.unsavedModalTitle', 1, { tag: 'ml' }));
+    const buttons = modal.contentEl.all().filter(el => el.tag === 'button').map(el => el.text);
+    for (const expected of [
+      i18n.CATALOGS.ko['sidebar.keepEditing'],
+      i18n.CATALOGS.ko['common.save'],
+      i18n.CATALOGS.ko['sidebar.discard'],
+    ]) assert.ok(buttons.includes(expected), `missing modal button: ${expected}`);
+  } finally {
+    i18n.setLocale('en');
+  }
+});
+
+test('refreshLocale updates 2D graph overlay toolbar, legend, mode bar, context menu, and status text', async () => {
+  const t = await setup({ customColors: true, hierarchyColors: true });
+  t.controller.attach();
+  try {
+    i18n.setLocale('ko');
+    t.controller.refreshLocale();
+    const legend = t.contentEl.all().find(el => el.classes.has('tag-ontology-legend'))!;
+    assert.equal(legend.attrs['aria-label'], '계층 깊이 색상');
+    assert.equal(legend.all().find(el => el.classes.has('tag-ontology-legend-palette'))!.attrs['aria-label'], '팔레트: 기본값');
+    assert.equal(legend.all().find(el => el.classes.has('tag-ontology-legend-picker'))!.attrs.title, '루트 · 0 색상 변경');
+    assert.ok(legend.all().some(el => el.classes.has('tag-ontology-sr') && el.text === '루트 · 0'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '모두 접기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '모두 펼치기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '화면에 맞추기'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '노트: 표시됨'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '연관 태그: 표시됨'));
+    assert.ok(t.contentEl.all().some(el => el.attrs['aria-label'] === '사전 검사'));
+    const modeButtons = t.contentEl.all().find(el => el.classes.has('tag-ontology-layouts'))!.children;
+    const modeLabels = modeButtons.map(el => el.attrs['aria-label']);
+    assert.deepEqual(modeLabels, [
+      '레이아웃: Force', '레이아웃: 마인드맵', '레이아웃: 세로 트리', '레이아웃: 가로 트리', '레이아웃: 3D', '레이아웃: 온톨로지 탐색기',
+    ]);
+    modeButtons[0]!.events.get('contextmenu')!({ preventDefault() {} });
+    assert.equal(t.menus.at(-1)!.items[0]!.title, '새 탭에서 열기');
+    const status = t.contentEl.all().find(el => el.classes.has('tag-ontology-status'))!;
+    assert.match((status as unknown as { textContent: string }).textContent, /태그 \d+ \/ \d+개 · 노트 \d+개 · 루트 \d+개/);
+
+    const mind = await setup({ layout: 'mindmap', customColors: true, hierarchyColors: true });
+    mind.controller.attach();
+    const map = mindmaps.at(-1)!;
+    i18n.setLocale('ko');
+    mind.controller.refreshLocale();
+    assert.equal(map.refreshed, 1);
+    assert.ok(mind.contentEl.all().some(el => el.attrs['aria-label'] === '트리 레이아웃에서는 노트를 숨깁니다'));
+    assert.ok(mind.contentEl.all().some(el => el.attrs['aria-label'] === '시작 태그 변경'));
+    const mindStatus = mind.contentEl.all().find(el => el.classes.has('tag-ontology-status'))!;
+    assert.equal((mindStatus as unknown as { textContent: string }).textContent, '가지를 탐색할 시작 태그를 선택하세요.');
+  } finally {
+    i18n.setLocale('en');
+  }
 });

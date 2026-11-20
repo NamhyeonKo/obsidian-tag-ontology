@@ -13,6 +13,7 @@ const result = await build({
   alias: { 'three/webgpu': './src/webgpu-stub.ts', 'ngraph.forcelayout': './src/ngraph-stub.ts' },
   format: 'cjs',
   target: 'es2021',
+  charset: 'utf8',
   outfile: 'main.js',
   sourcemap: false,
   minify: true,

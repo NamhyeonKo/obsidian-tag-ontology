@@ -1,5 +1,7 @@
 import { DICTIONARY_LOCATIONS } from 'tag-ontology';
 import { PALETTE, PALETTE_PRESETS, paletteFor, samePalette } from './colors.ts';
+import { isSupportedLocale } from './i18n/index.ts';
+import type { LanguageSetting } from './i18n/types.ts';
 
 export interface SavedPalette { name: string; colors: string[] }
 
@@ -32,14 +34,24 @@ export interface Settings {
   forces3d: Forces;
   // When on, dragging a 3D node keeps the simulation active so linked nodes follow; when off, only the grabbed node moves.
   dragTension3d: boolean;
+  // Active UI language ('auto' follows Obsidian's configured language).
+  language: LanguageSetting;
+  // 3D gear panel Filters & Display settings (stored separately from Obsidian's 2D graph.json).
+  filters3d: Filters3D;
+  display3d: Display3D;
 }
+export interface Filters3D { search: string; attachments: boolean; existingOnly: boolean; orphans: boolean }
+export interface Display3D { arrows: boolean; textFadeThreshold: number; nodeSize: number; linkThickness: number }
 export interface Forces { center: number; repel: number; link: number; distance: number }
 export const LABEL_SIZE = { min: 0.5, max: 2, step: 0.1 };
-export const FORCES: Record<keyof Forces, { name: string; min: number; max: number; step: number; value: number }> = {
-  center: { name: 'Center force', min: 0, max: 1, step: 0.01, value: 0.52 },
-  repel: { name: 'Repel force', min: 0, max: 20, step: 0.1, value: 10 },
-  link: { name: 'Link force', min: 0, max: 1, step: 0.01, value: 1 },
-  distance: { name: 'Link distance', min: 30, max: 500, step: 1, value: 250 },
+export const TEXT_FADE = { min: -3, max: 3, step: 0.1, value: 0 } as const;
+export const NODE_SIZE = { min: 0.1, max: 5, step: 0.1, value: 0.8 } as const;
+export const LINK_THICKNESS = { min: 0.1, max: 5, step: 0.1, value: 0.8 } as const;
+export const FORCES: Record<keyof Forces, { min: number; max: number; step: number; value: number }> = {
+  center: { min: 0, max: 1, step: 0.01, value: 0.52 },
+  repel: { min: 0, max: 20, step: 0.1, value: 10 },
+  link: { min: 0, max: 1, step: 0.01, value: 1 },
+  distance: { min: 30, max: 500, step: 1, value: 250 },
 };
 export const TOW_FOLDER_DICTIONARY = DICTIONARY_LOCATIONS[0];
 export const TOW_DICTIONARY = DICTIONARY_LOCATIONS[1];
@@ -55,6 +67,9 @@ export const DEFAULT_SETTINGS: Settings = {
   perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
   forces3d: { center: FORCES.center.value, repel: FORCES.repel.value, link: FORCES.link.value, distance: FORCES.distance.value },
   dragTension3d: true,
+  language: 'auto',
+  filters3d: { search: '', attachments: false, existingOnly: true, orphans: true },
+  display3d: { arrows: false, textFadeThreshold: TEXT_FADE.value, nodeSize: NODE_SIZE.value, linkThickness: LINK_THICKNESS.value },
 };
 
 export function isValidDictionaryPath(path: string, configDir: string): boolean {
@@ -74,19 +89,43 @@ export function isPaletteName(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 80 && [...value].every(char => char.charCodeAt(0) >= 0x20 && char.charCodeAt(0) !== 0x7f);
 }
 
+const recordOf = (raw: unknown): Record<string, unknown> =>
+  raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+
+const numberIn = (n: unknown, { min, max }: { min: number; max: number }, fallback: number): number =>
+  typeof n === 'number' && n >= min && n <= max ? n : fallback;
+
 function forces(raw: unknown): Forces {
-  const value = (typeof raw === 'object' && raw ? raw : {}) as Record<string, unknown>;
+  const value = recordOf(raw);
   const out = { ...DEFAULT_SETTINGS.forces3d };
   for (const key of Object.keys(FORCES) as (keyof Forces)[]) {
-    const n = value[key], { min, max } = FORCES[key];
-    if (typeof n === 'number' && n >= min && n <= max) out[key] = n;
+    out[key] = numberIn(value[key], FORCES[key], out[key]);
   }
   return out;
 }
 
+function sanitizeFilters3d(raw: unknown): Filters3D {
+  const value = recordOf(raw), defaults = DEFAULT_SETTINGS.filters3d;
+  return {
+    search: typeof value.search === 'string' ? value.search.slice(0, 500) : defaults.search,
+    attachments: typeof value.attachments === 'boolean' ? value.attachments : defaults.attachments,
+    existingOnly: typeof value.existingOnly === 'boolean' ? value.existingOnly : defaults.existingOnly,
+    orphans: typeof value.orphans === 'boolean' ? value.orphans : defaults.orphans,
+  };
+}
+
+function sanitizeDisplay3d(raw: unknown): Display3D {
+  const value = recordOf(raw), defaults = DEFAULT_SETTINGS.display3d;
+  return {
+    arrows: typeof value.arrows === 'boolean' ? value.arrows : defaults.arrows,
+    textFadeThreshold: numberIn(value.textFadeThreshold, TEXT_FADE, defaults.textFadeThreshold),
+    nodeSize: numberIn(value.nodeSize, NODE_SIZE, defaults.nodeSize),
+    linkThickness: numberIn(value.linkThickness, LINK_THICKNESS, defaults.linkThickness),
+  };
+}
+
 export function sanitizeSettings(raw: unknown, configDir: string): Settings {
-  const value = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-    ? raw as Record<string, unknown> : {};
+  const value = recordOf(raw);
   const flag = (key: 'showNotes' | 'showRelated' | 'customColors' | 'hierarchyColors' | 'titleAccent' | 'focus' | 'focusDescendants' | 'focusNotes' | 'enable3d' | 'enableExplorer' | 'enableTree' | 'enableTreeHorizontal' | 'perspectiveLabels' | 'kebabNames' | 'dragTension3d') => typeof value[key] === 'boolean' ? value[key] : DEFAULT_SETTINGS[key];
   // Up to 0.7.6 the tag color started as Obsidian's default accent, #8b6cef, so in a file from then (every one has highlightColor,
   // which came in the same release) that value follows the accent now. Picked later, the same color stays.
@@ -137,10 +176,13 @@ export function sanitizeSettings(raw: unknown, configDir: string): Settings {
     enableExplorer: flag('enableExplorer'), enableTree: flag('enableTree'), enableTreeHorizontal: flag('enableTreeHorizontal'),
     kebabNames: flag('kebabNames'),
     perspectiveLabels: flag('perspectiveLabels'),
-    labelSize: typeof value.labelSize === 'number' && value.labelSize >= LABEL_SIZE.min && value.labelSize <= LABEL_SIZE.max ? value.labelSize : DEFAULT_SETTINGS.labelSize,
+    labelSize: numberIn(value.labelSize, LABEL_SIZE, DEFAULT_SETTINGS.labelSize),
     locationNoticeShown: typeof value.locationNoticeShown === 'boolean' ? value.locationNoticeShown : DEFAULT_SETTINGS.locationNoticeShown,
     forces3d: forces(value.forces3d),
     dragTension3d: flag('dragTension3d'),
+    language: value.language === 'auto' || isSupportedLocale(value.language) ? value.language : DEFAULT_SETTINGS.language,
+    filters3d: sanitizeFilters3d(value.filters3d),
+    display3d: sanitizeDisplay3d(value.display3d),
   };
 }
 

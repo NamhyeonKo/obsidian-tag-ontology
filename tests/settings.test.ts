@@ -24,7 +24,9 @@ test('sanitizes saved settings to the supported fields', () => {
     dictionaryPath: '03_Resources/tags.json', dictionaryPathExplicit: true, layout: 'tree', expanded: ['a', 'b'], showNotes: false, showRelated: true,
     customColors: false, hierarchyColors: false, hierarchyPalette: [...DEFAULT_SETTINGS.hierarchyPalette], customHierarchyPalette: [], hierarchyPalettePreset: '', savedHierarchyPalettes: [], workingPaletteSource: '', tagColor: '', titleAccent: true, tagListStyle: 'chips', focus: false, focusDescendants: true, focusNotes: true, enable3d: true,
     perspectiveLabels: true, labelSize: 0.8, locationNoticeShown: false, kebabNames: false, enableExplorer: true, enableTree: true, enableTreeHorizontal: true,
-    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 }, dragTension3d: true,
+    forces3d: { center: 0.52, repel: 10, link: 1, distance: 250 }, dragTension3d: true, language: 'auto',
+    filters3d: { search: '', attachments: false, existingOnly: true, orphans: true },
+    display3d: { arrows: false, textFadeThreshold: 0, nodeSize: 0.8, linkThickness: 0.8 },
   });
   // 0.7.6 highlight settings are gone; a file that still has them loads without them.
   assert.deepEqual(sanitizeSettings({ highlightColor: '#000000', highlightSelected: false, highlightDescendants: true, highlightConnected: 'yes' }, '.obsidian'), DEFAULT_SETTINGS);
@@ -163,4 +165,42 @@ test('saved custom palettes and their explicit selection are validated independe
   assert.equal(sanitizeSettings({ hierarchyPalettePreset: 'missing' }, '.obsidian').hierarchyPalettePreset, '');
   assert.deepEqual(sanitizeSettings({ customHierarchyPalette: ['bad'] }, '.obsidian').customHierarchyPalette, []);
   assert.deepEqual(sanitizeSettings({ hierarchyPalette: Array(2) }, '.obsidian').hierarchyPalette, DEFAULT_SETTINGS.hierarchyPalette);
+});
+
+test('sanitizes language setting to auto or a supported locale', () => {
+  assert.equal(DEFAULT_SETTINGS.language, 'auto');
+  assert.equal(sanitizeSettings({}, '.obsidian').language, 'auto');
+  assert.equal(sanitizeSettings({ language: 'ko' }, '.obsidian').language, 'ko');
+  assert.equal(sanitizeSettings({ language: 'zh-TW' }, '.obsidian').language, 'zh-TW');
+  assert.equal(sanitizeSettings({ language: 'pt-BR' }, '.obsidian').language, 'pt-BR');
+  assert.equal(sanitizeSettings({ language: 'klingon' }, '.obsidian').language, 'auto');
+  assert.equal(sanitizeSettings({ language: 123 }, '.obsidian').language, 'auto');
+});
+
+test('sanitizes 3D filters and display settings with bounds and backwards compatibility', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.filters3d, { search: '', attachments: false, existingOnly: true, orphans: true });
+  assert.deepEqual(DEFAULT_SETTINGS.display3d, { arrows: false, textFadeThreshold: 0, nodeSize: 0.8, linkThickness: 0.8 });
+  assert.deepEqual(
+    sanitizeSettings({
+      filters3d: { search: 'path:notes -draft', attachments: true, existingOnly: false, orphans: false },
+      display3d: { arrows: true, textFadeThreshold: -2.5, nodeSize: 2.2, linkThickness: 3.5 },
+    }, '.obsidian'),
+    {
+      ...DEFAULT_SETTINGS,
+      filters3d: { search: 'path:notes -draft', attachments: true, existingOnly: false, orphans: false },
+      display3d: { arrows: true, textFadeThreshold: -2.5, nodeSize: 2.2, linkThickness: 3.5 },
+    },
+  );
+  // Out-of-range and wrong-type values fall back to defaults per field.
+  const clamped = sanitizeSettings({
+    filters3d: { search: 42, attachments: 'yes', existingOnly: null, orphans: 0 },
+    display3d: { arrows: 'yes', textFadeThreshold: 99, nodeSize: 0, linkThickness: -1 },
+  }, '.obsidian');
+  assert.deepEqual(clamped.filters3d, DEFAULT_SETTINGS.filters3d);
+  assert.deepEqual(clamped.display3d, DEFAULT_SETTINGS.display3d);
+  // Missing or malformed objects (null, arrays, NaN) also fall back safely, and search truncates at 500 chars.
+  const malformed = sanitizeSettings({ filters3d: ['bad'], display3d: { textFadeThreshold: Number.NaN } }, '.obsidian');
+  assert.deepEqual(malformed.filters3d, DEFAULT_SETTINGS.filters3d);
+  assert.deepEqual(malformed.display3d, DEFAULT_SETTINGS.display3d);
+  assert.equal(sanitizeSettings({ filters3d: { search: 'a'.repeat(700) } }, '.obsidian').filters3d.search.length, 500);
 });

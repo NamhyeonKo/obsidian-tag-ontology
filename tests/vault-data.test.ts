@@ -24,3 +24,38 @@ test('a note without tags or links is still a node', () => {
 test('a note linking to itself has no self link', () => {
   assert.deepEqual(vaultData([{ path: 'A.md', tags: [], links: ['A.md'] }]).nodes['A.md'].links, {});
 });
+
+test('includes attachment nodes and links when includeAttachments is enabled', () => {
+  const { nodes } = vaultData(
+    [{ path: 'A.md', tags: [], links: ['img.png', 'Missing.md'] }],
+    { includeAttachments: true, attachments: ['img.png', 'unused.pdf'] },
+  );
+  assert.deepEqual(nodes['A.md'], { type: '', links: { 'img.png': true } });
+  assert.deepEqual(nodes['img.png'], { type: 'attachment', links: {} });
+  assert.deepEqual(nodes['unused.pdf'], { type: 'attachment', links: {} });
+  assert.equal(nodes['Missing.md'], undefined);
+});
+
+test('includes unresolved link targets when includeUnresolved is enabled', () => {
+  const { nodes } = vaultData(
+    [{ path: 'A.md', tags: [], links: [], unresolved: ['Future Note'] }],
+    { includeUnresolved: true },
+  );
+  assert.deepEqual(nodes['A.md'], { type: '', links: { 'Future Note': true } });
+  assert.deepEqual(nodes['Future Note'], { type: 'unresolved', links: {} });
+});
+
+test('handles Object.prototype key names and ignores __proto__ in unresolved and attachment targets', () => {
+  const { nodes } = vaultData(
+    [{ path: 'A.md', tags: [], links: ['valueOf'], unresolved: ['constructor', 'toString', '__proto__'] }],
+    { includeAttachments: true, attachments: ['valueOf'], includeUnresolved: true },
+  );
+  assert.equal(Object.hasOwn(nodes, 'constructor'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'constructor')?.value?.type, 'unresolved');
+  assert.equal(Object.hasOwn(nodes, 'toString'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'toString')?.value?.type, 'unresolved');
+  assert.equal(Object.hasOwn(nodes, 'valueOf'), true);
+  assert.equal(Object.getOwnPropertyDescriptor(nodes, 'valueOf')?.value?.type, 'attachment');
+  assert.equal(Object.hasOwn(nodes, '__proto__'), false);
+  assert.deepEqual(nodes['A.md'].links, { valueOf: true, constructor: true, toString: true });
+});

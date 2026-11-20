@@ -7,7 +7,7 @@
 [![Build](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml/badge.svg)](https://github.com/NamhyeonKo/obsidian-tag-ontology/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md)
+**English** | [한국어](docs/readme/README.ko.md) | [简体中文](docs/readme/README.zh-CN.md) | [繁體中文](docs/readme/README.zh-TW.md) | [日本語](docs/readme/README.ja.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português (Brasil)](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Italiano](docs/readme/README.it.md)
 
 **Link your tags the way you link notes.**
 
@@ -37,7 +37,7 @@ I wanted to manage and explore relationships between concepts separately, while 
 - **Multiple parents and related tags.** Solid arrows go from parent to child. Dashed lines connect related tags.
 - **Four layouts.** Force, **Mind map**, a vertical tree and a horizontal tree. The regular trees retain their visible-hierarchy layout and wrap root trees into rows. Mind map starts its chosen root at level 0 and uses the longest currently open parent path for spacing. Tag colors continue to use the full dictionary depth.
 - **Mind map.** Mind map first asks where to start: search hierarchy tags or choose one of the root suggestions, then explore only that tag’s branch. Use **Change starting tag** (the home button in the bottom row) to return to the picker. Returning to another layout restores its previous expansion; entering Mind map again shows the picker. Select a label for its sidebar details; use its arrow button to expand or collapse its children. Drag the background to pan, scroll to zoom, and use Fit to see the map. Shares the core graph filters and saved expansion state. Shared tags remain visible while another expanded parent reaches them. Notes stay hidden in this layout.
-- **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Switch modes in the graph toolbar. Force, Mind map, both trees, 3D and the ontology explorer share one tab; right-click a mode button to open a separate tab for comparison. Adjust its forces from the gear panel, with a button to restore the defaults. Switching to 3D or the explorer preserves the other canvas; hidden 3D rendering pauses, and closing the graph tab releases its resources.
+- **3D view (beta).** The same hierarchy in three dimensions: orbit around it and click a tag to fly to it. Switch modes in the graph toolbar. Force, Mind map, both trees, 3D and the ontology explorer share one tab; right-click a mode button to open a separate tab for comparison. Adjust **Filters** (search, attachments, existing files only, orphans), **Display** (note-link arrows, text fade threshold, node size, link thickness, perspective and label size) and **Forces** (drag tension and force sliders) from its 3-section gear panel, with per-section and panel-wide restore defaults. Switching to 3D or the explorer preserves the other canvas; hidden 3D rendering pauses, and closing the graph tab releases its resources.
 - **Ontology explorer (beta).** Start from one tag on an empty canvas and bring out its children, parents, related tags and notes with a right-click, as object cards, in the style of Palantir's ontology graphs.
 - **A sidebar tab.** Search by tag name or alias, read a tag's details and run the dictionary check in a tab next to Files and Search. Choosing a tag there zooms the open graph in on it and centers it.
 - **Dictionary check.** Lists tags used in your vault but missing from the dictionary, with similar dictionary names; dictionary tags no note uses yet; notes that write a tag as an alias or in another case; and notes that carry a broader tag next to a narrower one. It only reports and never changes anything.
@@ -45,6 +45,7 @@ I wanted to manage and explore relationships between concepts separately, while 
 - **Hierarchy depth colors (optional).** Select **Colors → Color mode → Hierarchy depth** to color tags by the longest root-to-tag path in the full dictionary. Filtering and collapsing keep colors stable, and deeper levels use the final palette color. Default and Pastel use the same red→orange→yellow→green→cyan→blue→violet→pink order from the [Tailwind CSS 3.4 color table](https://v3.tailwindcss.com/docs/customizing-colors), using 500 and 200 shades respectively. They resample across the full range when levels change; Rainbow, Warm and single-hue gradient examples are also available. Edit numbered colors horizontally and add/remove levels. The compact graph legend offers palette selection, color editing and **Save as…**. Edits there or in settings become a shared **Working copy**, automatically kept across restarts. **Save as…** adds an independent named snapshot under **My palettes**; switching examples or saved palettes leaves the working copy available. Saved names are unique and never overwrite another palette. **My palettes → Manage…** lists saved palettes with confirmed deletion; deleting the active palette selects Default and keeps the working copy. Earlier Custom palettes are retained as **My colors**, and existing active colors are preserved when examples change. Colors apply to 2D, 3D, explorer cards and the sidebar. Inspired by [Colored Tags](https://github.com/pfrankov/obsidian-colored-tags).
 - **Focus (optional).** Keep the selected tag and the tags next to it (parents, children and related tags) bright while the rest fades. Options add every tag below it and its notes.
 - **Remembers your view.** Expanded tags and the Notes/Related toggles are saved and shared by every graph tab.
+- **Localized interface (11 languages).** Follows Obsidian's language automatically by default, or switch manually under **General → Language** across English, 한국어, 日本語, 简体中文, 繁體中文, Español, Français, Deutsch, Português (Brasil), Русский, and Italiano. Settings, the sidebar dictionary, 3D controls, depth legends, and graph views update live.
 
 | Sidebar tab | Dictionary check |
 | --- | --- |
@@ -175,8 +176,11 @@ The **3D** mode button on the graph toolbar, or **Open 3D graph**, switches the 
 - Drag a node to move it on its own. Let go and it springs back to its place, as in the tree layouts. The layout settles after the view opens and after expanding, then holds still.
 - Click a tag to select it and fly to it, and double-click it to expand or collapse it. Click a note to open it. Choosing a tag in the sidebar flies to it too. A click on a tag that is not in the dictionary does nothing here; in 2D it opens search.
 - The toolbar has Collapse all, Expand all, Fit, Notes, Related, Dictionary check and the mode buttons. Fit frames most of the visible nodes so the graph fills the view; a few distant stragglers can sit outside it.
-- The gear at the top right opens the graph settings. Under **Labels**, **Perspective labels** (on by default) lets labels grow as you come closer; off, they keep one size at any distance. **Label size** (0.5 to 2, 0.8 by default) makes every label bigger or smaller. They apply to every 3D tab. Under **Forces**, **Center force**, **Repel force**, **Link force** and **Link distance** use the 2D graph's ranges and defaults, and moving one rearranges the layout. **Restore defaults** sets all four back. A stronger center or weaker repel gives a more compact graph. These 3D settings are saved separately from 2D.
-- The 3D view takes its notes and tags from the vault, so the core graph's filters, color groups and attachments don't apply to it.
+- The gear button at the top right opens the 3D settings panel (**Filters**, **Display**, **Forces**), mirroring Obsidian's 2D graph panel. Its header includes a **Restore default settings** button for all sections, each section has its own **Restore defaults** button, and changes sync across every open 3D tab.
+  - **Filters**: search input supporting `path:`, `file:`, `tag:`, `-` negation and quoted phrases; **Attachments** (off by default); **Existing files only** (on by default); and **Orphans** (on by default).
+  - **Display**: **Arrows** on note links (off by default; hierarchy links always show arrows), **Text fade threshold**, **Node size**, **Link thickness**, **Perspective labels** (on by default) and **Label size** (`0.5` to `2`, `0.8` by default).
+  - **Forces**: **Drag tension** (on by default — keep linked nodes pulled while dragging a node; off moves only the dragged node), **Center force**, **Repel force**, **Link force** and **Link distance** using the 2D graph's ranges and defaults. Moving a force slider reheats the simulation.
+- The 3D view builds its notes, tags, attachments and unresolved links directly from the vault, and saves its gear settings separately from the 2D core graph.
 - If the 3D view is slow or you don't use it, turn off **Enable 3D view (beta)** in the settings. Its mode button and command go away, and the 2D graph is unchanged.
 
 ### Ontology explorer (beta)
@@ -204,10 +208,12 @@ The **Ontology explorer** mode button on the graph toolbar, or **Open ontology e
 
 ### Settings
 
-Settings use the same section and item order on Obsidian 1.13+ and earlier versions. Single color and Hierarchy depth modes show color options; palette controls appear in Hierarchy depth mode. Focus options appear when focus is enabled.
+Settings use the same section and item order on Obsidian 1.13+ and earlier versions: **General**, **Dictionary**, **Colors**, **Sidebar**, **Focus** and **Additional views**. Single color and Hierarchy depth modes show color options; palette controls appear in Hierarchy depth mode. Focus options appear when focus is enabled.
 
 | Setting | Description |
 | --- | --- |
+| **General** | |
+| Language | Follow Obsidian's language (`Automatic (follow Obsidian)`, default) or pick one of the 11 supported languages for plugin settings, the sidebar dictionary, 3D controls and graph views. Command names and already-open tab titles update after restarting Obsidian. |
 | **Dictionary** | |
 | Dictionary path | Vault-relative path to a `.json` file. Leave it empty to find the dictionary automatically: `tow/tag-dictionary.json`, then `.tow/tag-dictionary.json`, then `Tag-Dictionary.json`; when none exists, `tow/tag-dictionary.json`. A path you enter is always used. The field saves when you press Enter or leave it. |
 | Kebab-case tag names | Off by default. On: the edit form accepts a new or renamed tag only as lowercase letters and digits joined by hyphens, the names TOW checks. Existing names are kept. |
@@ -292,7 +298,7 @@ See [`examples/sample-vault/tow/tag-dictionary.json`](examples/sample-vault/tow/
 - On large vaults, expanding every tag with notes shown redraws a few thousand nodes and links; expect a short pause.
 - Labels get dense when every tag is expanded, especially in Force.
 - Untested together with other plugins that patch the Graph view.
-- The 3D view uses WebGL and bundles three.js, and the explorer bundles Cytoscape.js, so the plugin file is about 1.35 MB. Each loads only when its tab opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
+- The 3D view uses WebGL and bundles three.js, and the explorer bundles Cytoscape.js, so the plugin file is about 1.6 MB. Each loads only when its tab opens. With many thousands of notes shown the 3D view slows down; hiding notes keeps it fast.
 
 ## Roadmap
 
@@ -343,18 +349,30 @@ npm run deploy -- "/path/to/vault"   # copy main.js, manifest.json, styles.css i
 
 ```text
 src/
-├── main.ts         # Plugin entry: commands, settings tab, vault/metadata events
-├── search.ts       # Suggestion popover for the search box and the edit forms
-├── native.ts       # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
-├── graph3d.ts      # The 3D view: draws the same layered data with 3d-force-graph
-├── three.ts        # three.js and 3d-force-graph, imported only when a 3D view opens
-├── vault-data.ts   # Builds the core graph's data shape from the vault for the 3D view
-├── explorer.ts     # The ontology explorer: a Cytoscape.js canvas of object cards
+├── main.ts            # Plugin entry: commands, settings tab, vault/metadata events
+├── search.ts          # Suggestion popover for the search box and the edit forms
+├── native.ts          # Hooks the core Graph view renderer (toolbar, sidebar tab, clicks, layouts)
+├── graph-modes.ts     # Shared graph view mode switcher bar and open-in-new-tab menu
+├── legend.ts          # Hierarchy depth legend, palette switcher and color swatches
+├── palettes.ts        # Palette presets, working copy and saved-palette library state
+├── colors.ts          # Color resampling and longest-path hierarchy depth color mapping
+├── hierarchy.ts       # Dictionary model adapter and roll-up note counts
+├── layer.ts           # Pure functions that layer the dictionary onto the core graph data
+├── layout.ts          # Vertical and horizontal tree positions
+├── mindmap.ts         # Cytoscape-backed mind map view with accessible DOM cards
+├── mindmap-layout.ts  # Visible-branch mind map spacing and anchor placement
+├── graph3d.ts         # The 3D view: draws the same layered data with 3d-force-graph
+├── controls3d.ts      # Collapsible 3-section 3D settings panel (Filters, Display, Forces)
+├── filter3d.ts        # Search query parser/evaluator and orphan pruning for 3D
+├── geometry3d.ts      # 3D arrow placement, label scaling and camera depth helpers
+├── three.ts           # three.js and 3d-force-graph, imported only when a 3D view opens
+├── vault-data.ts      # Builds the core graph's data shape from the vault for the 3D view
+├── explorer.ts        # The ontology explorer: a Cytoscape.js canvas of object cards
 ├── explorer-layout.ts # Pure functions for the explorer: card placement, Search Around counts, lines
 ├── explorer-card.ts   # The explorer's object cards as SVG images
-├── layer.ts        # Pure functions that layer the dictionary onto the core graph data
-├── layout.ts       # Vertical and horizontal tree positions
-└── settings.ts     # Settings shape and path validation
+├── check.ts           # Helpers grouping non-canonical and redundant tags for Dictionary check
+├── settings.ts        # Settings schema, defaults and sanitization
+└── i18n/              # 11-locale catalog, runtime formatting and live refresh helpers
 tests/              # node:test unit tests (tests/integration is maintainer-only)
 packages/tag-ontology/
 ├── src/core/       # Pure dictionary validation, hierarchy, usage and edits

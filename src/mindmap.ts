@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import type { Suggestion } from 'tag-ontology';
 import { TagSuggest } from './search.ts';
 import type { Core } from 'cytoscape';
+import { t } from './i18n/index.ts';
 
 export interface MindMapNode {
   id: string; tag?: string; name: string; x: number; y: number; color?: string;
@@ -32,6 +33,11 @@ export class MindMap {
   private settle?: number;
   private suggest: TagSuggest;
   private start: HTMLElement;
+  private startHeading: HTMLElement;
+  private startHint: HTMLElement;
+  private startSearch: HTMLElement;
+  private startRoots: HTMLElement;
+  private errorEl?: HTMLElement;
   private choices: HTMLElement;
   private continueChoices: HTMLElement;
   readonly el: HTMLElement;
@@ -40,13 +46,14 @@ export class MindMap {
     this.el = parent.createDiv('tag-ontology-mindmap');
     const stage = this.el.createDiv('tag-ontology-mindmap-stage');
     this.start = this.el.createDiv('tag-ontology-explorer-start tag-ontology-mindmap-start');
-    this.start.createEl('h3', { text: 'Where do you want to start?' });
-    this.start.createEl('p', { text: 'Search for a tag or pick a root tag.', cls: 'tag-ontology-muted' });
-    const search = this.start.createEl('input', { type: 'search', placeholder: 'Search tags or aliases', attr: { 'aria-label': 'Choose a starting tag' } });
-    this.suggest = new TagSuggest(startActions.app, search, query => startActions.suggest(query), tag => startActions.choose(tag));
+    this.startHeading = this.start.createEl('h3');
+    this.startHint = this.start.createEl('p', { cls: 'tag-ontology-muted' });
+    this.startSearch = this.start.createEl('input', { type: 'search' });
+    this.suggest = new TagSuggest(startActions.app, this.startSearch as HTMLInputElement, query => startActions.suggest(query), tag => startActions.choose(tag));
     this.continueChoices = this.start.createDiv('tag-ontology-tags');
-    this.start.createDiv({ text: 'Root tags', cls: 'tag-ontology-muted' });
+    this.startRoots = this.start.createDiv({ cls: 'tag-ontology-muted' });
     this.choices = this.start.createDiv('tag-ontology-tags');
+    this.syncLocaleText();
     this.layer = this.el.createDiv('tag-ontology-mindmap-layer');
     this.lines = this.layer.createSvg('svg');
     this.lines.classList.add('tag-ontology-mindmap-lines');
@@ -67,21 +74,46 @@ export class MindMap {
     }).catch(error => {
       if (this.closed) return;
       console.error('Tag Ontology mind map:', error);
-      this.el.createEl('p', { cls: 'tag-ontology-mindmap-error', text: 'Could not open the mind map. Choose another layout and try again.' });
+      this.errorEl = this.el.createEl('p', { cls: 'tag-ontology-mindmap-error', text: t('mindmap.loadFailed') });
     });
+  }
+
+  private syncLocaleText(): void {
+    this.startHeading.setText(t('graph.startHeading'));
+    this.startHint.setText(t('graph.startHint'));
+    this.startSearch.setAttribute('placeholder', t('sidebar.searchPlaceholder'));
+    this.startSearch.setAttribute('aria-label', t('mindmap.searchLabel'));
+    this.startRoots.setText(t('graph.startRoots'));
+    this.errorEl?.setText(t('mindmap.loadFailed'));
+  }
+
+  refreshLocale(): void {
+    this.syncLocaleText();
+    this.continueChoices.empty();
+    if (this.data?.startFrom) this.choice(this.continueChoices, this.data.startFrom, t('graph.continueFrom', { tag: this.data.startFrom }));
+    for (const node of this.data?.nodes ?? []) {
+      const card = this.cards.get(node.id);
+      if (card) this.cardLabels(card, node);
+    }
+  }
+
+  private choice(parent: HTMLElement, tag: string, label: string): void {
+    const chip = parent.createEl('a', { href: '#', text: label, cls: 'tag' }), color = this.startActions.color(tag);
+    if (color) chip.setCssProps({ '--tag-ontology-tags': color });
+    chip.addEventListener('click', event => { event.preventDefault(); this.startActions.choose(tag); });
+  }
+
+  private cardLabels(card: Card, node: MindMapNode): void {
+    card.name.setAttribute('aria-label', node.tag ? t('mindmap.showDetails', { tag: node.tag }) : node.name);
+    card.toggle.setAttribute('aria-label', t(node.expanded ? 'mindmap.collapseTag' : 'mindmap.expandTag', { label: node.tag ?? node.name }));
   }
 
   draw(data: MindMapData): void {
     this.data = data;
     this.start.hidden = !!data.root;
     this.choices.empty(); this.continueChoices.empty();
-    const choice = (parent: HTMLElement, tag: string, label: string) => {
-      const chip = parent.createEl('a', { href: '#', text: label, cls: 'tag' }), color = this.startActions.color(tag);
-      if (color) chip.setCssProps({ '--tag-ontology-tags': color });
-      chip.addEventListener('click', event => { event.preventDefault(); this.startActions.choose(tag); });
-    };
-    if (data.startFrom) choice(this.continueChoices, data.startFrom, `Continue from #${data.startFrom}`);
-    for (const tag of data.roots ?? []) choice(this.choices, tag, '#' + tag);
+    if (data.startFrom) this.choice(this.continueChoices, data.startFrom, t('graph.continueFrom', { tag: data.startFrom }));
+    for (const tag of data.roots ?? []) this.choice(this.choices, tag, '#' + tag);
     const cy = this.cy;
     if (!cy || this.closed) return;
     const ids = new Set(data.nodes.map(n => n.id));
@@ -110,13 +142,12 @@ export class MindMap {
       }
       card.tag = node.tag;
       card.name.setText(node.name); card.name.disabled = !node.tag;
-      card.name.setAttribute('aria-label', node.tag ? `Show #${node.tag} details` : node.name);
       card.name.setAttribute('title', node.name);
       card.el.setCssProps({ '--mindmap-x': `${node.x}px`, '--mindmap-y': `${node.y}px`, '--mindmap-color': node.color ?? 'var(--graph-node-tag, var(--color-accent))' });
       card.toggle.hidden = !node.expandable;
       card.toggle.setText(node.expanded ? '‹' : '›');
       card.toggle.setAttribute('aria-expanded', String(node.expanded));
-      card.toggle.setAttribute('aria-label', `${node.expanded ? 'Collapse' : 'Expand'} #${node.tag ?? node.name}`);
+      this.cardLabels(card, node);
     }
     this.lines.replaceChildren();
     const byId = new Map(data.nodes.map(node => [node.id, node]));

@@ -140,3 +140,10 @@ test('counts read "1 note" and "2 notes"', () => {
   assert.equal(plural(0, 'note'), '0 notes');
   assert.equal(plural(2, 'group'), '2 groups');
 });
+
+test('relativeTime formats localized relative durations when locale is provided', () => {
+  const now = Date.UTC(2026, 10, 13), day = 864e5;
+  assert.equal(relativeTime(now - day / 2, now, 'ko'), '오늘');
+  assert.equal(relativeTime(now - 3 * day, now, 'ko'), '3일 전');
+  assert.equal(relativeTime(now - 3 * day, now, 'ja'), '3 日前');
+});

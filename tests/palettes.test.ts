@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { choosePalette, deletePalette, editPalette, paletteGroups, paletteSelection, savePalette } from '../src/palettes.ts';
+import { PaletteValidationError, choosePalette, deletePalette, editPalette, paletteGroups, paletteSelection, savePalette } from '../src/palettes.ts';
+import { setLocale } from '../src/i18n/index.ts';
 import { sanitizeSettings } from '../src/settings.ts';
 import { PALETTE, PALETTE_PRESETS, paletteFor } from '../src/colors.ts';
 
@@ -90,5 +91,27 @@ test('Default and Pastel follow the approved official hue order and resample wit
     assert.equal(expanded[0], preset.colors[0]);
     assert.equal(expanded.at(-1), preset.colors.at(-1));
     assert.notEqual(expanded[8], expanded[0]);
+  }
+});
+
+test('palette validation exposes machine-readable error codes and paletteGroups localizes labels while keeping keys', () => {
+  const initial = sanitizeSettings({}, '.obsidian');
+  assert.throws(() => savePalette(initial, '   '), (error: unknown) => error instanceof PaletteValidationError && error.code === 'invalid-name');
+  const saved = { ...initial, ...savePalette(initial, 'My Custom') };
+  assert.throws(() => savePalette(saved, 'my custom'), (error: unknown) => error instanceof PaletteValidationError && error.code === 'duplicate-name');
+
+  const edited = { ...saved, ...editPalette(saved, ['#123456']) };
+  try {
+    setLocale('ko');
+    const groups = paletteGroups(edited);
+    assert.equal(groups[0]?.label, '예시 팔레트');
+    assert.equal(groups[0]?.options[0]?.value, 'default');
+    assert.equal(groups[0]?.options[0]?.label, '기본값');
+    assert.equal(groups[1]?.options[0]?.value, 'custom');
+    assert.match(groups[1]!.options[0]!.label, /^작업 사본/);
+    assert.equal(groups[2]?.options[0]?.value, 'saved:My Custom');
+    assert.equal(groups[2]?.options[0]?.label, 'My Custom');
+  } finally {
+    setLocale('en');
   }
 });

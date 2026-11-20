@@ -1,6 +1,7 @@
 import type { Settings } from './settings.ts';
 import { Menu, setIcon, setTooltip } from 'obsidian';
 import { paletteGroups, paletteSelection } from './palettes.ts';
+import { getLocale, t } from './i18n/index.ts';
 
 interface LegendActions { color(depth: number, color: string): void; choose(key: string): void; save(): void }
 const rendered = new WeakMap<HTMLElement, string>();
@@ -51,7 +52,7 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
   const overlay = el.parentElement;
   const sync = () => { if (!overlay) return; fitOverlay(overlay); return observeOverlay(overlay); };
   const state = JSON.stringify([settings.customColors, settings.hierarchyColors, settings.hierarchyPalette,
-    settings.hierarchyPalettePreset, settings.customHierarchyPalette, settings.workingPaletteSource, settings.savedHierarchyPalettes]);
+    settings.hierarchyPalettePreset, settings.customHierarchyPalette, settings.workingPaletteSource, settings.savedHierarchyPalettes, getLocale()]);
   if (rendered.get(el) === state) return sync();
   // Metadata refreshes must not replace a focused palette control.
   rendered.delete(el);
@@ -59,14 +60,17 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
   el.hidden = !settings.customColors || !settings.hierarchyColors;
   if (el.hidden) { rendered.set(el, state); return sync(); }
   el.setAttribute('role', 'region');
-  el.setAttribute('aria-label', 'Hierarchy depth colors');
-  el.setAttribute('aria-description', `Root is level 0. Level ${settings.hierarchyPalette.length - 1} and deeper use the last color.`);
+  const legendLabel = t('legend.ariaLabel');
+  setTooltip(el, legendLabel, { placement: 'right' });
+  const hideLegendTip = () => el.removeAttribute('aria-label');
+  const showLegendTip = () => el.setAttribute('aria-label', legendLabel);
+  el.setAttribute('aria-description', t('legend.ariaDescription', { last: settings.hierarchyPalette.length - 1 }));
   const groups = paletteGroups(settings), selected = paletteSelection(settings);
-  const name = groups.flatMap(group => group.options).find(option => option.value === selected)?.label ?? 'Palette';
+  const name = groups.flatMap(group => group.options).find(option => option.value === selected)?.label ?? t('palettes.defaultName');
   const palette = el.createEl('button', { cls: 'clickable-icon tag-ontology-legend-action tag-ontology-legend-palette',
     attr: { type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false' } });
   setIcon(palette, 'palette');
-  setTooltip(palette, `Palette: ${name}${selected === 'custom' ? ' · unsaved' : ''}`, { placement: 'top' });
+  setTooltip(palette, selected === 'custom' ? t('legend.paletteTooltipUnsaved', { name }) : t('legend.paletteTooltip', { name }), { placement: 'right' });
   palette.addEventListener('click', () => {
     const menu = new Menu();
     for (const group of groups) {
@@ -75,7 +79,7 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
       for (const option of group.options) menu.addItem(item => item.setTitle(option.label).setChecked(option.value === selected).onClick(() => actions.choose(option.value)));
     }
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Save a copy…').setIcon('copy').onClick(() => actions.save()));
+    menu.addItem(item => item.setTitle(t('legend.saveCopy')).setIcon('copy').onClick(() => actions.save()));
     menu.onHide(() => palette.setAttribute('aria-expanded', 'false'));
     palette.setAttribute('aria-expanded', 'true');
     const rect = palette.getBoundingClientRect();
@@ -84,19 +88,25 @@ export function renderDepthLegend(el: HTMLElement, settings: Settings, actions: 
   const list = el.createEl('ul', { cls: 'tag-ontology-legend-levels' });
   settings.hierarchyPalette.forEach((color, depth) => {
     const last = depth === settings.hierarchyPalette.length - 1;
-    const label = depth === 0 ? 'Root · 0' : `Level ${depth}`;
-    const row = list.createEl('li', { attr: { 'aria-label': label + (last ? ' and deeper' : '') } });
+    const label = depth === 0 ? t('legend.rootLevel') : t('legend.depthLevel', { depth });
+    const title = depth === 0 ? t('legend.changeRootColor') : t('legend.changeDepthColor', { depth });
+    const row = list.createEl('li');
     const swatch = row.createEl('label', { cls: 'tag-ontology-legend-swatch' });
     swatch.setCssProps({ '--legend-color': color });
-    const picker = swatch.createEl('input', { cls: 'tag-ontology-legend-picker', attr: { type: 'color', 'aria-label': `Change ${label.toLowerCase()} color`, title: `Change ${label.toLowerCase()} color` } });
+    const picker = swatch.createEl('input', { cls: 'tag-ontology-legend-picker', attr: { type: 'color', title } });
     picker.value = color;
     picker.addEventListener('change', () => actions.color(depth, picker.value));
-    row.createSpan({ text: String(depth) + (last ? '+' : '') });
+    // Keep Chromium's native title tooltip on swatches while suppressing the parent legend's Obsidian black tooltip during swatch hover.
+    picker.addEventListener('mouseover', hideLegendTip);
+    picker.addEventListener('mouseout', showLegendTip);
+    // Screen-reader text inside <li> keeps level names without triggering Obsidian's [aria-label] hover tooltips; picker falls back to title.
+    row.createSpan({ attr: { 'aria-hidden': 'true' }, text: String(depth) + (last ? '+' : '') });
+    row.createSpan({ cls: 'tag-ontology-sr', text: last ? t('legend.andDeeper', { label }) : label });
   });
   if (selected === 'custom') {
     const save = el.createEl('button', { cls: 'clickable-icon tag-ontology-legend-action tag-ontology-legend-save', attr: { type: 'button' } });
     setIcon(save, 'bookmark-plus');
-    setTooltip(save, 'Save palette as…', { placement: 'top' });
+    setTooltip(save, t('legend.saveAs'), { placement: 'right' });
     save.addEventListener('click', () => actions.save());
   }
   rendered.set(el, state);
